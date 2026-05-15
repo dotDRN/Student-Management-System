@@ -1,0 +1,227 @@
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-sans); }
+.wrap { padding: 1rem 0; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.role-btn {
+  font-size: 12px; font-weight: 500; padding: 5px 12px;
+  border-radius: 20px; border: 0.5px solid var(--color-border-secondary);
+  background: var(--color-background-primary); color: var(--color-text-secondary);
+  cursor: pointer; transition: all 0.15s;
+}
+.role-btn.active { background: var(--color-background-tertiary); color: var(--color-text-primary); border-color: var(--color-border-primary); }
+.section { margin-bottom: 1.5rem; }
+.section-title { font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 0.5px solid var(--color-border-tertiary); }
+.perm-row { display: flex; align-items: center; padding: 7px 0; border-bottom: 0.5px solid var(--color-border-tertiary); gap: 10px; }
+.perm-row:last-child { border-bottom: none; }
+.perm-label { font-size: 13px; color: var(--color-text-primary); flex: 0 0 210px; }
+.perm-roles { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  font-weight: 500; white-space: nowrap;
+}
+.badge-full   { background: #EAF3DE; color: #3B6D11; }
+.badge-read   { background: #E6F1FB; color: #185FA5; }
+.badge-own    { background: #FAEEDA; color: #854F0B; }
+.badge-none   { background: var(--color-background-secondary); color: var(--color-text-tertiary); }
+.badge-approve { background: #EEEDFE; color: #534AB7; }
+.badge-new    { background: #FAECE7; color: #993C1D; }
+@media (prefers-color-scheme: dark) {
+  .badge-full   { background: #173404; color: #C0DD97; }
+  .badge-read   { background: #042C53; color: #85B7EB; }
+  .badge-own    { background: #412402; color: #EF9F27; }
+  .badge-approve{ background: #26215C; color: #AFA9EC; }
+  .badge-new    { background: #4A1B0C; color: #F0997B; }
+}
+.legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 1rem; }
+.leg-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--color-text-secondary); }
+.hidden-row { display: none !important; }
+.schema-note { font-size: 12px; color: var(--color-text-secondary); background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 14px; margin-bottom: 1.25rem; border-left: 2px solid var(--color-border-secondary); }
+.schema-note strong { color: var(--color-text-primary); font-weight: 500; }
+</style>
+
+<div class="wrap">
+  <div class="schema-note">
+    <strong>4 schema additions</strong> required beyond the existing schema.sql — messaging threads, equipment + logs, activity status log, and announcements table. See the .md file.
+  </div>
+
+  <div class="legend">
+    <div class="leg-item"><span class="badge badge-full">full</span> create/edit/delete</div>
+    <div class="leg-item"><span class="badge badge-read">read</span> view only</div>
+    <div class="leg-item"><span class="badge badge-own">own</span> own center/data only</div>
+    <div class="leg-item"><span class="badge badge-approve">approve</span> approval only</div>
+    <div class="leg-item"><span class="badge badge-new">new role</span> not in schema yet</div>
+  </div>
+
+  <div class="filters" id="filters">
+    <button class="role-btn active" data-role="all">all roles</button>
+    <button class="role-btn" data-role="super_admin">super_admin</button>
+    <button class="role-btn" data-role="center_admin">center_admin</button>
+    <button class="role-btn" data-role="supervisor">supervisor</button>
+    <button class="role-btn" data-role="teacher">teacher</button>
+    <button class="role-btn" data-role="staff">staff</button>
+    <button class="role-btn" data-role="volunteer">volunteer</button>
+    <button class="role-btn" data-role="student">student</button>
+    <button class="role-btn" data-role="parent">parent</button>
+    <button class="role-btn" data-role="shareholder">shareholder</button>
+    <button class="role-btn" data-role="tech_admin">tech_admin</button>
+  </div>
+
+  <div id="matrix"></div>
+</div>
+
+<script>
+const data = [
+  {
+    section: "student records",
+    rows: [
+      { label: "enroll new student", perms: { super_admin:"full", center_admin:"full", staff:"full", supervisor:"✗", teacher:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view student list", perms: { super_admin:"full", center_admin:"own", supervisor:"own", teacher:"own", staff:"own", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "edit student profile", perms: { super_admin:"full", center_admin:"own", staff:"own", supervisor:"✗", teacher:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view own profile / child", perms: { super_admin:"✗", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"read", parent:"read", shareholder:"✗", tech_admin:"✗" } },
+      { label: "initiate transfer", perms: { super_admin:"full", center_admin:"full", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "approve cross-center transfer", perms: { super_admin:"approve", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "deactivate student", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+    ]
+  },
+  {
+    section: "attendance",
+    rows: [
+      { label: "mark attendance", perms: { super_admin:"✗", center_admin:"✗", supervisor:"✗", teacher:"own", volunteer:"own", staff:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "edit attendance (same day)", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"own", volunteer:"✗", staff:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "edit attendance (past)", perms: { super_admin:"full", center_admin:"✗", supervisor:"✗", teacher:"✗", volunteer:"✗", staff:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view attendance (center)", perms: { super_admin:"full", center_admin:"own", supervisor:"own", teacher:"own", staff:"own", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view own / child attendance", perms: { super_admin:"✗", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"read", parent:"read", shareholder:"✗", tech_admin:"✗" } },
+    ]
+  },
+  {
+    section: "forms (tests / feedback / notices)",
+    rows: [
+      { label: "create form template", perms: { super_admin:"full", center_admin:"full", supervisor:"✗", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "publish form", perms: { super_admin:"full", center_admin:"full", supervisor:"✗", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "assign form to users", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "fill assigned form", perms: { super_admin:"full", center_admin:"full", supervisor:"full", teacher:"full", staff:"full", volunteer:"full", student:"own", parent:"own", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view all submissions (center)", perms: { super_admin:"full", center_admin:"own", supervisor:"own", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+    ]
+  },
+  {
+    section: "exams & scores",
+    rows: [
+      { label: "create exam", perms: { super_admin:"full", center_admin:"full", supervisor:"✗", teacher:"full", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "enter scores", perms: { super_admin:"full", center_admin:"full", supervisor:"✗", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view scores (center)", perms: { super_admin:"full", center_admin:"own", supervisor:"own", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view own / child scores", perms: { super_admin:"✗", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"read", parent:"read", shareholder:"✗", tech_admin:"✗" } },
+      { label: "configure subjects per program", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+    ]
+  },
+  {
+    section: "activities & batches",
+    rows: [
+      { label: "create / manage activity", perms: { super_admin:"full", center_admin:"full", supervisor:"✗", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "update activity status", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view activity status (all centers)", perms: { super_admin:"full", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "assign volunteer to activity", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "manage batches", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+    ]
+  },
+  {
+    section: "skills",
+    rows: [
+      { label: "define skill categories", perms: { super_admin:"full", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "log skill assessment", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view skill history", perms: { super_admin:"full", center_admin:"own", supervisor:"own", teacher:"own", staff:"✗", volunteer:"✗", student:"read", parent:"read", shareholder:"✗", tech_admin:"✗" } },
+    ]
+  },
+  {
+    section: "messaging",
+    rows: [
+      { label: "student → teacher", perms: { super_admin:"✗", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"full", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "parent → teacher / admin", perms: { super_admin:"✗", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"full", shareholder:"✗", tech_admin:"✗" } },
+      { label: "teacher → students / admin", perms: { super_admin:"✗", center_admin:"✗", supervisor:"✗", teacher:"full", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "center_admin → anyone in center", perms: { super_admin:"✗", center_admin:"full", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "super_admin → anyone", perms: { super_admin:"full", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+    ]
+  },
+  {
+    section: "equipment & resources (new)",
+    rows: [
+      { label: "add / edit equipment", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"✗", staff:"own", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view equipment inventory", perms: { super_admin:"full", center_admin:"own", supervisor:"own", teacher:"own", staff:"own", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "view NGO-wide equipment report", perms: { super_admin:"full", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+    ]
+  },
+  {
+    section: "dashboards",
+    rows: [
+      { label: "NGO-wide aggregate", perms: { super_admin:"full", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"read", tech_admin:"✗" } },
+      { label: "center-level summary", perms: { super_admin:"full", center_admin:"own", supervisor:"own", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "class / batch level", perms: { super_admin:"full", center_admin:"full", supervisor:"full", teacher:"own", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "individual student view", perms: { super_admin:"full", center_admin:"own", supervisor:"own", teacher:"own", staff:"✗", volunteer:"✗", student:"read", parent:"read", shareholder:"✗", tech_admin:"✗" } },
+    ]
+  },
+  {
+    section: "user management",
+    rows: [
+      { label: "create super_admin", perms: { super_admin:"full", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "create center_admin", perms: { super_admin:"full", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "create teacher / staff / volunteer", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "create parent / student account", perms: { super_admin:"full", center_admin:"own", supervisor:"✗", teacher:"✗", staff:"own", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"✗" } },
+      { label: "system config / deployments", perms: { super_admin:"✗", center_admin:"✗", supervisor:"✗", teacher:"✗", staff:"✗", volunteer:"✗", student:"✗", parent:"✗", shareholder:"✗", tech_admin:"full" } },
+    ]
+  },
+];
+
+function badgeClass(val) {
+  if (val === "full")    return "badge badge-full";
+  if (val === "own")     return "badge badge-own";
+  if (val === "read")    return "badge badge-read";
+  if (val === "approve") return "badge badge-approve";
+  return "badge badge-none";
+}
+
+function badgeLabel(val) {
+  if (val === "✗") return "none";
+  return val;
+}
+
+function render(activeRole) {
+  const el = document.getElementById("matrix");
+  el.innerHTML = "";
+  data.forEach(sec => {
+    const div = document.createElement("div");
+    div.className = "section";
+    div.innerHTML = `<div class="section-title">${sec.section}</div>`;
+    sec.rows.forEach(row => {
+      const rowDiv = document.createElement("div");
+      rowDiv.className = "perm-row";
+      const roles = activeRole === "all"
+        ? Object.entries(row.perms)
+        : [[activeRole, row.perms[activeRole]]];
+      const hasAccess = roles.some(([,v]) => v !== "✗");
+      if (activeRole !== "all" && !hasAccess) {
+        rowDiv.classList.add("hidden-row");
+      }
+      const badges = roles.map(([role, val]) => {
+        const label = activeRole === "all" ? `${role}: ${badgeLabel(val)}` : badgeLabel(val);
+        if (val === "✗" && activeRole === "all") return "";
+        return `<span class="${badgeClass(val)}">${label}</span>`;
+      }).filter(Boolean).join("");
+      rowDiv.innerHTML = `<span class="perm-label">${row.label}</span><div class="perm-roles">${badges || '<span class="badge badge-none">no access</span>'}</div>`;
+      div.appendChild(rowDiv);
+    });
+    const visibleRows = div.querySelectorAll(".perm-row:not(.hidden-row)");
+    if (visibleRows.length > 0) el.appendChild(div);
+  });
+}
+
+document.getElementById("filters").addEventListener("click", e => {
+  const btn = e.target.closest(".role-btn");
+  if (!btn) return;
+  document.querySelectorAll(".role-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  render(btn.dataset.role);
+});
+
+render("all");
+</script>

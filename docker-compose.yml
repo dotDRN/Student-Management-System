@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=http://localhost:5000/api
+    image: sparsha-app:latest
+    container_name: sparsha-backend
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - DATABASE_URL=postgresql://sparsha:sparsha@db:5432/sparsha
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: sparsha-app:latest
+    container_name: sparsha-frontend
+    working_dir: /app/frontend
+    command: ["serve", "-s", "dist", "-l", "5173"]
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:15-alpine
+    container_name: sparsha-db
+    restart: always
+    environment:
+      POSTGRES_USER: sparsha
+      POSTGRES_PASSWORD: sparsha
+      POSTGRES_DB: sparsha
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sparsha"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

@@ -1,0 +1,65 @@
+# =========================
+# Node.js
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Build / Output
+# =========================
+dist/
+build/
+
+# =========================
+# Prisma
+# =========================
+# Prisma client is generated → ignore it
+node_modules/.prisma
+
+# Optional (if using custom output)
+prisma/generated/
+
+# =========================
+# Cache
+# =========================
+.cache/
+.tmp/
+temp/
+
+# =========================
+# Test coverage
+# =========================
+coverage/
+
+# =========================
+# Misc
+# =========================
+*.tsbuildinfo

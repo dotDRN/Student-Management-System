@@ -1,0 +1,22 @@
+{
+  "name": "sparsha-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+
+    "install:all": "npm install && npm install --include=dev --prefix backend && npm install --include=dev --prefix frontend --legacy-peer-deps",
+
+    "build:frontend": "npm run build --prefix frontend",
+    "build:backend": "npm run build --prefix backend",
+
+    "build": "npm run install:all && npm run build:backend && npm run build:frontend",
+
+    "start": "node backend/dist/server.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

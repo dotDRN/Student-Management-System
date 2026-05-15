@@ -1,0 +1,27 @@
+# Production Docker image using pre-built artifacts
+# This avoids npm install inside Docker, which has DNS issues on some systems
+
+FROM node:22-alpine
+WORKDIR /app
+# Install serve globally for frontend static file serving
+RUN npm install -g serve
+
+
+# Backend
+COPY backend/dist /app/backend/dist
+COPY backend/node_modules /app/backend/node_modules
+COPY backend/package*.json /app/backend/
+COPY backend/prisma /app/backend/prisma
+
+# Frontend  
+COPY frontend/dist /app/frontend/dist
+
+# Expose backend port
+EXPOSE 5000
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:5000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))" || exit 1
+
+# Start backend
+CMD ["sh", "-c", "cd /app/backend && npx prisma migrate deploy && node dist/server.js"]

@@ -1,0 +1,798 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum UserRole {
+  super_admin
+  center_admin
+  supervisor
+  teacher
+  staff
+  volunteer
+  student
+  parent
+  shareholder
+  tech_admin
+}
+
+enum Gender {
+  male
+  female
+  other
+}
+
+enum ActivityType {
+  class
+  game
+  visit
+  camp
+  exam
+  general
+}
+
+enum ActivityStatus {
+  planned
+  ongoing
+  completed
+  cancelled
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  pending
+  late
+  excused
+}
+
+enum TransferStatus {
+  active
+  pending_transfer
+  transferred
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  VERIFIED
+}
+
+// =============================================================================
+// 1. FOUNDATION TABLES
+// =============================================================================
+
+model AcademicYear {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  label     String   @unique
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  isCurrent Boolean  @default(false) @map("is_current")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  students           Student[]
+  attendanceSessions AttendanceSession[]
+  exams              Exam[]
+
+  @@map("academic_years")
+}
+
+model Center {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  location  String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  centerPrograms     CenterProgram[]
+  users              UserCenterAssignment[]
+  activities         Activity[]
+  batches            Batch[]
+  students           Student[]
+  transfersFrom      StudentTransfer[]      @relation("TransferFromCenter")
+  transfersTo        StudentTransfer[]      @relation("TransferToCenter")
+  attendanceSessions AttendanceSession[]
+  attendanceRecords  AttendanceRecord[]
+  exams              Exam[]
+  examScores         ExamScore[]
+  studentSkillLogs   StudentSkillLog[]
+  formTemplates      FormTemplate[]
+  formSubmissions    FormSubmission[]
+  alertRules         AlertRule[]
+  alerts             Alert[]
+  equipment          Equipment[]
+  equipmentLogs      EquipmentLog[]
+  announcements      Announcement[]
+  activityStatusLogs ActivityStatusLog[]
+
+  @@map("centers")
+}
+
+model Program {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String   @unique
+  name        String
+  ageMin      Int?     @map("age_min")
+  ageMax      Int?     @map("age_max")
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  centerPrograms     CenterProgram[]
+  subjects           ProgramSubject[]
+  skillDefinitions   SkillDefinition[]
+  activities         Activity[]
+  students           Student[]
+  attendanceSessions AttendanceSession[]
+  exams              Exam[]
+  formTemplates      FormTemplate[]
+  alertRules         AlertRule[]
+  announcements      Announcement[]
+
+  @@map("programs")
+}
+
+model CenterProgram {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId  String   @map("center_id") @db.Uuid
+  programId String   @map("program_id") @db.Uuid
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  center  Center  @relation(fields: [centerId], references: [id])
+  program Program @relation(fields: [programId], references: [id])
+
+  @@unique([centerId, programId])
+  @@map("center_programs")
+}
+
+model ProgramSubject {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  programId String   @map("program_id") @db.Uuid
+  name      String
+  maxMarks  Decimal  @default(100) @map("max_marks") @db.Decimal(6, 2)
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  program    Program     @relation(fields: [programId], references: [id])
+  examScores ExamScore[]
+
+  @@unique([programId, name])
+  @@map("program_subjects")
+}
+
+model SkillDefinition {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  programId   String   @map("program_id") @db.Uuid
+  name        String
+  description String?
+  maxLevel    Int      @default(5) @map("max_level")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  program          Program           @relation(fields: [programId], references: [id])
+  studentSkillLogs StudentSkillLog[]
+
+  @@unique([programId, name])
+  @@map("skill_definitions")
+}
+
+// =============================================================================
+// 2. USERS & ACCESS CONTROL
+// =============================================================================
+
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  fullName     String    @map("full_name")
+  phone        String?
+  role         UserRole
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  createdBy    String?   @db.Uuid @map("created_by")
+  creator      User?     @relation("UserToCreator", fields: [createdBy], references: [id])
+  createdUsers User[]    @relation("UserToCreator")
+
+  centerAssignments     UserCenterAssignment[]   @relation("UserAssignments")
+  assignedByCenters     UserCenterAssignment[]   @relation("AssignedByUser")
+  activityAssignments   UserActivityAssignment[] @relation("UserActivityAssignments")
+  assignedByActivities  UserActivityAssignment[] @relation("AssignedByUserActivity")
+  parentStudents        ParentStudent[]
+  createdActivities     Activity[]               @relation("UserCreatedActivities")
+  taughtBatches         Batch[]                  @relation("BatchTeacher")
+  approvedTransfers     StudentTransfer[]        @relation("TransferApprovedBy")
+  createdSessions       AttendanceSession[]      @relation("UserCreatedSessions")
+  createdExams          Exam[]                   @relation("UserCreatedExams")
+  enteredScores         ExamScore[]              @relation("UserEnteredScores")
+  assessedSkills        StudentSkillLog[]        @relation("SkillAssessedBy")
+  createdFormTemplates  FormTemplate[]           @relation("UserCreatedFormTemplates")
+  assignedFormsBy       FormAssignment[]         @relation("FormAssignedBy")
+  assignedFormsTo       FormAssignment[]         @relation("FormAssignedTo")
+  formSubmissions       FormSubmission[]         @relation("UserFormSubmissions")
+  createdAlertRules     AlertRule[]              @relation("RuleCreatedBy")
+  receivedAlerts        Alert[]                  @relation("AlertRecipient")
+  auditLogs             AuditLog[]               @relation("AuditUser")
+  createdEquipment      Equipment[]              @relation("EquipmentCreatedBy")
+  loggedEquipment       EquipmentLog[]           @relation("EquipmentLoggedBy")
+  createdAnnouncements  Announcement[]           @relation("AnnouncementCreatedBy")
+  changedActivityStatus ActivityStatusLog[]      @relation("StatusChangedBy")
+  createdStudents       Student[]                @relation("StudentCreatedBy")
+  activityEnrollmentsRequested ActivityEnrollment[] @relation("ActivityRequestedBy")
+
+  @@map("users")
+}
+
+model UserCenterAssignment {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  centerId   String    @map("center_id") @db.Uuid
+  validFrom  DateTime  @default(now()) @map("valid_from") @db.Date
+  validUntil DateTime? @map("valid_until") @db.Date
+  createdBy  String    @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user          User   @relation("UserAssignments", fields: [userId], references: [id])
+  center        Center @relation(fields: [centerId], references: [id])
+  createdByUser User   @relation("AssignedByUser", fields: [createdBy], references: [id])
+
+  @@unique([userId, centerId])
+  @@map("user_center_assignments")
+}
+
+// =============================================================================
+// 3. ACTIVITIES & BATCHES
+// =============================================================================
+
+model Activity {
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId        String         @map("center_id") @db.Uuid
+  programId       String?        @map("program_id") @db.Uuid
+  name            String
+  description     String?
+  volunteers      String[]       @default([])
+  activityType    ActivityType   @default(general) @map("activity_type")
+  startDate       DateTime?      @map("start_date") @db.Date
+  endDate         DateTime?      @map("end_date") @db.Date
+  createdBy       String         @map("created_by") @db.Uuid
+  isActive        Boolean        @default(true) @map("is_active")
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime       @default(now()) @map("updated_at") @db.Timestamptz
+  status          ActivityStatus @default(planned)
+  completionNotes String?        @map("completion_notes")
+  attendanceCount Int?           @map("attendance_count")
+
+  center             Center                   @relation(fields: [centerId], references: [id])
+  program            Program?                 @relation(fields: [programId], references: [id])
+  createdByUser      User                     @relation("UserCreatedActivities", fields: [createdBy], references: [id])
+  userAssignments    UserActivityAssignment[]
+  batches            Batch[]
+  attendanceSessions AttendanceSession[]
+  exams              Exam[]
+  activityStatusLogs ActivityStatusLog[]
+  activityEnrollments ActivityEnrollment[]
+
+  @@map("activities")
+}
+
+model UserActivityAssignment {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  activityId String    @map("activity_id") @db.Uuid
+  validFrom  DateTime  @map("valid_from") @db.Date
+  validUntil DateTime? @map("valid_until") @db.Date
+  createdBy  String    @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user          User     @relation("UserActivityAssignments", fields: [userId], references: [id])
+  activity      Activity @relation(fields: [activityId], references: [id])
+  createdByUser User     @relation("AssignedByUserActivity", fields: [createdBy], references: [id])
+
+  @@unique([userId, activityId])
+  @@map("user_activity_assignments")
+}
+
+model ActivityEnrollment {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activityId  String   @map("activity_id") @db.Uuid
+  studentId   String   @map("student_id") @db.Uuid
+  status      String   @default("requested_by_teacher") // requested_by_teacher, approved_by_admin
+  requestedBy String   @map("requested_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  activity        Activity @relation(fields: [activityId], references: [id])
+  student         Student  @relation(fields: [studentId], references: [id])
+  requestedByUser User     @relation("ActivityRequestedBy", fields: [requestedBy], references: [id])
+
+  @@unique([activityId, studentId])
+  @@map("activity_enrollments")
+}
+
+model Batch {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activityId  String   @map("activity_id") @db.Uuid
+  centerId    String   @map("center_id") @db.Uuid
+  name        String
+  teacherId   String?  @map("teacher_id") @db.Uuid
+  maxStudents Int?     @map("max_students")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  activity           Activity            @relation(fields: [activityId], references: [id])
+  center             Center              @relation(fields: [centerId], references: [id])
+  teacher            User?               @relation("BatchTeacher", fields: [teacherId], references: [id])
+  batchEnrollments   BatchEnrollment[]
+  attendanceSessions AttendanceSession[]
+
+  @@map("batches")
+}
+
+// =============================================================================
+// 4. STUDENTS
+// =============================================================================
+
+model Student {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId       String    @map("center_id") @db.Uuid
+  programId      String?   @map("program_id") @db.Uuid
+  academicYearId String?   @map("academic_year_id") @db.Uuid
+  createdById    String?   @map("created_by") @db.Uuid
+  fullName       String    @map("full_name")
+  rollNumber     String?   @map("roll_number")
+  dob            DateTime? @db.Date
+  gender         Gender?
+  guardianName   String?   @map("guardian_name")
+  guardianPhone  String?   @map("guardian_phone")
+  address        String?
+  stream         String?
+  post12thChoice String?   @map("post_12th_choice")
+  collegeName    String?   @map("college_name")
+  educationDiscontinued Boolean @default(false) @map("education_discontinued")
+  enrollmentDate DateTime  @default(now()) @map("enrollment_date") @db.Date
+  isActive       Boolean   @default(true) @map("is_active")
+  transferStatus TransferStatus @default(active) @map("transfer_status")
+  totalFees      Decimal?  @map("total_fees") @db.Decimal(10, 2)
+  feesPaid       Decimal   @default(0) @map("fees_paid") @db.Decimal(10, 2)
+  isFullyPaid    Boolean   @default(false) @map("is_fully_paid")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  center            Center             @relation(fields: [centerId], references: [id])
+  program           Program?           @relation(fields: [programId], references: [id])
+  academicYear      AcademicYear?      @relation(fields: [academicYearId], references: [id])
+  createdByUser     User?              @relation("StudentCreatedBy", fields: [createdById], references: [id])
+  transfers         StudentTransfer[]
+  batchEnrollments  BatchEnrollment[]
+  parents           ParentStudent[]
+  attendanceRecords AttendanceRecord[]
+  examScores        ExamScore[]
+  skillLogs         StudentSkillLog[]
+  formAssignments   FormAssignment[]
+  formSubmissions   FormSubmission[]
+  alerts            Alert[]
+  feePayments       FeePayment[]
+  activityEnrollments ActivityEnrollment[]
+
+  @@map("students")
+}
+
+model StudentTransfer {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId    String   @map("student_id") @db.Uuid
+  fromCenterId String   @map("from_center_id") @db.Uuid
+  toCenterId   String   @map("to_center_id") @db.Uuid
+  transferDate DateTime @map("transfer_date") @db.Date
+  reason       String?
+  approvedBy   String   @map("approved_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  student        Student @relation(fields: [studentId], references: [id])
+  fromCenter     Center  @relation("TransferFromCenter", fields: [fromCenterId], references: [id])
+  toCenter       Center  @relation("TransferToCenter", fields: [toCenterId], references: [id])
+  approvedByUser User    @relation("TransferApprovedBy", fields: [approvedBy], references: [id])
+
+  @@map("student_transfers")
+}
+
+model FeePayment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId String   @map("student_id") @db.Uuid
+  amount    Decimal  @db.Decimal(10, 2)
+  notes     String?
+  paidAt    DateTime @default(now()) @map("paid_at") @db.Timestamptz
+  createdBy String   @map("created_by") @db.Uuid
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@map("fee_payments")
+}
+
+model BatchEnrollment {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId    String   @map("batch_id") @db.Uuid
+  studentId  String   @map("student_id") @db.Uuid
+  enrolledOn DateTime @default(now()) @map("enrolled_on") @db.Date
+
+  batch   Batch   @relation(fields: [batchId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([batchId, studentId])
+  @@map("batch_enrollments")
+}
+
+model ParentStudent {
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  parentUserId String @map("parent_user_id") @db.Uuid
+  studentId    String @map("student_id") @db.Uuid
+
+  parent  User    @relation(fields: [parentUserId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([parentUserId, studentId])
+  @@map("parent_student")
+}
+
+// =============================================================================
+// 5. ATTENDANCE
+// =============================================================================
+
+model AttendanceSession {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId       String   @map("center_id") @db.Uuid
+  programId      String?  @map("program_id") @db.Uuid
+  activityId     String?  @map("activity_id") @db.Uuid
+  batchId        String?  @map("batch_id") @db.Uuid
+  academicYearId String?  @map("academic_year_id") @db.Uuid
+  sessionDate    DateTime @map("session_date") @db.Date
+  isHoliday      Boolean  @default(false) @map("is_holiday")
+  createdBy      String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  center        Center             @relation(fields: [centerId], references: [id])
+  program       Program?           @relation(fields: [programId], references: [id])
+  activity      Activity?          @relation(fields: [activityId], references: [id])
+  batch         Batch?             @relation(fields: [batchId], references: [id])
+  academicYear  AcademicYear?      @relation(fields: [academicYearId], references: [id])
+  createdByUser User               @relation("UserCreatedSessions", fields: [createdBy], references: [id])
+  records       AttendanceRecord[]
+
+  // Prisma unique requirement for optional fields doesn't translate perfectly cleanly 
+  // but acts as an advisory index constraint for prisma client. SQL schema handles it safely.
+  @@unique([centerId, sessionDate, batchId, activityId])
+  @@map("attendance_sessions")
+}
+
+model AttendanceRecord {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String           @map("session_id") @db.Uuid
+  studentId String           @map("student_id") @db.Uuid
+  centerId  String           @map("center_id") @db.Uuid
+  status    AttendanceStatus
+  remarks   String?
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  session AttendanceSession @relation(fields: [sessionId], references: [id])
+  student Student           @relation(fields: [studentId], references: [id])
+  center  Center            @relation(fields: [centerId], references: [id])
+
+  @@unique([sessionId, studentId])
+  @@map("attendance_records")
+}
+
+// =============================================================================
+// 6. EXAMS
+// =============================================================================
+
+model Exam {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId       String    @map("center_id") @db.Uuid
+  programId      String    @map("program_id") @db.Uuid
+  activityId     String?   @map("activity_id") @db.Uuid
+  academicYearId String?   @map("academic_year_id") @db.Uuid
+  examType       String    @map("exam_type")
+  name           String
+  examDate       DateTime? @map("exam_date") @db.Date
+  status         SubmissionStatus @default(DRAFT)
+  createdBy      String    @map("created_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  center        Center        @relation(fields: [centerId], references: [id])
+  program       Program       @relation(fields: [programId], references: [id])
+  activity      Activity?     @relation(fields: [activityId], references: [id])
+  academicYear  AcademicYear? @relation(fields: [academicYearId], references: [id])
+  createdByUser User          @relation("UserCreatedExams", fields: [createdBy], references: [id])
+  scores        ExamScore[]
+
+  @@map("exams")
+}
+
+model ExamScore {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  examId    String   @map("exam_id") @db.Uuid
+  studentId String   @map("student_id") @db.Uuid
+  centerId  String   @map("center_id") @db.Uuid
+  subjectId String   @map("subject_id") @db.Uuid
+  marks     Decimal? @db.Decimal(6, 2)
+  isAbsent  Boolean  @default(false) @map("is_absent")
+  remarks   String?
+  status    SubmissionStatus @default(DRAFT)
+  enteredBy String   @map("entered_by") @db.Uuid
+  enteredAt DateTime @default(now()) @map("entered_at") @db.Timestamptz
+
+  exam          Exam           @relation(fields: [examId], references: [id])
+  student       Student        @relation(fields: [studentId], references: [id])
+  center        Center         @relation(fields: [centerId], references: [id])
+  subject       ProgramSubject @relation(fields: [subjectId], references: [id])
+  enteredByUser User           @relation("UserEnteredScores", fields: [enteredBy], references: [id])
+
+  @@unique([examId, studentId, subjectId])
+  @@map("exam_scores")
+}
+
+// =============================================================================
+// 7. SKILL TRACKING
+// =============================================================================
+
+model StudentSkillLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId  String   @map("student_id") @db.Uuid
+  centerId   String   @map("center_id") @db.Uuid
+  skillId    String   @map("skill_id") @db.Uuid
+  level      Int
+  assessedBy String   @map("assessed_by") @db.Uuid
+  assessedOn DateTime @default(now()) @map("assessed_on") @db.Date
+  remarks    String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  student        Student         @relation(fields: [studentId], references: [id])
+  center         Center          @relation(fields: [centerId], references: [id])
+  skill          SkillDefinition @relation(fields: [skillId], references: [id])
+  assessedByUser User            @relation("SkillAssessedBy", fields: [assessedBy], references: [id])
+
+  @@map("student_skill_logs")
+}
+
+// =============================================================================
+// 8. FORMS
+// =============================================================================
+
+model FormTemplate {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  description   String?
+  formType      String   @map("form_type")
+  centerId      String?  @map("center_id") @db.Uuid
+  programId     String?  @map("program_id") @db.Uuid
+  targetEntity  String   @map("target_entity")
+  timeLimitMins Int?     @map("time_limit_mins")
+  isPublished   Boolean  @default(false) @map("is_published")
+  isActive      Boolean  @default(true) @map("is_active")
+  fillRoles     String[] @map("fill_roles")
+  viewRoles     String[] @map("view_roles")
+  schema        Json     @default("{\"fields\": []}")
+  createdBy     String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  externalSource String? // "kobo"
+  externalId     String? @unique // Kobo UID
+
+  center        Center?          @relation(fields: [centerId], references: [id])
+  program       Program?         @relation(fields: [programId], references: [id])
+  createdByUser User             @relation("UserCreatedFormTemplates", fields: [createdBy], references: [id])
+  assignments   FormAssignment[]
+  submissions   FormSubmission[]
+
+  @@map("form_templates")
+}
+
+model FormAssignment {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId String    @map("template_id") @db.Uuid
+  assignedTo String    @map("assigned_to") @db.Uuid
+  studentId  String?   @map("student_id") @db.Uuid
+  dueDate    DateTime? @map("due_date") @db.Timestamptz
+  assignedBy String    @map("assigned_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  template        FormTemplate     @relation(fields: [templateId], references: [id])
+  assignedUser    User             @relation("FormAssignedTo", fields: [assignedTo], references: [id])
+  student         Student?         @relation(fields: [studentId], references: [id])
+  assignedByUser  User             @relation("FormAssignedBy", fields: [assignedBy], references: [id])
+  formSubmissions FormSubmission[]
+
+  @@unique([templateId, assignedTo, studentId])
+  @@map("form_assignments")
+}
+
+model FormSubmission {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  templateId   String    @map("template_id") @db.Uuid
+  assignmentId String?   @map("assignment_id") @db.Uuid
+  studentId    String?   @map("student_id") @db.Uuid
+  centerId     String    @map("center_id") @db.Uuid
+  submittedBy  String    @map("submitted_by") @db.Uuid
+  startedAt    DateTime? @map("started_at") @db.Timestamptz
+  submittedAt  DateTime  @default(now()) @map("submitted_at") @db.Timestamptz
+  ipAddress    String?   @map("ip_address") // Prisma maps INET to String
+  userAgent    String?   @map("user_agent")
+  data         Json      @default("{}")
+
+  koboSubmissionId String?
+
+  template        FormTemplate    @relation(fields: [templateId], references: [id])
+  assignment      FormAssignment? @relation(fields: [assignmentId], references: [id])
+  student         Student?        @relation(fields: [studentId], references: [id])
+  center          Center          @relation(fields: [centerId], references: [id])
+  submittedByUser User            @relation("UserFormSubmissions", fields: [submittedBy], references: [id])
+
+  @@map("form_submissions")
+}
+
+// =============================================================================
+// 10. EQUIPMENT & RESOURCES
+// =============================================================================
+
+model Equipment {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId   String    @map("center_id") @db.Uuid
+  name       String
+  category   String
+  quantity   Int       @default(1)
+  condition  String    @default("good")
+  acquiredOn DateTime? @map("acquired_on") @db.Date
+  notes      String?
+  isActive   Boolean   @default(true) @map("is_active")
+  createdBy  String    @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  center        Center         @relation(fields: [centerId], references: [id])
+  createdByUser User           @relation("EquipmentCreatedBy", fields: [createdBy], references: [id])
+  logs          EquipmentLog[]
+
+  @@map("equipment")
+}
+
+model EquipmentLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  equipmentId String   @map("equipment_id") @db.Uuid
+  centerId    String   @map("center_id") @db.Uuid
+  action      String
+  notes       String?
+  loggedBy    String   @map("logged_by") @db.Uuid
+  loggedAt    DateTime @default(now()) @map("logged_at") @db.Timestamptz
+
+  equipment    Equipment @relation(fields: [equipmentId], references: [id])
+  center       Center    @relation(fields: [centerId], references: [id])
+  loggedByUser User      @relation("EquipmentLoggedBy", fields: [loggedBy], references: [id])
+
+  @@map("equipment_logs")
+}
+
+// =============================================================================
+// 11. ANNOUNCEMENTS
+// =============================================================================
+
+model Announcement {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId    String?   @map("center_id") @db.Uuid
+  programId   String?   @map("program_id") @db.Uuid
+  title       String
+  body        String
+  targetRoles String[]  @default([]) @map("target_roles")
+  isPinned    Boolean   @default(false) @map("is_pinned")
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz
+  createdBy   String    @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  center        Center?  @relation(fields: [centerId], references: [id])
+  program       Program? @relation(fields: [programId], references: [id])
+  createdByUser User     @relation("AnnouncementCreatedBy", fields: [createdBy], references: [id])
+
+  @@map("announcements")
+}
+
+// =============================================================================
+// 12. ALERTS
+// =============================================================================
+
+model AlertRule {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId    String?  @map("center_id") @db.Uuid
+  programId   String?  @map("program_id") @db.Uuid
+  metric      String
+  condition   String
+  threshold   Decimal
+  description String?
+  notifyRoles String[] @default(["supervisor"]) @map("notify_roles")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdBy   String   @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  center        Center?  @relation(fields: [centerId], references: [id])
+  program       Program? @relation(fields: [programId], references: [id])
+  createdByUser User     @relation("RuleCreatedBy", fields: [createdBy], references: [id])
+  alerts        Alert[]
+
+  @@map("alert_rules")
+}
+
+model Alert {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ruleId      String   @map("rule_id") @db.Uuid
+  recipientId String   @map("recipient_id") @db.Uuid
+  studentId   String?  @map("student_id") @db.Uuid
+  centerId    String   @map("center_id") @db.Uuid
+  message     String
+  metricValue Decimal? @map("metric_value")
+  isRead      Boolean  @default(false) @map("is_read")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  rule      AlertRule @relation(fields: [ruleId], references: [id])
+  recipient User      @relation("AlertRecipient", fields: [recipientId], references: [id])
+  student   Student?  @relation(fields: [studentId], references: [id])
+  center    Center    @relation(fields: [centerId], references: [id])
+
+  @@map("alerts")
+}
+
+// =============================================================================
+// 13. AUDIT
+// =============================================================================
+
+model AuditLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String
+  tableName String?  @map("table_name")
+  recordId  String?  @map("record_id") @db.Uuid
+  oldData   Json?    @map("old_data")
+  newData   Json?    @map("new_data")
+  ipAddress String?  @map("ip_address") // INET to String in Prisma
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User? @relation("AuditUser", fields: [userId], references: [id])
+
+  @@map("audit_log")
+}
+
+// =============================================================================
+// 14. ACTIVITY STATUS LOG
+// =============================================================================
+
+model ActivityStatusLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  activityId String   @map("activity_id") @db.Uuid
+  centerId   String   @map("center_id") @db.Uuid
+  fromStatus String?  @map("from_status")
+  toStatus   String   @map("to_status")
+  notes      String?
+  changedBy  String   @map("changed_by") @db.Uuid
+  changedAt  DateTime @default(now()) @map("changed_at") @db.Timestamptz
+
+  activity      Activity @relation(fields: [activityId], references: [id])
+  center        Center   @relation(fields: [centerId], references: [id])
+  changedByUser User     @relation("StatusChangedBy", fields: [changedBy], references: [id])
+
+  @@map("activity_status_log")
+}
+
+
+
+
+ 
