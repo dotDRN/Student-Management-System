@@ -3,10 +3,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import conversationService from "../services/conversation.service.js";
 
 export const createConversation = asyncHandler(async (req: Request, res: Response) => {
-    const conversation = await conversationService.createConversation(
-        req.user.userId,
-        req.body
-    );
+    const conversation = await conversationService.createConversation(req.user.id, req.body);
 
     return res.status(201).json({
         success: true,
@@ -16,9 +13,7 @@ export const createConversation = asyncHandler(async (req: Request, res: Respons
 });
 
 export const getUserConversations = asyncHandler(async (req: Request, res: Response) => {
-    const conversations = await conversationService.getUserConversations(
-        req.user.userId
-    );
+    const conversations = await conversationService.getUserConversations(req.user.id);
 
     return res.status(200).json({
         success: true,
@@ -29,7 +24,7 @@ export const getUserConversations = asyncHandler(async (req: Request, res: Respo
 
 export const getConversationById = asyncHandler(async (req: Request, res: Response) => {
     const conversation = await conversationService.getConversationById(
-        req.user.userId,
+        req.user.id,
         req.params.conversationId
     );
 
@@ -42,7 +37,7 @@ export const getConversationById = asyncHandler(async (req: Request, res: Respon
 
 export const updateConversation = asyncHandler(async (req: Request, res: Response) => {
     const conversation = await conversationService.updateConversation(
-        req.user.userId,
+        req.user.id,
         req.params.conversationId,
         req.body
     );
@@ -56,7 +51,7 @@ export const updateConversation = asyncHandler(async (req: Request, res: Respons
 
 export const archiveConversation = asyncHandler(async (req: Request, res: Response) => {
     await conversationService.archiveConversation(
-        req.user.userId,
+        req.user.id,
         req.params.conversationId
     );
 
@@ -68,7 +63,7 @@ export const archiveConversation = asyncHandler(async (req: Request, res: Respon
 
 export const getConversationMembers = asyncHandler(async (req: Request, res: Response) => {
     const members = await conversationService.getConversationMembers(
-        req.user.userId,
+        req.user.id,
         req.params.conversationId
     );
 
@@ -81,7 +76,7 @@ export const getConversationMembers = asyncHandler(async (req: Request, res: Res
 
 export const addMember = asyncHandler(async (req: Request, res: Response) => {
     const member = await conversationService.addMember(
-        req.user.userId,
+        req.user.id,
         req.params.conversationId,
         req.body
     );
@@ -95,7 +90,7 @@ export const addMember = asyncHandler(async (req: Request, res: Response) => {
 
 export const removeMember = asyncHandler(async (req: Request, res: Response) => {
     await conversationService.removeMember(
-        req.user.userId,
+        req.user.id,
         req.params.conversationId,
         req.params.memberId
     );
@@ -108,7 +103,7 @@ export const removeMember = asyncHandler(async (req: Request, res: Response) => 
 
 export const markConversationAsRead = asyncHandler(async (req: Request, res: Response) => {
     await conversationService.markConversationAsRead(
-        req.user.userId,
+        req.user.id,
         req.params.conversationId
     );
 

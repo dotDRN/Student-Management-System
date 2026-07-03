@@ -21,6 +21,8 @@ import koboRoutes from './routes/kobo.routes.js';
 
 import path from "path";
 import { fileURLToPath } from "url";
+import attachmentRoutes from "./routes/attachment.routes.js";
+import reactionRoutes from "./routes/reaction.routes.js";
 
 const app = express();
 
@@ -70,6 +72,11 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/skills", skillRoutes);
 app.use("/api/announcements", announcementRoutes);
 app.use("/api/kobo", koboRoutes);
+app.use("/api/chat/conversations", conversationRoutes);
+app.use("/api/chat/conversations", messageRoutes);
+app.use("/api/chat/messages", messageItemRoutes);
+app.use("/api/chat/messages", reactionRoutes);
+app.use("/api/chat/attachments", attachmentRoutes);
 
 // Resolve __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);

@@ -1,6 +1,5 @@
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["driverAdapters"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -66,6 +65,38 @@ enum SubmissionStatus {
   VERIFIED
 }
 
+enum ConversationType {
+  direct
+  group
+  center
+  activity
+  batch
+  program
+}
+
+enum ConversationRole {
+  owner
+  admin
+  member
+}
+
+enum MessageType {
+  text
+  image
+  file
+  audio
+  system
+}
+
+enum ReactionType {
+  like
+  love
+  laugh
+  wow
+  sad
+  angry
+}
+
 // =============================================================================
 // 1. FOUNDATION TABLES
 // =============================================================================
@@ -114,6 +145,7 @@ model Center {
   equipmentLogs      EquipmentLog[]
   announcements      Announcement[]
   activityStatusLogs ActivityStatusLog[]
+  conversations      Conversation[]
 
   @@map("centers")
 }
@@ -139,6 +171,7 @@ model Program {
   formTemplates      FormTemplate[]
   alertRules         AlertRule[]
   announcements      Announcement[]
+  conversations      Conversation[]
 
   @@map("programs")
 }
@@ -203,35 +236,41 @@ model User {
   lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz
-  createdBy    String?   @db.Uuid @map("created_by")
+  createdBy    String?   @map("created_by") @db.Uuid
   creator      User?     @relation("UserToCreator", fields: [createdBy], references: [id])
   createdUsers User[]    @relation("UserToCreator")
 
-  centerAssignments     UserCenterAssignment[]   @relation("UserAssignments")
-  assignedByCenters     UserCenterAssignment[]   @relation("AssignedByUser")
-  activityAssignments   UserActivityAssignment[] @relation("UserActivityAssignments")
-  assignedByActivities  UserActivityAssignment[] @relation("AssignedByUserActivity")
-  parentStudents        ParentStudent[]
-  createdActivities     Activity[]               @relation("UserCreatedActivities")
-  taughtBatches         Batch[]                  @relation("BatchTeacher")
-  approvedTransfers     StudentTransfer[]        @relation("TransferApprovedBy")
-  createdSessions       AttendanceSession[]      @relation("UserCreatedSessions")
-  createdExams          Exam[]                   @relation("UserCreatedExams")
-  enteredScores         ExamScore[]              @relation("UserEnteredScores")
-  assessedSkills        StudentSkillLog[]        @relation("SkillAssessedBy")
-  createdFormTemplates  FormTemplate[]           @relation("UserCreatedFormTemplates")
-  assignedFormsBy       FormAssignment[]         @relation("FormAssignedBy")
-  assignedFormsTo       FormAssignment[]         @relation("FormAssignedTo")
-  formSubmissions       FormSubmission[]         @relation("UserFormSubmissions")
-  createdAlertRules     AlertRule[]              @relation("RuleCreatedBy")
-  receivedAlerts        Alert[]                  @relation("AlertRecipient")
-  auditLogs             AuditLog[]               @relation("AuditUser")
-  createdEquipment      Equipment[]              @relation("EquipmentCreatedBy")
-  loggedEquipment       EquipmentLog[]           @relation("EquipmentLoggedBy")
-  createdAnnouncements  Announcement[]           @relation("AnnouncementCreatedBy")
-  changedActivityStatus ActivityStatusLog[]      @relation("StatusChangedBy")
-  createdStudents       Student[]                @relation("StudentCreatedBy")
-  activityEnrollmentsRequested ActivityEnrollment[] @relation("ActivityRequestedBy")
+  centerAssignments            UserCenterAssignment[]   @relation("UserAssignments")
+  assignedByCenters            UserCenterAssignment[]   @relation("AssignedByUser")
+  activityAssignments          UserActivityAssignment[] @relation("UserActivityAssignments")
+  assignedByActivities         UserActivityAssignment[] @relation("AssignedByUserActivity")
+  parentStudents               ParentStudent[]
+  createdActivities            Activity[]               @relation("UserCreatedActivities")
+  taughtBatches                Batch[]                  @relation("BatchTeacher")
+  approvedTransfers            StudentTransfer[]        @relation("TransferApprovedBy")
+  createdSessions              AttendanceSession[]      @relation("UserCreatedSessions")
+  createdExams                 Exam[]                   @relation("UserCreatedExams")
+  enteredScores                ExamScore[]              @relation("UserEnteredScores")
+  assessedSkills               StudentSkillLog[]        @relation("SkillAssessedBy")
+  createdFormTemplates         FormTemplate[]           @relation("UserCreatedFormTemplates")
+  assignedFormsBy              FormAssignment[]         @relation("FormAssignedBy")
+  assignedFormsTo              FormAssignment[]         @relation("FormAssignedTo")
+  formSubmissions              FormSubmission[]         @relation("UserFormSubmissions")
+  createdAlertRules            AlertRule[]              @relation("RuleCreatedBy")
+  receivedAlerts               Alert[]                  @relation("AlertRecipient")
+  auditLogs                    AuditLog[]               @relation("AuditUser")
+  createdEquipment             Equipment[]              @relation("EquipmentCreatedBy")
+  loggedEquipment              EquipmentLog[]           @relation("EquipmentLoggedBy")
+  createdAnnouncements         Announcement[]           @relation("AnnouncementCreatedBy")
+  changedActivityStatus        ActivityStatusLog[]      @relation("StatusChangedBy")
+  createdStudents              Student[]                @relation("StudentCreatedBy")
+  activityEnrollmentsRequested ActivityEnrollment[]     @relation("ActivityRequestedBy")
+  // Chat
+
+  conversationMemberships ConversationMember[] @relation("ConversationMembership")
+  createdConversations    Conversation[]       @relation("ConversationCreator")
+  sentMessages            Message[]            @relation("MessageSender")
+  messageReactions        MessageReaction[]    @relation("MessageReactionUser")
 
   @@map("users")
 }
@@ -275,15 +314,16 @@ model Activity {
   completionNotes String?        @map("completion_notes")
   attendanceCount Int?           @map("attendance_count")
 
-  center             Center                   @relation(fields: [centerId], references: [id])
-  program            Program?                 @relation(fields: [programId], references: [id])
-  createdByUser      User                     @relation("UserCreatedActivities", fields: [createdBy], references: [id])
-  userAssignments    UserActivityAssignment[]
-  batches            Batch[]
-  attendanceSessions AttendanceSession[]
-  exams              Exam[]
-  activityStatusLogs ActivityStatusLog[]
+  center              Center                   @relation(fields: [centerId], references: [id])
+  program             Program?                 @relation(fields: [programId], references: [id])
+  createdByUser       User                     @relation("UserCreatedActivities", fields: [createdBy], references: [id])
+  userAssignments     UserActivityAssignment[]
+  batches             Batch[]
+  attendanceSessions  AttendanceSession[]
+  exams               Exam[]
+  activityStatusLogs  ActivityStatusLog[]
   activityEnrollments ActivityEnrollment[]
+  conversations       Conversation[]
 
   @@map("activities")
 }
@@ -336,6 +376,7 @@ model Batch {
   teacher            User?               @relation("BatchTeacher", fields: [teacherId], references: [id])
   batchEnrollments   BatchEnrollment[]
   attendanceSessions AttendanceSession[]
+  conversations      Conversation[]
 
   @@map("batches")
 }
@@ -345,45 +386,45 @@ model Batch {
 // =============================================================================
 
 model Student {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  centerId       String    @map("center_id") @db.Uuid
-  programId      String?   @map("program_id") @db.Uuid
-  academicYearId String?   @map("academic_year_id") @db.Uuid
-  createdById    String?   @map("created_by") @db.Uuid
-  fullName       String    @map("full_name")
-  rollNumber     String?   @map("roll_number")
-  dob            DateTime? @db.Date
-  gender         Gender?
-  guardianName   String?   @map("guardian_name")
-  guardianPhone  String?   @map("guardian_phone")
-  address        String?
-  stream         String?
-  post12thChoice String?   @map("post_12th_choice")
-  collegeName    String?   @map("college_name")
-  educationDiscontinued Boolean @default(false) @map("education_discontinued")
-  enrollmentDate DateTime  @default(now()) @map("enrollment_date") @db.Date
-  isActive       Boolean   @default(true) @map("is_active")
-  transferStatus TransferStatus @default(active) @map("transfer_status")
-  totalFees      Decimal?  @map("total_fees") @db.Decimal(10, 2)
-  feesPaid       Decimal   @default(0) @map("fees_paid") @db.Decimal(10, 2)
-  isFullyPaid    Boolean   @default(false) @map("is_fully_paid")
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId              String         @map("center_id") @db.Uuid
+  programId             String?        @map("program_id") @db.Uuid
+  academicYearId        String?        @map("academic_year_id") @db.Uuid
+  createdById           String?        @map("created_by") @db.Uuid
+  fullName              String         @map("full_name")
+  rollNumber            String?        @map("roll_number")
+  dob                   DateTime?      @db.Date
+  gender                Gender?
+  guardianName          String?        @map("guardian_name")
+  guardianPhone         String?        @map("guardian_phone")
+  address               String?
+  stream                String?
+  post12thChoice        String?        @map("post_12th_choice")
+  collegeName           String?        @map("college_name")
+  educationDiscontinued Boolean        @default(false) @map("education_discontinued")
+  enrollmentDate        DateTime       @default(now()) @map("enrollment_date") @db.Date
+  isActive              Boolean        @default(true) @map("is_active")
+  transferStatus        TransferStatus @default(active) @map("transfer_status")
+  totalFees             Decimal?       @map("total_fees") @db.Decimal(10, 2)
+  feesPaid              Decimal        @default(0) @map("fees_paid") @db.Decimal(10, 2)
+  isFullyPaid           Boolean        @default(false) @map("is_fully_paid")
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt             DateTime       @default(now()) @map("updated_at") @db.Timestamptz
 
-  center            Center             @relation(fields: [centerId], references: [id])
-  program           Program?           @relation(fields: [programId], references: [id])
-  academicYear      AcademicYear?      @relation(fields: [academicYearId], references: [id])
-  createdByUser     User?              @relation("StudentCreatedBy", fields: [createdById], references: [id])
-  transfers         StudentTransfer[]
-  batchEnrollments  BatchEnrollment[]
-  parents           ParentStudent[]
-  attendanceRecords AttendanceRecord[]
-  examScores        ExamScore[]
-  skillLogs         StudentSkillLog[]
-  formAssignments   FormAssignment[]
-  formSubmissions   FormSubmission[]
-  alerts            Alert[]
-  feePayments       FeePayment[]
+  center              Center               @relation(fields: [centerId], references: [id])
+  program             Program?             @relation(fields: [programId], references: [id])
+  academicYear        AcademicYear?        @relation(fields: [academicYearId], references: [id])
+  createdByUser       User?                @relation("StudentCreatedBy", fields: [createdById], references: [id])
+  transfers           StudentTransfer[]
+  batchEnrollments    BatchEnrollment[]
+  parents             ParentStudent[]
+  attendanceRecords   AttendanceRecord[]
+  examScores          ExamScore[]
+  skillLogs           StudentSkillLog[]
+  formAssignments     FormAssignment[]
+  formSubmissions     FormSubmission[]
+  alerts              Alert[]
+  feePayments         FeePayment[]
   activityEnrollments ActivityEnrollment[]
 
   @@map("students")
@@ -497,17 +538,17 @@ model AttendanceRecord {
 // =============================================================================
 
 model Exam {
-  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  centerId       String    @map("center_id") @db.Uuid
-  programId      String    @map("program_id") @db.Uuid
-  activityId     String?   @map("activity_id") @db.Uuid
-  academicYearId String?   @map("academic_year_id") @db.Uuid
-  examType       String    @map("exam_type")
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  centerId       String           @map("center_id") @db.Uuid
+  programId      String           @map("program_id") @db.Uuid
+  activityId     String?          @map("activity_id") @db.Uuid
+  academicYearId String?          @map("academic_year_id") @db.Uuid
+  examType       String           @map("exam_type")
   name           String
-  examDate       DateTime? @map("exam_date") @db.Date
+  examDate       DateTime?        @map("exam_date") @db.Date
   status         SubmissionStatus @default(DRAFT)
-  createdBy      String    @map("created_by") @db.Uuid
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  createdBy      String           @map("created_by") @db.Uuid
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz
 
   center        Center        @relation(fields: [centerId], references: [id])
   program       Program       @relation(fields: [programId], references: [id])
@@ -520,17 +561,17 @@ model Exam {
 }
 
 model ExamScore {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  examId    String   @map("exam_id") @db.Uuid
-  studentId String   @map("student_id") @db.Uuid
-  centerId  String   @map("center_id") @db.Uuid
-  subjectId String   @map("subject_id") @db.Uuid
-  marks     Decimal? @db.Decimal(6, 2)
-  isAbsent  Boolean  @default(false) @map("is_absent")
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  examId    String           @map("exam_id") @db.Uuid
+  studentId String           @map("student_id") @db.Uuid
+  centerId  String           @map("center_id") @db.Uuid
+  subjectId String           @map("subject_id") @db.Uuid
+  marks     Decimal?         @db.Decimal(6, 2)
+  isAbsent  Boolean          @default(false) @map("is_absent")
   remarks   String?
   status    SubmissionStatus @default(DRAFT)
-  enteredBy String   @map("entered_by") @db.Uuid
-  enteredAt DateTime @default(now()) @map("entered_at") @db.Timestamptz
+  enteredBy String           @map("entered_by") @db.Uuid
+  enteredAt DateTime         @default(now()) @map("entered_at") @db.Timestamptz
 
   exam          Exam           @relation(fields: [examId], references: [id])
   student       Student        @relation(fields: [studentId], references: [id])
@@ -792,7 +833,101 @@ model ActivityStatusLog {
   @@map("activity_status_log")
 }
 
+// v1.1.0
 
+model Conversation {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type        ConversationType
+  title       String?
+  description String?
+  avatarUrl   String?          @map("avatar_url")
 
+  createdBy  String   @map("created_by") @db.Uuid
+  centerId   String?  @map("center_id") @db.Uuid
+  activityId String?  @map("activity_id") @db.Uuid
+  batchId    String?  @map("batch_id") @db.Uuid
+  programId  String?  @map("program_id") @db.Uuid
+  isArchived Boolean  @default(false) @map("is_archived")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
- 
+  creator  User      @relation("ConversationCreator", fields: [createdBy], references: [id])
+  center   Center?   @relation(fields: [centerId], references: [id])
+  activity Activity? @relation(fields: [activityId], references: [id])
+  batch    Batch?    @relation(fields: [batchId], references: [id])
+  program  Program?  @relation(fields: [programId], references: [id])
+
+  members  ConversationMember[]
+  messages Message[]
+
+  @@map("conversations")
+}
+
+model ConversationMember {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String           @map("conversation_id") @db.Uuid
+  userId         String           @map("user_id") @db.Uuid
+  role           ConversationRole @default(member)
+
+  joinedAt   DateTime  @default(now()) @map("joined_at") @db.Timestamptz
+  lastReadAt DateTime? @map("last_read_at") @db.Timestamptz
+  mutedUntil DateTime? @map("muted_until") @db.Timestamptz
+  isPinned   Boolean   @default(false) @map("is_pinned")
+  isArchived Boolean   @default(false) @map("is_archived")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  user         User         @relation("ConversationMembership", fields: [userId], references: [id])
+
+  @@unique([conversationId, userId])
+  @@map("conversation_members")
+}
+
+model Message {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String      @map("conversation_id") @db.Uuid
+  senderId       String      @map("sender_id") @db.Uuid
+  type           MessageType @default(text)
+  content        String?
+
+  replyToId String?  @map("reply_to_id") @db.Uuid
+  isEdited  Boolean  @default(false) @map("is_edited")
+  isDeleted Boolean  @default(false) @map("is_deleted")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  conversation Conversation        @relation(fields: [conversationId], references: [id])
+  sender       User                @relation("MessageSender", fields: [senderId], references: [id])
+  replyTo      Message?            @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies      Message[]           @relation("MessageReplies")
+  attachments  MessageAttachment[]
+  reactions    MessageReaction[]
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model MessageAttachment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId String   @map("message_id") @db.Uuid
+  url       String
+  fileName  String   @map("file_name")
+  mimeType  String   @map("mime_type")
+  fileSize  Int      @map("file_size")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  message   Message  @relation(fields: [messageId], references: [id])
+
+  @@map("message_attachments")
+}
+
+model MessageReaction {
+  id        String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId String       @map("message_id") @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  reaction  ReactionType
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  message   Message      @relation(fields: [messageId], references: [id])
+  user      User         @relation("MessageReactionUser", fields: [userId], references: [id])
+
+  @@unique([messageId, userId, reaction])
+  @@map("message_reactions")
+}

@@ -2,8 +2,6 @@ import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken, JwtPayload } from '../lib/auth.js'; 
 import { ADMIN_ROLES, Role } from '../config/rbac.js';
 
-type AuthenticatedRequest = Request & { user?: JwtPayload };
-
 /**
  * AUTHENTICATE: The "Front Gate"
  * Verifies the JWT token and checks if the account is active.
@@ -39,7 +37,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
       });
     }
 
-    (req as AuthenticatedRequest).user = decoded;
+    (req).user = decoded;
     next();
   } catch (err) {
     return res.status(401).json({
