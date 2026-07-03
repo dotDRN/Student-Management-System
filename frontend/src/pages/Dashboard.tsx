@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { Users, BookOpen, PlusCircle, Trash2, TrendingUp, Target, Activity } from 'lucide-react';
-import { getDashboardPending, getReportsDashboard, type DashboardPendingCounts } from '../services/reports.service';
+import { getReportsDashboard } from '../services/reports.service';
 
 export const Dashboard: React.FC = () => {
   const currentUser = useAuthStore((s) => s.currentUser);
@@ -51,8 +51,9 @@ export const Dashboard: React.FC = () => {
       setCenterName('');
       setCenterLocation('');
       void fetchDashboardData();
-    } catch (err) {
-      alert('Failed to add center. Please check your permissions.');
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { message?: string }}})?.response?.data?.message || 'Failed to add center. Please check your permissions.';
+      alert(message);
     } finally {
       setAddingCenter(false);
     }
@@ -214,8 +215,9 @@ export const Dashboard: React.FC = () => {
                                   const m = await import('../services/centers.service');
                                   await m.deleteCenter(String(c.centerId));
                                   void fetchDashboardData();
-                                } catch (err: any) {
-                                  alert(err.response?.data?.message || 'Failed to delete center.');
+                                } catch (error: unknown) {
+                                  const message = (error as { response?: { data?: { message?: string }}})?.response?.data?.message || 'Failed to delete center.';
+                                  alert(message);
                                 }
                               }
                             }}

@@ -76,22 +76,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Path to frontend build — only used in production
+// Serve frontend only in production
 if (process.env.NODE_ENV === "production") {
   const frontendPath = path.join(__dirname, "../../frontend/dist");
 
   app.use(express.static(frontendPath));
 
-<<<<<<< HEAD
-  app.use((req, res) => {
-    if (req.path.startsWith('/api')) {
-      return res.status(404).json({ message: 'API route not found' });
+  // Catch all non-API routes and serve the frontend
+  app.get("/{*path}", (req, res) => {
+    if (req.path.startsWith("/api")) {
+      return res.status(404).json({
+        message: "API route not found",
+      });
     }
 
-=======
-  // Use a named parameter with a regex to catch everything
-  // This satisfies the new 'path-to-regexp' requirements
-  app.get('/{*path}', (req, res) => {
->>>>>>> origin/vansh
     res.sendFile(path.join(frontendPath, "index.html"));
   });
 }

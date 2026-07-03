@@ -13,22 +13,26 @@ async function main() {
 
   // 0. Cleanup Phase (CRITICAL ORDER FOR FOREIGN KEYS)
   console.log("🧹 Cleaning up old records in correct dependency order...");
-  
+
   // Tier 1: Leaf nodes (No dependencies)
 
+  await prisma.auditLog.deleteMany();
+  await prisma.alert.deleteMany();
+  await prisma.activityStatusLog.deleteMany();
+  await prisma.activityEnrollment.deleteMany();
   await prisma.announcement.deleteMany();
   await prisma.formSubmission.deleteMany();
   await prisma.formAssignment.deleteMany();
   await prisma.equipmentLog.deleteMany();
   await prisma.studentSkillLog.deleteMany();
   await prisma.examScore.deleteMany();
-  await prisma.attendanceRecord.deleteMany(); // Was missing!
-  await prisma.studentTransfer.deleteMany();  // New!
-  await prisma.feePayment.deleteMany();      // New!
+  await prisma.attendanceRecord.deleteMany();
+  await prisma.studentTransfer.deleteMany();
+  await prisma.feePayment.deleteMany();
   await prisma.userActivityAssignment.deleteMany();
   await prisma.userCenterAssignment.deleteMany();
-  await prisma.parentStudent.deleteMany();    // Was missing!
-  await prisma.batchEnrollment.deleteMany();  // Was missing!
+  await prisma.parentStudent.deleteMany();
+  await prisma.batchEnrollment.deleteMany();
 
   // Tier 2: Dependent nodes
   await prisma.attendanceSession.deleteMany(); // Was missing!
@@ -37,7 +41,7 @@ async function main() {
   await prisma.equipment.deleteMany();
   await prisma.formTemplate.deleteMany();
   await prisma.skillDefinition.deleteMany();
-  await prisma.batch.deleteMany();            // Was missing!
+  await prisma.batch.deleteMany(); // Was missing!
 
   // Tier 3: Core entities
   await prisma.student.deleteMany();
@@ -50,14 +54,24 @@ async function main() {
 
   console.log("📅 Seeding Academic Years...");
   const ay2026 = await prisma.academicYear.create({
-    data: { label: "2026-27", startDate: new Date(2026, 5, 1), endDate: new Date(2027, 4, 31), isCurrent: true }
+    data: {
+      label: "2026-27",
+      startDate: new Date(2026, 5, 1),
+      endDate: new Date(2027, 4, 31),
+      isCurrent: true,
+    },
   });
   const currentAY = ay2026;
 
   // 2. Programs & Subjects
   console.log("🎓 Seeding Programs & Subjects...");
   const programData = [
-    { code: "SWAYAM", name: "Swayam Youth Development", ageMin: 15, ageMax: 18 },
+    {
+      code: "SWAYAM",
+      name: "Swayam Youth Development",
+      ageMin: 15,
+      ageMax: 18,
+    },
     { code: "SHIKSHA", name: "Shiksha Early Learning", ageMin: 3, ageMax: 6 },
     { code: "KUSUM", name: "Kusum Women Empowerment", ageMin: 18, ageMax: 45 },
     { code: "UDAY", name: "Uday Vocational Training", ageMin: 18, ageMax: 30 },
@@ -67,10 +81,16 @@ async function main() {
     pMap[p.code] = await prisma.program.create({
       data: { ...p, isActive: true },
     });
-    const subjects = ["English", "Mathematics", "Science", "Digital Literacy", "Social Skills"];
+    const subjects = [
+      "English",
+      "Mathematics",
+      "Science",
+      "Digital Literacy",
+      "Social Skills",
+    ];
     for (const sName of subjects) {
       await prisma.programSubject.create({
-        data: { programId: pMap[p.code].id, name: sName, maxMarks: 100 }
+        data: { programId: pMap[p.code].id, name: sName, maxMarks: 100 },
       });
     }
   }
@@ -86,13 +106,15 @@ async function main() {
   ];
   const centers = [];
   for (const c of centerData) {
-    const center = await prisma.center.create({ data: { name: c.name, location: c.location, isActive: true } });
+    const center = await prisma.center.create({
+      data: { name: c.name, location: c.location, isActive: true },
+    });
     centers.push(center);
     await prisma.centerProgram.create({
-      data: { centerId: center.id, programId: pMap.SWAYAM.id }
+      data: { centerId: center.id, programId: pMap.SWAYAM.id },
     });
     await prisma.centerProgram.create({
-      data: { centerId: center.id, programId: pMap.SHIKSHA.id }
+      data: { centerId: center.id, programId: pMap.SHIKSHA.id },
     });
   }
 
@@ -102,54 +124,122 @@ async function main() {
   const staffPassword = await bcrypt.hash("Staff@123", 10);
 
   const superAdmin = await prisma.user.create({
-    data: { email: 'super_admin@sparsha.org', fullName: 'System Super Admin', passwordHash: superPassword, role: 'super_admin', isActive: true },
+    data: {
+      email: "super_admin@sparsha.org",
+      fullName: "System Super Admin",
+      passwordHash: superPassword,
+      role: "super_admin",
+      isActive: true,
+    },
   });
 
   const techAdmin = await prisma.user.create({
-    data: { email: 'tech_admin@sparsha.org', fullName: 'Technical Support Admin', passwordHash: superPassword, role: 'tech_admin', createdBy: superAdmin.id, isActive: true },
+    data: {
+      email: "tech_admin@sparsha.org",
+      fullName: "Technical Support Admin",
+      passwordHash: superPassword,
+      role: "tech_admin",
+      createdBy: superAdmin.id,
+      isActive: true,
+    },
   });
 
   const cAdmins = [];
   const teachers = [];
   for (let i = 0; i < centers.length; i++) {
     const ca = await prisma.user.create({
-      data: { email: `center_admin_${i + 1}@sparsha.org`, fullName: `Admin - ${centers[i].name}`, passwordHash: staffPassword, role: 'center_admin', createdBy: superAdmin.id, isActive: true },
+      data: {
+        email: `center_admin_${i + 1}@sparsha.org`,
+        fullName: `Admin - ${centers[i].name}`,
+        passwordHash: staffPassword,
+        role: "center_admin",
+        createdBy: superAdmin.id,
+        isActive: true,
+      },
     });
     cAdmins.push(ca);
     await prisma.userCenterAssignment.create({
-      data: { userId: ca.id, centerId: centers[i].id, createdBy: superAdmin.id, validFrom: new Date() }
+      data: {
+        userId: ca.id,
+        centerId: centers[i].id,
+        createdBy: superAdmin.id,
+        validFrom: new Date(),
+      },
     });
 
     for (let j = 0; j < 2; j++) {
       const t = await prisma.user.create({
-        data: { email: `teacher_${i * 2 + j + 1}@sparsha.org`, fullName: `Teacher ${j + 1} - ${centers[i].name}`, passwordHash: staffPassword, role: 'teacher', createdBy: ca.id, isActive: true },
+        data: {
+          email: `teacher_${i * 2 + j + 1}@sparsha.org`,
+          fullName: `Teacher ${j + 1} - ${centers[i].name}`,
+          passwordHash: staffPassword,
+          role: "teacher",
+          createdBy: ca.id,
+          isActive: true,
+        },
       });
       teachers.push(t);
       await prisma.userCenterAssignment.create({
-        data: { userId: t.id, centerId: centers[i].id, createdBy: ca.id, validFrom: new Date() }
+        data: {
+          userId: t.id,
+          centerId: centers[i].id,
+          createdBy: ca.id,
+          validFrom: new Date(),
+        },
       });
     }
 
     // Add a staff member for each center
     const st = await prisma.user.create({
-      data: { email: `staff_${i + 1}@sparsha.org`, fullName: `Staff - ${centers[i].name}`, passwordHash: staffPassword, role: 'staff', createdBy: ca.id, isActive: true },
+      data: {
+        email: `staff_${i + 1}@sparsha.org`,
+        fullName: `Staff - ${centers[i].name}`,
+        passwordHash: staffPassword,
+        role: "staff",
+        createdBy: ca.id,
+        isActive: true,
+      },
     });
     await prisma.userCenterAssignment.create({
-      data: { userId: st.id, centerId: centers[i].id, createdBy: ca.id, validFrom: new Date() }
+      data: {
+        userId: st.id,
+        centerId: centers[i].id,
+        createdBy: ca.id,
+        validFrom: new Date(),
+      },
     });
   }
 
   // 🔥 ADDING VANSH'S TEST USERS
   console.log("💎 Adding Vansh's Test Users...");
   const vanshAdmin = await prisma.user.create({
-    data: { email: 'center_admin_1', fullName: 'Vansh - Center Head', passwordHash: superPassword, role: 'center_admin', createdBy: superAdmin.id, isActive: true },
+    data: {
+      email: "center_admin_1",
+      fullName: "Vansh - Center Head",
+      passwordHash: superPassword,
+      role: "center_admin",
+      createdBy: superAdmin.id,
+      isActive: true,
+    },
   });
   await prisma.userCenterAssignment.create({
-    data: { userId: vanshAdmin.id, centerId: centers[0].id, createdBy: superAdmin.id, validFrom: new Date() }
+    data: {
+      userId: vanshAdmin.id,
+      centerId: centers[0].id,
+      createdBy: superAdmin.id,
+      validFrom: new Date(),
+    },
   });
-  
+
   await prisma.user.create({
-    data: { email: 'teacher_1', fullName: 'Teacher One (Vansh)', passwordHash: staffPassword, role: 'teacher', createdBy: vanshAdmin.id, isActive: true },
+    data: {
+      email: "teacher_1",
+      fullName: "Teacher One (Vansh)",
+      passwordHash: staffPassword,
+      role: "teacher",
+      createdBy: vanshAdmin.id,
+      isActive: true,
+    },
   });
 
   // 5. Students
@@ -167,10 +257,10 @@ async function main() {
         dob: new Date(2005 + (i % 12), i % 12, (i % 28) + 1),
         gender: i % 2 === 0 ? "male" : "female",
         guardianName: `Parent of ${i + 1}`,
-        guardianPhone: `98765432${i.toString().padStart(2, '0')}`,
+        guardianPhone: `98765432${i.toString().padStart(2, "0")}`,
         isActive: true,
-        createdById: teachers[i % teachers.length].id
-      }
+        createdById: teachers[i % teachers.length].id,
+      },
     });
     students.push(s);
   }
@@ -189,7 +279,7 @@ async function main() {
         endDate: new Date(2026, 4, 15),
         createdBy: superAdmin.id,
         status: "planned",
-      }
+      },
     });
   }
 
@@ -203,11 +293,22 @@ async function main() {
     for (const center of centers) {
       for (const p of [pMap.SWAYAM, pMap.SHIKSHA]) {
         const session = await prisma.attendanceSession.create({
-          data: { centerId: center.id, programId: p.id, sessionDate: date, createdBy: teachers[0].id, academicYearId: currentAY.id }
+          data: {
+            centerId: center.id,
+            programId: p.id,
+            sessionDate: date,
+            createdBy: teachers[0].id,
+            academicYearId: currentAY.id,
+          },
         });
-        const centerStudents = students.filter(s => s.centerId === center.id && s.programId === p.id);
-        const records = centerStudents.map(s => ({
-          sessionId: session.id, studentId: s.id, centerId: center.id, status: Math.random() > 0.15 ? "present" : "absent" as any
+        const centerStudents = students.filter(
+          (s) => s.centerId === center.id && s.programId === p.id,
+        );
+        const records = centerStudents.map((s) => ({
+          sessionId: session.id,
+          studentId: s.id,
+          centerId: center.id,
+          status: Math.random() > 0.15 ? "present" : ("absent" as any),
         }));
         await prisma.attendanceRecord.createMany({ data: records });
       }
@@ -217,13 +318,17 @@ async function main() {
   // 8. Exams
   console.log("📝 Seeding Baseline & Endline Exams...");
   for (const center of centers) {
-    const swayamSubs = await prisma.programSubject.findMany({ where: { programId: pMap.SWAYAM.id } });
-    const targetSubs = swayamSubs.filter(s => ["English", "Science", "Mathematics"].includes(s.name));
-    
+    const swayamSubs = await prisma.programSubject.findMany({
+      where: { programId: pMap.SWAYAM.id },
+    });
+    const targetSubs = swayamSubs.filter((s) =>
+      ["English", "Science", "Mathematics"].includes(s.name),
+    );
+
     for (const type of ["baseline", "endline"]) {
       const examDate = new Date(currentAY.startDate);
       examDate.setDate(examDate.getDate() + (type === "baseline" ? 30 : 200));
-      
+
       const exam = await prisma.exam.create({
         data: {
           name: `${type.toUpperCase()} Exam 2026 - ${center.name}`,
@@ -232,17 +337,25 @@ async function main() {
           programId: pMap.SWAYAM.id,
           academicYearId: currentAY.id,
           createdBy: teachers[0].id,
-          examDate: examDate
-        }
+          examDate: examDate,
+        },
       });
-      const centerSwayamStudents = students.filter(s => s.centerId === center.id && s.programId === pMap.SWAYAM.id);
+      const centerSwayamStudents = students.filter(
+        (s) => s.centerId === center.id && s.programId === pMap.SWAYAM.id,
+      );
       const scores = [];
       for (const s of centerSwayamStudents) {
         for (const sub of targetSubs) {
           scores.push({
-            examId: exam.id, studentId: s.id, centerId: center.id, subjectId: sub.id,
-            marks: type === "baseline" ? 15 + Math.random() * 20 : 25 + Math.random() * 24,
-            enteredBy: teachers[0].id
+            examId: exam.id,
+            studentId: s.id,
+            centerId: center.id,
+            subjectId: sub.id,
+            marks:
+              type === "baseline"
+                ? 15 + Math.random() * 20
+                : 25 + Math.random() * 24,
+            enteredBy: teachers[0].id,
           });
         }
       }
@@ -270,7 +383,7 @@ async function main() {
           condition: "good",
           centerId: center.id,
           createdBy: teachers[0].id,
-        }
+        },
       });
     }
   }
@@ -285,7 +398,11 @@ async function main() {
   const createdSkills = [];
   for (const s of skillDefs) {
     const sk = await prisma.skillDefinition.create({
-      data: { name: s.name, programId: pMap.SWAYAM.id, description: "Standard evaluation" }
+      data: {
+        name: s.name,
+        programId: pMap.SWAYAM.id,
+        description: "Standard evaluation",
+      },
     });
     createdSkills.push(sk);
   }
@@ -342,4 +459,9 @@ async function main() {
   console.log("DB USER COUNT AT END:", c);
 }
 
-main().catch(e => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());
