@@ -4,8 +4,8 @@ import {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
-} from '@/utils/jwt.js';
-import { AppError } from '@/lib/errors.js';
+} from '../utils/jwt.js';
+import { AppError } from '../lib/errors.js';
 
 const SALT_ROUNDS = 10;
 

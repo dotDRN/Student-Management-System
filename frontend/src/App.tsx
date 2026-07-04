@@ -20,6 +20,7 @@ import { FormRendererPage } from './pages/Forms/FormRendererPage';
 import { FormSubmissionsPage } from './pages/Forms/FormSubmissionsPage';
 import { Announcements } from './pages/Announcements';
 import { Activities } from './pages/Activities';
+import { ChatPage } from './pages/ChatPage';
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "./store/useAuthStore";
@@ -83,6 +84,7 @@ function App() {
           <Route path="/forms/:templateId/submissions" element={<FormSubmissionsPage />} />
           <Route path="/activities" element={<Activities />} />
           <Route path="/announcements" element={<Announcements />} />
+          <Route path="/chat" element={<ChatPage />} />
         </Route>
 
         {/* --- LEVEL 2: DATA ENTRY (Teachers & Admins) --- */}

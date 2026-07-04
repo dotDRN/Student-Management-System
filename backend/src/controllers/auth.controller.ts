@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
-import * as authService from '@/services/auth.service.js';
-import { verifyRefreshToken, generateAccessToken } from '@/utils/jwt.js';
-import { AppError } from '@/lib/errors.js';
+import * as authService from '../services/auth.service.js';
+import { verifyRefreshToken, generateAccessToken } from '../utils/jwt.js';
+import { AppError } from '../lib/errors.js';
 // Extend Request to include user (from auth middleware)
 
 /**
