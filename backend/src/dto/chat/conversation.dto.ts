@@ -16,3 +16,4 @@ export interface CreateConversationDto {
     batchId?: string;
     programId?: string;
 }
+
