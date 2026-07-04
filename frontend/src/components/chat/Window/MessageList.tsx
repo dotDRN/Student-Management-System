@@ -1,6 +1,6 @@
-import React, { useRef, useEffect, useState, useLayoutEffect } from 'react';
+import React, { useRef, useState, useLayoutEffect } from 'react';
 import { ArrowDown } from 'lucide-react';
-import { Message } from '../../../types/chat';
+import type { Message } from '../../../types/chat';
 import { MessageBubble } from './MessageBubble';
 import { TypingIndicator } from '../Panels/TypingIndicator';
 import { useChatStore } from '../../../store/useChatStore';

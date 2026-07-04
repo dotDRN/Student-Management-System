@@ -1,6 +1,6 @@
 import React from 'react';
 import { X, Reply } from 'lucide-react';
-import { Message } from '../../../types/chat';
+import type { Message } from '../../../types/chat';
 
 interface ReplyPreviewProps {
   message: Message;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, FileText, Image as ImageIcon } from 'lucide-react';
+import { X, FileText } from 'lucide-react';
 
 export interface PendingAttachment {
   id: string;

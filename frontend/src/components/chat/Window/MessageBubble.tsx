@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
 import { MoreHorizontal, Check, CheckCheck, Clock } from 'lucide-react';
-import { Message } from '../../../types/chat';
+import type { Message } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { MessageMenu } from '../ContextMenus/MessageMenu';
 import { ReactionBar } from '../Panels/ReactionBar';

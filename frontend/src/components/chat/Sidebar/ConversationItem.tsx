@@ -1,7 +1,7 @@
 import React from 'react';
 import { format, isToday, isYesterday } from 'date-fns';
 import { Check, CheckCheck, Users } from 'lucide-react';
-import { Conversation } from '../../../types/chat';
+import type { Conversation } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { cn } from '../../ui/Button';
 

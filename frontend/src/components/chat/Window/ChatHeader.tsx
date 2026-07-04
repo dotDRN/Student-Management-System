@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MoreVertical, Phone, Video, Search } from 'lucide-react';
-import { Conversation } from '../../../types/chat';
+import type { Conversation } from '../../../types/chat';
 import { ConversationMenu } from '../ContextMenus/ConversationMenu';
 
 interface ChatHeaderProps {

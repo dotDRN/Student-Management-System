@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { Reply, Edit2, Trash2, Copy, SmilePlus } from 'lucide-react';
-import { Message } from '../../../types/chat';
+import type { Message } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 interface MessageMenuProps {

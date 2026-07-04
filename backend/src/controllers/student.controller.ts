@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import * as studentService from '@/services/student.service.js';
+import * as studentService from '../services/student.service.js';
 
 /* ─────────────────────────────────────────
    STUDENTS

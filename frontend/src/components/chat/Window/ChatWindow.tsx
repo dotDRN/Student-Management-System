@@ -1,12 +1,12 @@
 import React from 'react';
-import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare } from 'lucide-react';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from '../Composer/Composer';
 import { useChatStore } from '../../../store/useChatStore';
 import { chatService } from '../../../services/chat.service';
-import { Message } from '../../../types/chat';
+import type { Message } from '../../../types/chat';
 
 export const ChatWindow: React.FC = () => {
   const { activeConversationId } = useChatStore();

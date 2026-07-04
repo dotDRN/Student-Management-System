@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { Users, UserPlus, Archive, Edit3, Image as ImageIcon, LogOut } from 'lucide-react';
-import { Conversation, ConversationMember } from '../../../types/chat';
+import type { Conversation, ConversationMember } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
 
 interface ConversationMenuProps {

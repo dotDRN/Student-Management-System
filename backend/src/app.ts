@@ -23,6 +23,9 @@ import path from "path";
 import { fileURLToPath } from "url";
 import attachmentRoutes from "./routes/attachment.routes.js";
 import reactionRoutes from "./routes/reaction.routes.js";
+import conversationRoutes from "./routes/conversation.routes.js";
+import messageRoutes from "./routes/message.routes.js";
+import messageItemRoutes from "./routes/message-item.route.js";
 
 const app = express();
 

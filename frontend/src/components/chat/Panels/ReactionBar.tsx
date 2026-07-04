@@ -1,5 +1,5 @@
 import React from 'react';
-import { Reaction } from '../../../types/chat';
+import type { Reaction } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { chatService } from '../../../services/chat.service';
 import { cn } from '../../ui/Button'; // fallback if available, else just use clsx from package
@@ -34,7 +34,7 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({ messageId, reactions, 
     try {
       await chatService.toggleReaction(messageId, emoji);
     } catch (error) {
-      // Revert optimistic update
+      console.error('Failed to toggle reaction:', error);
       if (onOptimisticToggle) {
         onOptimisticToggle(emoji, hasReacted);
       }

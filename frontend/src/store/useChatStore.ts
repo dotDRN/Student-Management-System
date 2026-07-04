@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Message, Conversation } from '../types/chat';
+import type { Message } from '../types/chat';
 
 interface TypingUser {
   userId: string;

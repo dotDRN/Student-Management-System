@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, Smile } from 'lucide-react';
 import { useChatStore } from '../../../store/useChatStore';
 import { socketService } from '../../../services/socket.service';
 import { chatService } from '../../../services/chat.service';
 import { ReplyPreview } from './ReplyPreview';
-import { AttachmentPreview, PendingAttachment } from './AttachmentPreview';
+import { AttachmentPreview } from './AttachmentPreview';
+import type { PendingAttachment } from './AttachmentPreview';
 import { cn } from '../../ui/Button';
 
 interface ComposerProps {
@@ -17,7 +18,7 @@ export const Composer: React.FC<ComposerProps> = ({ conversationId, onOptimistic
   const [isTyping, setIsTyping] = useState(false);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { replyingToMessage, setReplyingToMessage, editingMessage, setEditingMessage } = useChatStore();
 
