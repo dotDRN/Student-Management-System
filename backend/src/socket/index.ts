@@ -1,5 +1,6 @@
 import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
+import { authenticateSocket } from "./auth.js";
 
 let io: Server;
 
@@ -11,11 +12,13 @@ export function initializeSocket(server: HttpServer): Server {
         },
     });
 
+    io.use(authenticateSocket);
+
     io.on("connection", (socket: Socket) => {
-        console.log(`🟢 Socket connected: ${socket.id}`);
+        console.log(`🟢 ${socket.data.user?.fullName || "Unknown User"} connected: ${socket.id}`);
 
         socket.on("disconnect", (reason) => {
-            console.log(`🔴 Socket disconnected: ${socket.id} (${reason})`);
+            console.log(`🔴 ${socket.data.user?.fullName || "Unknown User"} disconnected: ${socket.id} (${reason})`);
         });
     });
 
