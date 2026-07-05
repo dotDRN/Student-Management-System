@@ -6,7 +6,9 @@ interface TypingIndicatorProps {
 }
 
 export const TypingIndicator: React.FC<TypingIndicatorProps> = ({ conversationId }) => {
-  const typingUsers = useChatStore((state) => state.typingUsers[conversationId] || []);
+  const typingUsersMap = useChatStore((state) => state.typingUsers);
+
+const typingUsers = typingUsersMap[conversationId] ?? [];
 
   if (typingUsers.length === 0) return null;
 

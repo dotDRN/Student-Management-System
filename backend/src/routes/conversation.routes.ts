@@ -9,7 +9,7 @@ import {
     removeMember,
     getConversationMembers,
     markConversationAsRead
-} from "../controllers/conversation.controller";
+} from "../controllers/conversation.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 
 const router = Router();

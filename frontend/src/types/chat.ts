@@ -80,9 +80,11 @@ export interface SendMessageDto {
 }
 
 export interface CreateConversationDto {
-  type: 'DIRECT' | 'GROUP';
-  name?: string;
-  memberIds: string[];
+  type: 'direct' | 'group';
+  title?: string;
+  description?: string;
+  avatarUrl?: string;
+  members: { userId: string; role?: string }[];
 }
 
 export interface UpdateConversationDto {

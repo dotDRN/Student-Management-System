@@ -12,6 +12,7 @@ interface ChatState {
   editingMessage: Message | null;
   isSocketConnected: boolean;
   typingUsers: Record<string, TypingUser[]>; // conversationId -> TypingUser[]
+  presenceMap: Record<string, 'online' | 'offline'>;
 
   setActiveConversationId: (id: string | null) => void;
   setReplyingToMessage: (message: Message | null) => void;
@@ -22,6 +23,8 @@ interface ChatState {
   removeTypingUser: (conversationId: string, userId: string) => void;
   clearTypingUsers: (conversationId: string) => void;
   
+  updatePresence: (userId: string, status: 'online' | 'offline') => void;
+
   resetChatState: () => void;
 }
 
@@ -31,6 +34,7 @@ export const useChatStore = create<ChatState>((set) => ({
   editingMessage: null,
   isSocketConnected: false,
   typingUsers: {},
+  presenceMap: {},
 
   setActiveConversationId: (id) => set({ activeConversationId: id, replyingToMessage: null, editingMessage: null }),
   
@@ -68,10 +72,18 @@ export const useChatStore = create<ChatState>((set) => ({
     }
   })),
 
+  updatePresence: (userId, status) => set((state) => ({
+    presenceMap: {
+      ...state.presenceMap,
+      [userId]: status
+    }
+  })),
+
   resetChatState: () => set({
     activeConversationId: null,
     replyingToMessage: null,
     editingMessage: null,
-    typingUsers: {}
+    typingUsers: {},
+    presenceMap: {}
   })
 }));
