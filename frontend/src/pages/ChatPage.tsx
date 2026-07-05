@@ -3,24 +3,22 @@ import { ConversationList } from '../components/chat/Sidebar/ConversationList';
 import { ChatWindow } from '../components/chat/Window/ChatWindow';
 import { socketService } from '../services/socket.service';
 import { useChatStore } from '../store/useChatStore';
+import { useChatSocket } from '../hooks/useChatSocket';
 
 export const ChatPage: React.FC = () => {
-  const { setSocketConnected, resetChatState } = useChatStore();
+  const { resetChatState } = useChatStore();
+
+  useChatSocket();
 
   useEffect(() => {
     // Connect to socket when mounting the chat page
     socketService.connect();
 
-    const unsubscribe = socketService.subscribeToConnectionState((isConnected) => {
-      setSocketConnected(isConnected);
-    });
-
     return () => {
-      unsubscribe();
       socketService.disconnect();
       resetChatState();
     };
-  }, [setSocketConnected, resetChatState]);
+  }, [resetChatState]);
 
   return (
     <div className="flex h-[calc(100vh-4rem)] md:h-screen w-full bg-white overflow-hidden">

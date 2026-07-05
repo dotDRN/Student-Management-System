@@ -3,7 +3,12 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import conversationService from "../services/conversation.service.js";
 
 export const createConversation = asyncHandler(async (req: Request, res: Response) => {
-    const conversation = await conversationService.createConversation(req.user.id, req.body);
+    const conversation = await conversationService.createConversation(req.user.userId, req.body);
+
+    const io = (await import("../socket/index.js")).getIO();
+    conversation.members?.forEach((member: any) => {
+        io.to(`user:${member.userId}`).emit("conversation:new", { conversation });
+    });
 
     return res.status(201).json({
         success: true,
@@ -13,7 +18,7 @@ export const createConversation = asyncHandler(async (req: Request, res: Respons
 });
 
 export const getUserConversations = asyncHandler(async (req: Request, res: Response) => {
-    const conversations = await conversationService.getUserConversations(req.user.id);
+    const conversations = await conversationService.getUserConversations(req.user.userId);
 
     return res.status(200).json({
         success: true,
@@ -24,8 +29,8 @@ export const getUserConversations = asyncHandler(async (req: Request, res: Respo
 
 export const getConversationById = asyncHandler(async (req: Request, res: Response) => {
     const conversation = await conversationService.getConversationById(
-        req.user.id,
-        req.params.conversationId
+        req.user.userId,
+        String(req.params.conversationId)
     );
 
     return res.status(200).json({
@@ -37,8 +42,8 @@ export const getConversationById = asyncHandler(async (req: Request, res: Respon
 
 export const updateConversation = asyncHandler(async (req: Request, res: Response) => {
     const conversation = await conversationService.updateConversation(
-        req.user.id,
-        req.params.conversationId,
+        req.user.userId,
+        String(req.params.conversationId),
         req.body
     );
 
@@ -51,8 +56,8 @@ export const updateConversation = asyncHandler(async (req: Request, res: Respons
 
 export const archiveConversation = asyncHandler(async (req: Request, res: Response) => {
     await conversationService.archiveConversation(
-        req.user.id,
-        req.params.conversationId
+        req.user.userId,
+        String(req.params.conversationId)
     );
 
     return res.status(200).json({
@@ -63,8 +68,8 @@ export const archiveConversation = asyncHandler(async (req: Request, res: Respon
 
 export const getConversationMembers = asyncHandler(async (req: Request, res: Response) => {
     const members = await conversationService.getConversationMembers(
-        req.user.id,
-        req.params.conversationId
+        req.user.userId,
+        String(req.params.conversationId)
     );
 
     return res.status(200).json({
@@ -76,8 +81,8 @@ export const getConversationMembers = asyncHandler(async (req: Request, res: Res
 
 export const addMember = asyncHandler(async (req: Request, res: Response) => {
     const member = await conversationService.addMember(
-        req.user.id,
-        req.params.conversationId,
+        req.user.userId,
+        String(req.params.conversationId),
         req.body
     );
 
@@ -90,9 +95,9 @@ export const addMember = asyncHandler(async (req: Request, res: Response) => {
 
 export const removeMember = asyncHandler(async (req: Request, res: Response) => {
     await conversationService.removeMember(
-        req.user.id,
-        req.params.conversationId,
-        req.params.memberId
+        req.user.userId,
+        String(req.params.conversationId),
+        String(req.params.memberId)
     );
 
     return res.status(200).json({
@@ -103,9 +108,16 @@ export const removeMember = asyncHandler(async (req: Request, res: Response) => 
 
 export const markConversationAsRead = asyncHandler(async (req: Request, res: Response) => {
     await conversationService.markConversationAsRead(
-        req.user.id,
-        req.params.conversationId
+        req.user.userId,
+        String(req.params.conversationId)
     );
+
+    const io = (await import("../socket/index.js")).getIO();
+    io.to(`conversation:${String(req.params.conversationId)}`).emit("conversation:read_update", {
+        conversationId: String(req.params.conversationId),
+        userId: req.user.userId,
+        lastReadAt: new Date().toISOString()
+    });
 
     return res.status(200).json({
         success: true,

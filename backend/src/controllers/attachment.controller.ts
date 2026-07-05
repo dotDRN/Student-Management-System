@@ -6,7 +6,7 @@ import { UploadAttachmentDto } from "../dto/chat/attachment.dto.js";
 export const uploadAttachment = asyncHandler(async (req: Request, res: Response) => {
     const attachment = await attachmentService.uploadAttachment(
         req.user.userId,
-        req.params.messageId,
+        String(req.params.messageId),
         req.body as UploadAttachmentDto
     );
 
@@ -20,7 +20,7 @@ export const uploadAttachment = asyncHandler(async (req: Request, res: Response)
 export const deleteAttachment = asyncHandler(async (req: Request, res: Response) => {
     await attachmentService.deleteAttachment(
         req.user.userId,
-        req.params.attachmentId
+        String(req.params.attachmentId)
     );
 
     return res.status(200).json({

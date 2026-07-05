@@ -36,6 +36,7 @@ export interface AddMemberDto {
 }
 
 class ConversationService {
+    
     private async checkEntityExists(payload: CreateConversationDto) {
         if (payload.centerId) {
             const exists = await prisma.center.findUnique({ where: { id: payload.centerId }, select: { id: true } });

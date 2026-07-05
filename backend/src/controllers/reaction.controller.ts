@@ -6,7 +6,7 @@ import { AddReactionDto } from "../dto/chat/reaction.dto.js";
 export const addReaction = asyncHandler(async (req: Request, res: Response) => {
     const reaction = await reactionService.addReaction(
         req.user.userId,
-        req.params.messageId,
+        String(req.params.messageId),
         req.body as AddReactionDto
     );
 
@@ -20,7 +20,7 @@ export const addReaction = asyncHandler(async (req: Request, res: Response) => {
 export const removeReaction = asyncHandler(async (req: Request, res: Response) => {
     await reactionService.removeReaction(
         req.user.userId,
-        req.params.messageId
+        String(req.params.messageId)
     );
 
     return res.status(200).json({

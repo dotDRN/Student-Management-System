@@ -4,9 +4,11 @@ import { Search, Plus, MessageSquare } from 'lucide-react';
 import { chatService } from '../../../services/chat.service';
 import { useChatStore } from '../../../store/useChatStore';
 import { ConversationItem } from './ConversationItem';
+import { ConversationModal } from './ConversationModal';
 
 export const ConversationList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const { activeConversationId, setActiveConversationId } = useChatStore();
 
   const { data: conversations, isLoading } = useQuery({
@@ -28,7 +30,10 @@ export const ConversationList: React.FC = () => {
           <h1 className="text-xl font-bold text-neutral-800" style={{ fontFamily: 'var(--font-heading)' }}>
             Messages
           </h1>
-          <button className="p-2 bg-brand-50 text-brand-600 rounded-full hover:bg-brand-100 transition-colors shadow-sm">
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="p-2 bg-brand-50 text-brand-600 rounded-full hover:bg-brand-100 transition-colors shadow-sm"
+          >
             <Plus size={18} />
           </button>
         </div>
@@ -67,6 +72,11 @@ export const ConversationList: React.FC = () => {
           ))
         )}
       </div>
+
+      <ConversationModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+      />
     </div>
   );
 };
