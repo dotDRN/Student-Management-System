@@ -15,7 +15,7 @@ export const ConversationItem: React.FC<ConversationItemProps> = React.memo(({ c
   const currentUserId = useAuthStore((state) => state.currentUser?.id);
 
   const getChatName = () => {
-    if (conversation.type === 'GROUP') return conversation.name || 'Group Chat';
+    if (conversation.type === 'group') return conversation.title || 'Group Chat';
     // Ideally map the other member's name
     const otherMember = conversation.members?.find(m => m.userId !== currentUserId);
     return otherMember?.user?.profile ? `${otherMember.user.profile.firstName} ${otherMember.user.profile.lastName}` : 'Direct Message';
@@ -44,7 +44,7 @@ export const ConversationItem: React.FC<ConversationItemProps> = React.memo(({ c
           <img src={conversation.avatarUrl} alt="Avatar" className="w-12 h-12 rounded-full object-cover shadow-sm" />
         ) : (
           <div className="w-12 h-12 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-lg shadow-sm">
-            {conversation.type === 'GROUP' ? <Users size={20} /> : getChatName().charAt(0).toUpperCase()}
+            {conversation.type === 'group' ? <Users size={20} /> : getChatName().charAt(0).toUpperCase()}
           </div>
         )}
         {/* Unread badge placeholder */}
@@ -70,7 +70,7 @@ export const ConversationItem: React.FC<ConversationItemProps> = React.memo(({ c
         <div className="flex items-center text-xs text-neutral-500">
           {isSender && lastMsg && (
             <span className="mr-1 shrink-0">
-              {lastMsg.status === 'READ' ? (
+              {lastMsg.status === 'read' ? (
                 <CheckCheck size={14} className="text-brand-500" />
               ) : (
                 <Check size={14} />
