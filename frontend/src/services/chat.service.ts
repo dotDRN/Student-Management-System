@@ -32,7 +32,7 @@ class ChatService {
   }
 
   // --- Members ---
-  async addMember(conversationId: string, userId: string, role: string = 'MEMBER'): Promise<void> {
+  async addMember(conversationId: string, userId: string, role: string = 'member'): Promise<void> {
     await api.post(`/chat/conversations/${conversationId}/members`, { userId, role });
   }
 
@@ -60,7 +60,7 @@ class ChatService {
   }
 
   async editMessage(messageId: string, content: string): Promise<Message> {
-    const response = await api.put(`/chat/messages/${messageId}`, { content });
+    const response = await api.patch(`/chat/messages/${messageId}`, { content });
     return response.data.data;
   }
 
@@ -69,8 +69,8 @@ class ChatService {
   }
 
   // --- Reactions ---
-  async toggleReaction(messageId: string, emoji: string): Promise<void> {
-    await api.post(`/chat/messages/${messageId}/reactions`, { emoji });
+  async toggleReaction(messageId: string, reaction: string): Promise<void> {
+    await api.post(`/chat/messages/${messageId}/reactions`, { reaction });
   }
 
   // --- Attachments ---

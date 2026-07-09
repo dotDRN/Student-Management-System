@@ -1,8 +1,12 @@
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../store/useAuthStore';
+import type { ClientToServerEvents, ServerToClientEvents } from '../types/socket';
 
 class SocketService {
-  private socket: Socket | null = null;
+  private socket: Socket<
+    ServerToClientEvents,
+    ClientToServerEvents
+> | null = null;
   private url: string = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000';
   private connectionListeners: ((isConnected: boolean) => void)[] = [];
 
@@ -47,19 +51,28 @@ class SocketService {
     }
   }
 
-  on(event: string, callback: (...args: unknown[]) => void) {
+  on<Ev extends keyof ServerToClientEvents>(
+    event: Ev, 
+    callback: ServerToClientEvents[Ev]
+  ) {
     if (this.socket) {
       this.socket.on(event, callback);
     }
   }
 
-  off(event: string, callback?: (...args: unknown[]) => void) {
+  off<Ev extends keyof ServerToClientEvents>(
+    event: Ev, 
+    callback?: ServerToClientEvents[Ev]
+  ) {
     if (this.socket) {
       this.socket.off(event, callback);
     }
   }
 
-  emit(event: string, ...args: unknown[]) {
+  emit<Ev extends keyof ClientToServerEvents>(
+    event: Ev, 
+    ...args: Parameters<ClientToServerEvents[Ev]>
+  ) {
     if (this.socket) {
       this.socket.emit(event, ...args);
     }

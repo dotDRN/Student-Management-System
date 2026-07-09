@@ -11,9 +11,18 @@ import { cn } from '../../ui/Button';
 interface ComposerProps {
   conversationId: string;
   onOptimisticSend?: (tempId: string, content: string, attachments: any[]) => void;
+  onOptimisticSuccess?: (tempId: string, realMessage: any) => void;
+  onOptimisticError?: (tempId: string) => void;
+  onEditSuccess?: (messageId: string, newContent: string) => void;
 }
 
-export const Composer: React.FC<ComposerProps> = ({ conversationId, onOptimisticSend }) => {
+export const Composer: React.FC<ComposerProps> = ({ 
+  conversationId, 
+  onOptimisticSend,
+  onOptimisticSuccess,
+  onOptimisticError,
+  onEditSuccess
+}) => {
   const [content, setContent] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
@@ -69,18 +78,22 @@ export const Composer: React.FC<ComposerProps> = ({ conversationId, onOptimistic
     if (!content.trim() && attachments.length === 0) return;
 
     const tempId = `temp_${Date.now()}`;
-    const payload = {
+    const payload: any = {
       content: content.trim(),
-      metadata: replyingToMessage ? { replyToId: replyingToMessage.id } : undefined,
     };
+    if (replyingToMessage) {
+      payload.replyToId = replyingToMessage.id;
+    }
 
     if (editingMessage) {
       // Edit mode
       const newContent = content.trim();
+      const editingId = editingMessage.id;
       setContent('');
       setEditingMessage(null);
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
-      await chatService.editMessage(editingMessage.id, newContent);
+      await chatService.editMessage(editingId, newContent);
+      if (onEditSuccess) onEditSuccess(editingId, newContent);
       return;
     }
 
@@ -101,10 +114,15 @@ export const Composer: React.FC<ComposerProps> = ({ conversationId, onOptimistic
     try {
       // Upload attachments sequentially or in parallel here if needed
       // Assuming straightforward text send for now + standard API logic
-      await chatService.sendMessage(conversationId, payload);
+      const realMessage = await chatService.sendMessage(conversationId, payload);
+      if (onOptimisticSuccess) {
+        onOptimisticSuccess(tempId, realMessage);
+      }
     } catch (error) {
       console.error('Failed to send message:', error);
-      // Revert optimistic logic via state store or query invalidation
+      if (onOptimisticError) {
+        onOptimisticError(tempId);
+      }
     }
   };
 

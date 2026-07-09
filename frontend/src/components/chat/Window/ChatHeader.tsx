@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { MoreVertical, Phone, Video, Search } from 'lucide-react';
+import { useAuthStore } from '../../../store/useAuthStore';
 import type { Conversation } from '../../../types/chat';
 import { ConversationMenu } from '../ContextMenus/ConversationMenu';
+import { getConversationDisplayName, getConversationInitials, getConversationAvatar } from '../../../utils/chatHelpers';
 
 interface ChatHeaderProps {
   conversation: Conversation;
@@ -11,14 +13,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ conversation }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
 
-  const getChatName = () => {
-    if (conversation.type === 'GROUP') {
-      return conversation.name || 'Unnamed Group';
-    }
-    // For direct message, return the other member's name
-    // We assume the caller or the state handles finding the "other" member's name properly
-    return conversation.name || 'Direct Message';
-  };
+  const currentUserId = useAuthStore((state) => state.currentUser?.id);
+
+  const getChatName = () => getConversationDisplayName(conversation, currentUserId);
 
   const getMemberCount = () => {
     return conversation._count?.members || conversation.members?.length || 0;
@@ -33,11 +30,11 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ conversation }) => {
   return (
     <div className="h-16 border-b border-neutral-200 bg-white flex items-center justify-between px-6 shrink-0 shadow-sm z-10">
       <div className="flex items-center gap-3">
-        {conversation.avatarUrl ? (
-          <img src={conversation.avatarUrl} alt="Avatar" className="w-10 h-10 rounded-full object-cover" />
+        {getConversationAvatar(conversation, currentUserId) ? (
+          <img src={getConversationAvatar(conversation, currentUserId)} alt="Avatar" className="w-10 h-10 rounded-full object-cover" />
         ) : (
           <div className="w-10 h-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-lg">
-            {getChatName().charAt(0).toUpperCase()}
+            {getConversationInitials(conversation, currentUserId)}
           </div>
         )}
         
@@ -45,7 +42,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ conversation }) => {
           <h2 className="font-semibold text-neutral-800 text-lg leading-tight tracking-tight">
             {getChatName()}
           </h2>
-          {conversation.type === 'GROUP' && (
+          {conversation.type === 'group' && (
             <span className="text-xs text-neutral-500">
               {getMemberCount()} members
             </span>

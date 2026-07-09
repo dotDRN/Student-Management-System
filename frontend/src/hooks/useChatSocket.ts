@@ -21,28 +21,73 @@ export const useChatSocket = () => {
     const unsubscribe = socketService.subscribeToConnectionState(handleConnect);
 
     // Message Events
-    const handleNewMessage = (data: { message: Message & { sender: any } }) => {
+    const handleNewMessage = (data: { message: Message }) => {
       const { message } = data;
-      queryClient.setQueryData<Message[]>(
+      
+      // Enrich sender information locally since backend message:new payload omits it
+      const conversations = queryClient.getQueryData<Conversation[]>(['conversations']);
+      const activeConv = conversations?.find(c => c.id === message.conversationId);
+      const senderMember = activeConv?.members?.find(m => m.userId === message.senderId);
+      const enrichedMessage: Message = {
+        ...message,
+        sender: {
+          fullName: senderMember?.user?.fullName || 'Unknown User',
+          email: senderMember?.user?.email || ''
+        }
+      };
+
+      queryClient.setQueryData(
         ['messages', message.conversationId],
-        (old = []) => {
-          if (old.find(m => m.id === message.id)) return old;
-          return [...old, message];
+        (old: any) => {
+          if (!old?.pages) return old;
+          
+          const newPages = [...old.pages];
+          
+          if (newPages.length > 0) {
+            // Prevent duplicates
+            const exists = newPages.some(page => page.find((m: Message) => m.id === message.id || m.clientMsgId === message.id));
+            if (!exists) {
+              newPages[0] = [enrichedMessage, ...newPages[0]];
+            }
+          }
+          
+          return {
+            ...old,
+            pages: newPages,
+          };
         }
       );
     };
 
     const handleMessageUpdated = (data: { id: string; conversationId: string; content: string; updatedAt: string }) => {
-      queryClient.setQueryData<Message[]>(
+      queryClient.setQueryData(
         ['messages', data.conversationId],
-        (old = []) => old.map(m => (m.id === data.id ? { ...m, content: data.content, updatedAt: data.updatedAt } : m))
+        (old: any) => {
+          if (!old?.pages) return old;
+          
+          return {
+            ...old,
+            pages: old.pages.map((page: Message[]) => 
+              page.map(m => m.id === data.id ? { ...m, content: data.content, updatedAt: data.updatedAt } : m)
+            )
+          };
+        }
       );
     };
 
     const handleMessageDeleted = (data: { id: string; conversationId: string }) => {
-      queryClient.setQueryData<Message[]>(
+      queryClient.setQueryData(
         ['messages', data.conversationId],
-        (old = []) => old.filter(m => m.id !== data.id)
+        (old: any) => {
+          if (!old?.pages) return old;
+          
+          return {
+            ...old,
+            pages: old.pages.map((page: Message[]) => 
+              page.map(m => m.id === data.id ? { ...m, isDeleted: true, content: '[This message was deleted]' } : m)
+            )
+          };
+        }
       );
     };
 
@@ -66,10 +111,10 @@ export const useChatSocket = () => {
         (old = []) => old.map(c => {
           if (c.id === data.conversationId) {
             // Update the specific participant's lastReadAt
-            const updatedParticipants = c.participants?.map(p => 
-              p.userId === data.userId ? { ...p, lastReadAt: data.lastReadAt } : p
-            ) || c.participants;
-            return { ...c, participants: updatedParticipants };
+            const updatedMembers = c.members?.map(m => 
+              m.userId === data.userId ? { ...m, lastReadAt: data.lastReadAt } : m
+            ) || c.members;
+            return { ...c, members: updatedMembers };
           }
           return c;
         })

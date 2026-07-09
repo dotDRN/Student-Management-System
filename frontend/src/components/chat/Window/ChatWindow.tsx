@@ -5,11 +5,13 @@ import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from '../Composer/Composer';
 import { useChatStore } from '../../../store/useChatStore';
+import { useAuthStore } from '../../../store/useAuthStore';
 import { chatService } from '../../../services/chat.service';
 import type { Message } from '../../../types/chat';
 
 export const ChatWindow: React.FC = () => {
   const { activeConversationId } = useChatStore();
+  const currentUserId = useAuthStore((state) => state.currentUser?.id);
   const queryClient = useQueryClient();
 
   // Fetch Conversation Metadata
@@ -29,14 +31,15 @@ export const ChatWindow: React.FC = () => {
     queryKey: ['messages', activeConversationId],
     queryFn: ({ pageParam }) => chatService.getMessages(activeConversationId!, pageParam as string | undefined),
     getNextPageParam: (lastPage) => {
-      // Assuming lastPage is an array, and the earliest message is at index 0. We'd use its ID as cursor.
-      return lastPage.length === 50 ? lastPage[0].id : undefined; 
+      // The backend returns messages in descending order (newest first).
+      // To get older messages, we use the oldest message in the last page as the cursor.
+      return lastPage.length === 50 ? lastPage[lastPage.length - 1].id : undefined; 
     },
     initialPageParam: undefined,
     enabled: !!activeConversationId,
   });
 
-  const messages = messagesData?.pages.flat() || [];
+  const messages = [...(messagesData?.pages.flat() || [])].reverse();
 
   const handleOptimisticSend = (tempId: string, content: string, attachments: any[]) => {
     // Add optimistic message to cache immediately
@@ -44,9 +47,9 @@ export const ChatWindow: React.FC = () => {
       id: tempId,
       clientMsgId: tempId,
       conversationId: activeConversationId!,
-      senderId: 'currentUserId', // Will be swapped on actual render by auth store logic but needed for struct
+      senderId: currentUserId || 'unknown',
       content,
-      type: 'TEXT',
+      type: 'text',
       status: 'SENDING',
       isEdited: false,
       isDeleted: false,
@@ -55,9 +58,9 @@ export const ChatWindow: React.FC = () => {
       reactions: [],
       attachments: attachments.map(a => ({
         id: a.id,
-        fileUrl: a.previewUrl,
+        url: a.previewUrl,
         fileName: a.file.name,
-        fileType: a.file.type,
+        mimeType: a.file.type,
         fileSize: a.file.size,
         createdAt: new Date().toISOString()
       }))
@@ -66,9 +69,74 @@ export const ChatWindow: React.FC = () => {
     queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
       if (!oldData) return { pages: [[tempMsg]], pageParams: [undefined] };
       const newPages = [...oldData.pages];
-      newPages[newPages.length - 1] = [...newPages[newPages.length - 1], tempMsg];
+      newPages[0] = [tempMsg, ...newPages[0]];
       return { ...oldData, pages: newPages };
     });
+  };
+
+  const handleOptimisticSuccess = (tempId: string, realMessage: Message) => {
+    // Enrich sender
+    const conversations = queryClient.getQueryData<any[]>(['conversations']);
+    const activeConv = conversations?.find((c: any) => c.id === activeConversationId);
+    const senderMember = activeConv?.members?.find((m: any) => m.userId === realMessage.senderId);
+    const enrichedMessage: Message = {
+      ...realMessage,
+      sender: {
+        fullName: senderMember?.user?.fullName || 'Unknown User',
+        email: senderMember?.user?.email || ''
+      }
+    };
+
+    queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
+      if (!oldData?.pages) return oldData;
+      
+      const newPages = oldData.pages.map((page: Message[]) => {
+        if (page.some(m => m.id === realMessage.id)) {
+          return page.filter(m => m.id !== tempId);
+        }
+        return page.map(m => m.id === tempId ? enrichedMessage : m);
+      });
+      return { ...oldData, pages: newPages };
+    });
+  };
+
+  const handleOptimisticError = (tempId: string) => {
+    queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
+      if (!oldData?.pages) return oldData;
+      const newPages = oldData.pages.map((page: Message[]) => page.filter(m => m.id !== tempId));
+      return { ...oldData, pages: newPages };
+    });
+  };
+
+  const handleEditSuccess = (messageId: string, newContent: string) => {
+    queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
+      if (!oldData?.pages) return oldData;
+      return {
+        ...oldData,
+        pages: oldData.pages.map((page: Message[]) =>
+          page.map(m => m.id === messageId ? { ...m, content: newContent, isEdited: true, updatedAt: new Date().toISOString() } : m)
+        )
+      };
+    });
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      // Optimistic or immediate update
+      queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
+        if (!oldData?.pages) return oldData;
+        return {
+          ...oldData,
+          pages: oldData.pages.map((page: Message[]) =>
+            page.map(m => m.id === messageId ? { ...m, isDeleted: true, content: '[This message was deleted]' } : m)
+          )
+        };
+      });
+      await chatService.deleteMessage(messageId);
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+      // Optional: revert cache on failure
+    }
   };
 
   if (!activeConversationId) {
@@ -96,7 +164,7 @@ export const ChatWindow: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-white relative">
+    <div className="flex-1 flex flex-col min-h-0 bg-white relative">
       {conversation && <ChatHeader conversation={conversation} />}
       
       <MessageList 
@@ -105,11 +173,15 @@ export const ChatWindow: React.FC = () => {
         isLoading={isLoadingMessages}
         onLoadMore={() => fetchNextPage()}
         hasNextPage={!!hasNextPage}
+        onDelete={handleDeleteMessage}
       />
       
       <Composer 
         conversationId={activeConversationId} 
-        onOptimisticSend={handleOptimisticSend} 
+        onOptimisticSend={handleOptimisticSend}
+        onOptimisticSuccess={handleOptimisticSuccess}
+        onOptimisticError={handleOptimisticError}
+        onEditSuccess={handleEditSuccess}
       />
     </div>
   );

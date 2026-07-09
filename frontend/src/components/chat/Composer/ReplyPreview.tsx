@@ -13,7 +13,7 @@ export const ReplyPreview: React.FC<ReplyPreviewProps> = ({ message, onCancel })
       <div className="flex flex-col overflow-hidden">
         <div className="flex items-center text-brand-600 font-medium mb-0.5">
           <Reply size={14} className="mr-1.5" />
-          Replying to {message.sender?.profile?.firstName || 'User'}
+          Replying to {message.sender?.fullName || 'User'}
         </div>
         <p className="text-neutral-600 truncate">{message.content}</p>
       </div>

@@ -3,13 +3,16 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, Plus, MessageSquare } from 'lucide-react';
 import { chatService } from '../../../services/chat.service';
 import { useChatStore } from '../../../store/useChatStore';
+import { useAuthStore } from '../../../store/useAuthStore';
 import { ConversationItem } from './ConversationItem';
 import { ConversationModal } from './ConversationModal';
+import { getConversationDisplayName } from '../../../utils/chatHelpers';
 
 export const ConversationList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { activeConversationId, setActiveConversationId } = useChatStore();
+  const currentUserId = useAuthStore((state) => state.currentUser?.id);
 
   const { data: conversations, isLoading } = useQuery({
     queryKey: ['conversations'],
@@ -18,7 +21,7 @@ export const ConversationList: React.FC = () => {
 
   const filteredConversations = conversations?.filter(c => {
     if (!searchTerm) return true;
-    const name = c.name || '';
+    const name = getConversationDisplayName(c, currentUserId);
     return name.toLowerCase().includes(searchTerm.toLowerCase());
   }) || [];
 
