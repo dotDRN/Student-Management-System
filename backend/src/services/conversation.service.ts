@@ -194,8 +194,14 @@ class ConversationService {
                     }
                 },
                 members: {
-                    where: { userId },
-                    select: { lastReadAt: true }
+                    select: { 
+                        userId: true,
+                        role: true,
+                        lastReadAt: true,
+                        user: {
+                            select: { fullName: true }
+                        }
+                    }
                 }
             },
             orderBy: { updatedAt: 'desc' },

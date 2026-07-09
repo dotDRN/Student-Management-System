@@ -32,7 +32,7 @@ export const ConversationMenu: React.FC<ConversationMenuProps> = ({
   const currentUserId = useAuthStore((state) => state.currentUser?.id);
 
   const currentUserMember = conversation.members?.find((m: ConversationMember) => m.userId === currentUserId);
-  const hasAdminRights = currentUserMember?.role === 'OWNER' || currentUserMember?.role === 'ADMIN';
+  const hasAdminRights = currentUserMember?.role === 'owner' || currentUserMember?.role === 'admin';
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -65,7 +65,7 @@ export const ConversationMenu: React.FC<ConversationMenuProps> = ({
         View Members
       </button>
 
-      {hasAdminRights && conversation.type === 'GROUP' && (
+      {hasAdminRights && conversation.type === 'group' && (
         <>
           <button
             onClick={() => { onAddMembers(); onClose(); }}
@@ -103,7 +103,7 @@ export const ConversationMenu: React.FC<ConversationMenuProps> = ({
         </>
       )}
 
-      {conversation.type === 'GROUP' && (
+      {conversation.type === 'group' && (
         <button
           onClick={() => { onLeave(); onClose(); }}
           className="w-full flex items-center px-4 py-2 hover:bg-red-50 text-red-600 transition-colors"

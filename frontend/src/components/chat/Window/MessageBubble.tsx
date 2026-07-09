@@ -6,6 +6,8 @@ import { useAuthStore } from '../../../store/useAuthStore';
 import { MessageMenu } from '../ContextMenus/MessageMenu';
 import { ReactionBar } from '../Panels/ReactionBar';
 import { cn } from '../../ui/Button';
+import { useQueryClient } from '@tanstack/react-query';
+import { useChatStore } from '../../../store/useChatStore';
 
 interface MessageBubbleProps {
   message: Message;
@@ -19,9 +21,23 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
   message, onReply, onEdit, onDelete, onReact
 }) => {
   const currentUserId = useAuthStore((state) => state.currentUser?.id);
+  const activeConversationId = useChatStore((state) => state.activeConversationId);
+  const queryClient = useQueryClient();
   const isSender = message.senderId === currentUserId;
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+
+  // Locate the replied message in cache
+  let repliedMessage: Message | undefined;
+  if (message.replyToId && activeConversationId) {
+    const messagesData = queryClient.getQueryData<any>(['messages', activeConversationId]);
+    if (messagesData?.pages) {
+      for (const page of messagesData.pages) {
+        repliedMessage = page.find((m: Message) => m.id === message.replyToId);
+        if (repliedMessage) break;
+      }
+    }
+  }
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -50,14 +66,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
     <div className={cn("flex w-full mb-4 group", isSender ? "justify-end" : "justify-start")}>
       {!isSender && (
         <div className="w-8 h-8 rounded-full bg-brand-100 flex items-center justify-center text-brand-700 font-bold text-xs mr-2 shrink-0 select-none">
-          {message.sender?.profile?.firstName?.charAt(0) || 'U'}
+          {message.sender?.fullName?.charAt(0) || 'U'}
         </div>
       )}
 
       <div className={cn("flex flex-col max-w-[70%]", isSender ? "items-end" : "items-start")}>
         {!isSender && (
           <span className="text-xs text-neutral-500 mb-1 ml-1">
-            {message.sender?.profile?.firstName} {message.sender?.profile?.lastName}
+            {message.sender?.fullName}
           </span>
         )}
 
@@ -72,12 +88,24 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
             )}
           >
             {/* Render Reply Target */}
-            {message.metadata?.replyToId && (
-              <div className={cn(
-                "text-xs mb-1.5 pl-2 border-l-2 opacity-80 line-clamp-1",
-                isSender ? "border-white/50" : "border-brand-500 text-brand-700"
-              )}>
-                Replying to message...
+            {message.replyToId && (
+              <div 
+                className={cn(
+                  "text-xs mb-2 pl-2.5 py-1 border-l-2 rounded-r-sm opacity-90 cursor-pointer transition-colors",
+                  isSender 
+                    ? "border-white/70 bg-black/10 hover:bg-black/20" 
+                    : "border-brand-500 bg-brand-50 hover:bg-brand-100 text-brand-900"
+                )}
+                onClick={() => {
+                  // Optional: scroll to message logic can go here in the future
+                }}
+              >
+                <div className="font-semibold mb-0.5">
+                  {repliedMessage ? repliedMessage.sender?.fullName : 'Loading...'}
+                </div>
+                <div className="line-clamp-1 opacity-80">
+                  {repliedMessage ? (repliedMessage.content || 'Attachment') : 'Replying to message...'}
+                </div>
               </div>
             )}
 
@@ -86,8 +114,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
               <div className="flex flex-wrap gap-1 mb-2">
                 {message.attachments.map(att => (
                   <div key={att.id} className="w-full sm:w-48 bg-black/10 rounded overflow-hidden">
-                    {att.fileType.startsWith('image') ? (
-                      <img src={att.fileUrl} alt="attachment" className="w-full h-auto object-cover" />
+                    {att.mimeType.startsWith('image') ? (
+                      <img src={att.url} alt="attachment" className="w-full h-auto object-cover" />
                     ) : (
                       <div className="p-2 text-xs truncate flex items-center gap-1">
                         <span className="underline">{att.fileName}</span>

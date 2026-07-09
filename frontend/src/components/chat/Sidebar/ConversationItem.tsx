@@ -4,6 +4,7 @@ import { Check, CheckCheck, Users } from 'lucide-react';
 import type { Conversation } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { cn } from '../../ui/Button';
+import { getConversationDisplayName, getConversationInitials, getConversationAvatar } from '../../../utils/chatHelpers';
 
 interface ConversationItemProps {
   conversation: Conversation;
@@ -14,12 +15,7 @@ interface ConversationItemProps {
 export const ConversationItem: React.FC<ConversationItemProps> = React.memo(({ conversation, isActive, onClick }) => {
   const currentUserId = useAuthStore((state) => state.currentUser?.id);
 
-  const getChatName = () => {
-    if (conversation.type === 'group') return conversation.title || 'Group Chat';
-    // Ideally map the other member's name
-    const otherMember = conversation.members?.find(m => m.userId !== currentUserId);
-    return otherMember?.user?.profile ? `${otherMember.user.profile.firstName} ${otherMember.user.profile.lastName}` : 'Direct Message';
-  };
+  const getChatName = () => getConversationDisplayName(conversation, currentUserId);
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -28,7 +24,7 @@ export const ConversationItem: React.FC<ConversationItemProps> = React.memo(({ c
     return format(date, 'dd/MM/yyyy');
   };
 
-  const lastMsg = conversation.lastMessage;
+  const lastMsg = conversation.messages?.[0];
   const isSender = lastMsg?.senderId === currentUserId;
 
   return (
@@ -40,11 +36,11 @@ export const ConversationItem: React.FC<ConversationItemProps> = React.memo(({ c
       )}
     >
       <div className="relative shrink-0">
-        {conversation.avatarUrl ? (
-          <img src={conversation.avatarUrl} alt="Avatar" className="w-12 h-12 rounded-full object-cover shadow-sm" />
+        {getConversationAvatar(conversation, currentUserId) ? (
+          <img src={getConversationAvatar(conversation, currentUserId)} alt="Avatar" className="w-12 h-12 rounded-full object-cover shadow-sm" />
         ) : (
           <div className="w-12 h-12 rounded-full bg-brand-100 flex items-center justify-center text-brand-600 font-bold text-lg shadow-sm">
-            {conversation.type === 'group' ? <Users size={20} /> : getChatName().charAt(0).toUpperCase()}
+            {conversation.type === 'group' ? <Users size={20} /> : getConversationInitials(conversation, currentUserId)}
           </div>
         )}
         {/* Unread badge placeholder */}
@@ -79,7 +75,7 @@ export const ConversationItem: React.FC<ConversationItemProps> = React.memo(({ c
           )}
           <span className={cn("truncate", !isActive && "text-neutral-500")}>
             {lastMsg ? (
-              lastMsg.type === 'FILE' ? '📎 Attachment' : lastMsg.content
+              lastMsg.type === 'file' ? '📎 Attachment' : lastMsg.content
             ) : (
               <span className="italic">No messages yet</span>
             )}

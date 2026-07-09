@@ -11,10 +11,11 @@ interface MessageListProps {
   isLoading: boolean;
   onLoadMore: () => void;
   hasNextPage: boolean;
+  onDelete: (messageId: string) => void;
 }
 
 export const MessageList: React.FC<MessageListProps> = ({ 
-  conversationId, messages, isLoading, onLoadMore, hasNextPage 
+  conversationId, messages, isLoading, onLoadMore, hasNextPage, onDelete
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
@@ -73,7 +74,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   }
 
   return (
-    <div className="flex-1 relative overflow-hidden bg-[#F8F9FA]">
+    <div className="flex-1 relative overflow-hidden min-h-0 bg-[#F8F9FA]">
       <div 
         ref={containerRef}
         onScroll={handleScroll}
@@ -91,7 +92,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             message={msg}
             onReply={setReplyingToMessage}
             onEdit={setEditingMessage}
-            onDelete={(id) => console.log('Delete logic via useMutation', id)}
+            onDelete={() => onDelete(msg.id)}
             onReact={(id) => console.log('React logic via useMutation', id)}
           />
         ))}
