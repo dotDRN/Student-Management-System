@@ -85,7 +85,7 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({ messageId, reactions }
   };
 
   return (
-    <div className="flex flex-wrap gap-1 mt-1">
+    <div className="flex flex-wrap gap-1 mt-1.5">
       {Object.entries(grouped).map(([reactionName, data]) => {
         const emoji = EMOJI_MAP[reactionName];
         if (!emoji) return null; // Only render supported reactions

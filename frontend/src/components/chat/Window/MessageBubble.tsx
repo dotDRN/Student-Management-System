@@ -134,7 +134,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
           <div 
             onContextMenu={handleContextMenu}
             className={cn(
-              "px-4 py-2 rounded-2xl relative shadow-sm",
+              "px-3.5 py-2.5 rounded-2xl relative shadow-sm",
               isSender 
                 ? "bg-brand-600 text-white rounded-tr-sm" 
                 : "bg-white border border-neutral-200 text-neutral-800 rounded-tl-sm"
@@ -144,10 +144,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
             {message.replyToId && (
               <div 
                 className={cn(
-                  "text-xs mb-2 pl-2.5 py-1 border-l-2 rounded-r-sm opacity-90 cursor-pointer transition-colors",
+                  "text-xs mb-2.5 px-3 py-2 border-l-4 rounded-md opacity-90 cursor-pointer transition-colors flex flex-col",
                   isSender 
-                    ? "border-white/70 bg-black/10 hover:bg-black/20" 
-                    : "border-brand-500 bg-brand-50 hover:bg-brand-100 text-brand-900"
+                    ? "border-white/40 bg-black/10 hover:bg-black/20 text-white/95" 
+                    : "border-brand-500 bg-brand-50 hover:bg-brand-100 text-neutral-800"
                 )}
               >
                 <div className="font-semibold mb-0.5">

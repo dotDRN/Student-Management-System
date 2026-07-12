@@ -38,7 +38,13 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <TopBar onMenuClick={() => setIsSidebarOpen(true)} />
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <main 
+          className={
+            location.pathname.startsWith('/chat')
+              ? "flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden"
+              : "flex-1 overflow-y-auto p-4 md:p-6 lg:p-8"
+          }
+        >
           <Outlet key={location.pathname} />
         </main>
       </div>
