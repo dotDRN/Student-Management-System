@@ -42,12 +42,8 @@ class ReactionService {
     }
 
     async addReaction(userId: string, messageId: string, payload: AddReactionDto) {
-        await this.validateMembershipForMessage(userId, messageId);
+        const message = await this.validateMembershipForMessage(userId, messageId);
 
-        // Upsert or create? The unique constraint is on [messageId, userId, reaction]
-        // A user can theoretically have multiple different reactions to the same message.
-        // We will just create if not exists, but Prisma handles this gracefully.
-        
         // Find if the exact reaction exists
         const existingReaction = await prisma.messageReaction.findUnique({
             where: {
@@ -60,20 +56,22 @@ class ReactionService {
         });
 
         if (existingReaction) {
-            return existingReaction; // already reacted with this exact reaction
+            return { reaction: existingReaction, conversationId: message.conversationId }; // already reacted with this exact reaction
         }
 
-        return await prisma.messageReaction.create({
+        const newReaction = await prisma.messageReaction.create({
             data: {
                 messageId,
                 userId,
                 reaction: payload.reaction
             }
         });
+
+        return { reaction: newReaction, conversationId: message.conversationId };
     }
 
     async removeReaction(userId: string, messageId: string) {
-        await this.validateMembershipForMessage(userId, messageId);
+        const message = await this.validateMembershipForMessage(userId, messageId);
 
         // Since the controller doesn't specify which reaction to remove, we remove all reactions
         // made by this user on this specific message.
@@ -83,6 +81,8 @@ class ReactionService {
                 userId
             }
         });
+
+        return { conversationId: message.conversationId };
     }
 }
 

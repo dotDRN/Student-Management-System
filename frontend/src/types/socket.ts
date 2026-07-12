@@ -1,59 +1,57 @@
 import type { Conversation, Message } from "./chat";
 
 export interface ServerToClientEvents {
-  "message:new": {
-    message: Message;
-  };
+  "message:new": (data: { message: Message }) => void;
 
-  "message:updated": {
+  "message:updated": (data: {
     id: string;
     conversationId: string;
     content: string;
     updatedAt: string;
-  };
+  }) => void;
 
-  "message:deleted": {
+  "message:deleted": (data: {
     id: string;
     conversationId: string;
-  };
+  }) => void;
 
-  "conversation:new": {
+  "conversation:new": (data: {
     conversation: Conversation;
-  };
+  }) => void;
 
-  "conversation:read_update": {
+  "conversation:read_update": (data: {
     conversationId: string;
     userId: string;
     lastReadAt: string;
-  };
+  }) => void;
 
-  "typing:update": {
+  "typing:update": (data: {
     conversationId: string;
     userId: string;
     fullName: string;
     isTyping: boolean;
-  };
+  }) => void;
 
-  "presence:update": {
+  "presence:update": (data: {
     userId: string;
     status: "online" | "offline";
-  };
+  }) => void;
 }
 
 export interface ClientToServerEvents {
-  "typing:start": {
+  "typing:start": (data: {
     conversationId: string;
-  };
+  }) => void;
 
-  "typing:stop": {
+  "typing:stop": (data: {
     conversationId: string;
-  };
+  }) => void;
 
-  "conversation:join": {
+  "conversation:join": (data: {
     conversationId: string;
-  };
+  }) => void;
 
-  "conversation:leave": {
+  "conversation:leave": (data: {
     conversationId: string;
-  };
+  }) => void;
 }

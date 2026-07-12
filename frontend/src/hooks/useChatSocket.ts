@@ -91,6 +91,22 @@ export const useChatSocket = () => {
       );
     };
 
+    const handleReactionUpdated = (data: { messageId: string; conversationId: string; reactions: any[] }) => {
+      queryClient.setQueryData(
+        ['messages', data.conversationId],
+        (old: any) => {
+          if (!old?.pages) return old;
+          
+          return {
+            ...old,
+            pages: old.pages.map((page: Message[]) => 
+              page.map(m => m.id === data.messageId ? { ...m, reactions: data.reactions } : m)
+            )
+          };
+        }
+      );
+    };
+
     // Conversation Events
     const handleNewConversation = (data: { conversation: Conversation }) => {
       queryClient.setQueryData<Conversation[]>(
@@ -145,6 +161,7 @@ export const useChatSocket = () => {
     socketService.on('message:new', handleNewMessage);
     socketService.on('message:updated', handleMessageUpdated);
     socketService.on('message:deleted', handleMessageDeleted);
+    socketService.on('message:reaction_updated', handleReactionUpdated);
     socketService.on('conversation:new', handleNewConversation);
     socketService.on('conversation:read_update', handleReadUpdate);
     socketService.on('typing:update', handleTypingUpdate);
@@ -157,6 +174,7 @@ export const useChatSocket = () => {
       socketService.off('message:new', handleNewMessage);
       socketService.off('message:updated', handleMessageUpdated);
       socketService.off('message:deleted', handleMessageDeleted);
+      socketService.off('message:reaction_updated', handleReactionUpdated);
       socketService.off('conversation:new', handleNewConversation);
       socketService.off('conversation:read_update', handleReadUpdate);
       socketService.off('typing:update', handleTypingUpdate);
@@ -165,3 +183,4 @@ export const useChatSocket = () => {
     };
   }, [queryClient, addTypingUser, removeTypingUser, updatePresence, setSocketConnected]);
 };
+

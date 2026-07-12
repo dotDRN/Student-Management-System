@@ -1,24 +1,25 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { MoreHorizontal, Check, CheckCheck, Clock } from 'lucide-react';
+import { MoreHorizontal, Check, CheckCheck, Clock, SmilePlus } from 'lucide-react';
 import type { Message } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useChatStore } from '../../../store/useChatStore';
 import { MessageMenu } from '../ContextMenus/MessageMenu';
 import { ReactionBar } from '../Panels/ReactionBar';
+import { ReactionPicker } from '../ContextMenus/ReactionPicker';
 import { cn } from '../../ui/Button';
 import { useQueryClient } from '@tanstack/react-query';
-import { useChatStore } from '../../../store/useChatStore';
+import { chatService } from '../../../services/chat.service';
 
 interface MessageBubbleProps {
   message: Message;
   onReply: (message: Message) => void;
   onEdit: (message: Message) => void;
   onDelete: (messageId: string) => void;
-  onReact: (messageId: string) => void;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
-  message, onReply, onEdit, onDelete, onReact
+  message, onReply, onEdit, onDelete
 }) => {
   const currentUserId = useAuthStore((state) => state.currentUser?.id);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
@@ -26,6 +27,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
   const isSender = message.senderId === currentUserId;
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerPos, setPickerPos] = useState({ x: 0, y: 0 });
 
   // Locate the replied message in cache
   let repliedMessage: Message | undefined;
@@ -49,6 +53,55 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
     const rect = e.currentTarget.getBoundingClientRect();
     setMenuPos({ x: rect.right + 8, y: rect.top });
     setMenuOpen(true);
+  };
+
+  const handleQuickReactClick = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPickerPos({ x: rect.left + rect.width / 2, y: rect.top });
+    setPickerOpen(true);
+  };
+
+  const handleSelectReaction = async (reactionType: string) => {
+    if (!activeConversationId || !currentUserId) return;
+
+    // Check if user already reacted with this
+    const hasReacted = message.reactions?.some((r) => r.userId === currentUserId && r.reaction === reactionType);
+    if (hasReacted) return; // Ignore if already reacted
+
+    const previousMessages = queryClient.getQueryData(['messages', activeConversationId]);
+
+    // Optimistic Update
+    queryClient.setQueryData(['messages', activeConversationId], (old: any) => {
+      if (!old?.pages) return old;
+      return {
+        ...old,
+        pages: old.pages.map((page: Message[]) =>
+          page.map((m) => {
+            if (m.id === message.id) {
+              const newReactions = [
+                ...m.reactions,
+                {
+                  id: `temp-${Date.now()}`,
+                  messageId: message.id,
+                  userId: currentUserId,
+                  reaction: reactionType as any,
+                  createdAt: new Date().toISOString(),
+                },
+              ];
+              return { ...m, reactions: newReactions };
+            }
+            return m;
+          })
+        ),
+      };
+    });
+
+    try {
+      await chatService.addReaction(message.id, reactionType);
+    } catch (error) {
+      console.error('Failed to add reaction:', error);
+      queryClient.setQueryData(['messages', activeConversationId], previousMessages);
+    }
   };
 
   const renderStatus = () => {
@@ -96,9 +149,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
                     ? "border-white/70 bg-black/10 hover:bg-black/20" 
                     : "border-brand-500 bg-brand-50 hover:bg-brand-100 text-brand-900"
                 )}
-                onClick={() => {
-                  // Optional: scroll to message logic can go here in the future
-                }}
               >
                 <div className="font-semibold mb-0.5">
                   {repliedMessage ? repliedMessage.sender?.fullName : 'Loading...'}
@@ -140,12 +190,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
             </div>
           </div>
 
-          <button
-            onClick={handleOptionsClick}
-            className="p-1 rounded-full text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 opacity-0 group-hover:opacity-100 transition-all shrink-0"
-          >
-            <MoreHorizontal size={16} />
-          </button>
+          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-all shrink-0">
+            <button
+              onClick={handleQuickReactClick}
+              className="p-1 rounded-full text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100"
+              title="React"
+            >
+              <SmilePlus size={16} />
+            </button>
+            <button
+              onClick={handleOptionsClick}
+              className="p-1 rounded-full text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100"
+              title="More"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+          </div>
         </div>
 
         <ReactionBar messageId={message.id} reactions={message.reactions || []} />
@@ -159,7 +219,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(({
         onReply={onReply}
         onEdit={onEdit}
         onDelete={onDelete}
-        onReact={onReact}
+        onReact={() => {
+          setPickerPos(menuPos);
+          setPickerOpen(true);
+        }}
+      />
+
+      <ReactionPicker
+        isOpen={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={handleSelectReaction}
+        position={pickerPos}
       />
     </div>
   );

@@ -69,8 +69,12 @@ class ChatService {
   }
 
   // --- Reactions ---
-  async toggleReaction(messageId: string, reaction: string): Promise<void> {
+  async addReaction(messageId: string, reaction: string): Promise<void> {
     await api.post(`/chat/messages/${messageId}/reactions`, { reaction });
+  }
+
+  async removeReaction(messageId: string): Promise<void> {
+    await api.delete(`/chat/messages/${messageId}/reactions`);
   }
 
   // --- Attachments ---
