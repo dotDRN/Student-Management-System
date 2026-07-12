@@ -93,7 +93,6 @@ export const MessageList: React.FC<MessageListProps> = ({
             onReply={setReplyingToMessage}
             onEdit={setEditingMessage}
             onDelete={() => onDelete(msg.id)}
-            onReact={(id) => console.log('React logic via useMutation', id)}
           />
         ))}
 

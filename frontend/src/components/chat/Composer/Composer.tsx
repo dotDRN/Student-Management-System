@@ -165,7 +165,7 @@ export const Composer: React.FC<ComposerProps> = ({
 
   return (
     <div 
-      className="flex flex-col bg-white border-t border-neutral-200"
+      className="flex flex-col bg-white border-t border-neutral-200 shrink-0"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
