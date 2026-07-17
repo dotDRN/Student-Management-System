@@ -97,6 +97,44 @@ enum ReactionType {
   angry
 }
 
+enum NotificationType {
+  chat_message
+  chat_reply
+  chat_mention
+
+  announcement
+
+  incoming_call
+  missed_call
+
+  system
+}
+
+enum NotificationPriority {
+  low
+  medium
+  high
+  critical
+}
+
+enum NotificationEntityType {
+  conversation
+  message
+  announcement
+  user
+  activity
+  batch
+  program
+  center
+  other
+}
+
+enum NotificationChannel {
+  in_app
+  browser
+  push
+}
+
 // =============================================================================
 // 1. FOUNDATION TABLES
 // =============================================================================
@@ -271,6 +309,11 @@ model User {
   createdConversations    Conversation[]       @relation("ConversationCreator")
   sentMessages            Message[]            @relation("MessageSender")
   messageReactions        MessageReaction[]    @relation("MessageReactionUser")
+
+  // Notifications
+  sentNotifications     Notification[]          @relation("NotificationActor")
+  receivedNotifications NotificationRecipient[] @relation("NotificationRecipient")
+  pushSubscriptions     PushSubscription[]
 
   @@map("users")
 }
@@ -930,4 +973,72 @@ model MessageReaction {
 
   @@unique([messageId, userId, reaction])
   @@map("message_reactions")
+}
+
+model Notification {
+  id      String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorId String?          @map("actor_id") @db.Uuid
+  type    NotificationType
+  title   String
+  body    String
+  metadata Json?
+
+  entityType NotificationEntityType?
+  entityId   String?                 @db.Uuid
+
+  link String?
+
+  priority  NotificationPriority @default(medium)
+  createdAt DateTime             @default(now()) @db.Timestamptz
+  expiresAt DateTime?            @db.Timestamptz
+  actor     User?                @relation("NotificationActor", fields: [actorId], references: [id])
+
+  recipients NotificationRecipient[]
+
+  @@index([createdAt])
+  @@index([type])
+  @@map("notifications")
+}
+
+model NotificationRecipient {
+  id             String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notificationId String                @map("notification_id") @db.Uuid
+  recipientId    String                @map("recipient_id") @db.Uuid
+  channels       NotificationChannel[]
+
+  isRead Boolean   @default(false)
+  readAt DateTime? @db.Timestamptz
+
+  browserDeliveredAt DateTime?
+  pushDeliveredAt DateTime?
+  isArchived       Boolean @default(false)
+
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  notification Notification @relation(fields: [notificationId], references: [id])
+  recipient    User         @relation("NotificationRecipient", fields: [recipientId], references: [id])
+
+  @@unique([notificationId, recipientId])
+  @@index([recipientId])
+  @@index([recipientId, isRead])
+  @@index([recipientId, createdAt])
+  @@map("notification_recipients")
+}
+
+model PushSubscription {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String  @map("user_id") @db.Uuid
+  endpoint  String
+  p256dhKey String  @map("p256dh_key")
+  authKey   String  @map("auth_key")
+  userAgent String?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @updatedAt @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

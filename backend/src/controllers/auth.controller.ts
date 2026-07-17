@@ -94,7 +94,6 @@ export const login = async (
 
 /**
  * POST /api/auth/refresh
- * Accepts token in request body
  */
 export const refresh = async (req: Request, res: Response, next: NextFunction) => {
   try {
