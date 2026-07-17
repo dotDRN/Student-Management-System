@@ -19,6 +19,8 @@ import skillRoutes from './routes/skillRoutes.js';
 import announcementRoutes from './routes/announcementRoutes.js';
 import koboRoutes from './routes/kobo.routes.js';
 
+import notificationRoutes from './routes/notification.routes.js';
+
 import path from "path";
 import { fileURLToPath } from "url";
 import attachmentRoutes from "./routes/attachment.routes.js";
@@ -80,6 +82,7 @@ app.use("/api/chat/conversations", messageRoutes);
 app.use("/api/chat/messages", messageItemRoutes);
 app.use("/api/chat/messages", reactionRoutes);
 app.use("/api/chat/attachments", attachmentRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Resolve __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
