@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { Menu, UserCircle, LogOut } from 'lucide-react';
+import { NotificationBell } from '../NotificationBell';
 
 interface TopBarProps {
   onMenuClick: () => void;
@@ -27,6 +28,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
       </div>
 
       <div className="flex items-center gap-3">
+        <NotificationBell />
         <div className="flex flex-col items-end hidden sm:flex">
           <span className="text-sm font-medium text-neutral-900">{currentUser?.email || 'User'}</span>
           <span className="text-xs text-neutral-500 capitalize">{currentUser?.role?.replace('_', ' ') || 'Guest'}</span>

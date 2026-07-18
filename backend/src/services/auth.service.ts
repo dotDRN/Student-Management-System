@@ -201,6 +201,7 @@ export const refreshAccessToken = async (token: string) => {
       email: user.email,
       role: user.role,
       centerIds,
+      isActive: user.isActive,
     };
 
     return {

@@ -24,6 +24,7 @@ import { ChatPage } from './pages/ChatPage';
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "./store/useAuthStore";
+import { ToastContainer } from './components/toast/ToastContainer';
 
 function App() {
   const { currentUser, initializeAuth, setAuth, logout } = useAuthStore();
@@ -65,6 +66,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <ToastContainer />
       <Routes>
         <Route path="/login" element={<Login />} />
 
