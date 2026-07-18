@@ -1,5 +1,5 @@
-import { Prisma } from "@prisma/client";
-import type { JwtPayload } from '../lib/auth.js';
+﻿import { Prisma } from "@prisma/client";
+import type { JwtPayload } from '../utils/jwt.js';
 import prisma from '../lib/prisma.js';
 import { AppError, NotFoundError } from '../lib/errors.js';
 
@@ -30,7 +30,7 @@ export async function listCenters(user: JwtPayload) {
 export async function getCenterDetails(user: JwtPayload, centerId: string) {
   const requesterId = user.userId || (user as any).id;
 
-  // 1. Permission Check — Admins see all centers
+  // 1. Permission Check â€” Admins see all centers
   if (user.role !== "super_admin" && user.role !== "center_admin") {
     const isAssigned = await prisma.userCenterAssignment.findFirst({
       where: {

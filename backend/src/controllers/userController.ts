@@ -1,5 +1,5 @@
-import type { NextFunction, Request, Response } from "express";
-import type { JwtPayload } from '../lib/auth.js';
+﻿import type { NextFunction, Request, Response } from "express";
+import type { JwtPayload } from '../utils/jwt.js';
 import { UserRole } from "@prisma/client";
 import {
   createUser,
@@ -84,7 +84,7 @@ export async function createUserController(req: Request, res: Response, next: Ne
       return res.status(403).json({ success: false, error: "Access Denied." });
     }
 
-    // 🔥 THE FIX: Explicitly include centerIds in the data passed to the service
+    // ðŸ”¥ THE FIX: Explicitly include centerIds in the data passed to the service
     const userData = {
       ...req.body,
       centerIds: centerIds || [], // Ensure this is an array

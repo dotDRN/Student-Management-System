@@ -1,6 +1,6 @@
-import prisma from "../lib/prisma.js";
+﻿import prisma from "../lib/prisma.js";
 import { UserRole } from "@prisma/client";
-import type { JwtPayload } from "../lib/auth.js";
+import type { JwtPayload } from "../utils/jwt.js";
 
 export async function getSkillsByStudent(user: JwtPayload, studentId: string) {
   const student = await prisma.student.findUnique({

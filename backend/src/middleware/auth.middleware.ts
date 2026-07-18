@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyAccessToken, JwtPayload } from '../lib/auth.js'; 
+import { verifyAccessToken, JwtPayload } from '../utils/jwt.js';
 import { ADMIN_ROLES, Role } from '../config/rbac.js';
 
 /**

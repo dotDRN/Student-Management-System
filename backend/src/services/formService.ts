@@ -1,5 +1,5 @@
-import type { Prisma } from "@prisma/client";
-import type { JwtPayload } from "../lib/auth.js";
+﻿import type { Prisma } from "@prisma/client";
+import type { JwtPayload } from "../utils/jwt.js";
 import prisma from "../lib/prisma.js";
 import {
   ForbiddenError,

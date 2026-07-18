@@ -4,6 +4,7 @@ import {
   generateAccessToken,
   generateRefreshToken,
   verifyRefreshToken,
+  JwtPayload,
 } from '../utils/jwt.js';
 import { AppError } from '../lib/errors.js';
 
@@ -27,14 +28,6 @@ type LoginInput = {
 type ChangePasswordInput = {
   currentPassword: string;
   newPassword: string;
-};
-
-type TokenPayload = {
-  userId: string;
-  email: string;
-  role: string;
-  centerIds: string[];
-  isActive?: boolean;
 };
 
 // ----------------------
@@ -94,11 +87,12 @@ export const registerUser = async ({
 
     const centerIds = await getCenterIdsByUserId(user.id);
 
-    const payload: TokenPayload = {
+    const payload: JwtPayload = {
       userId: user.id,
       email: user.email,
       role: user.role,
       centerIds,
+      isActive: user.isActive,
     };
 
     return {
@@ -134,7 +128,7 @@ export const loginUser = async ({ email, password }: LoginInput) => {
 
     const centerIds = await getCenterIdsByUserId(user.id);
 
-    const payload: TokenPayload = {
+    const payload: JwtPayload = {
       userId: user.id,
       email: user.email,
       role: user.role,
@@ -196,7 +190,7 @@ export const refreshAccessToken = async (token: string) => {
 
     const centerIds = await getCenterIdsByUserId(user.id);
 
-    const payload: TokenPayload = {
+    const payload: JwtPayload = {
       userId: user.id,
       email: user.email,
       role: user.role,

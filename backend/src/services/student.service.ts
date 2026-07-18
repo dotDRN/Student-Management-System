@@ -1,6 +1,6 @@
-import prisma from '../lib/prisma.js';
+﻿import prisma from '../lib/prisma.js';
 import { z } from "zod";
-import type { JwtPayload as TokenPayload } from '../lib/auth.js';
+import type { JwtPayload as TokenPayload } from '../utils/jwt.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../lib/errors.js';
 
 const phone10Digit = z
@@ -49,9 +49,9 @@ const scopedWhere = (user: TokenPayload, otherConditions: Record<string, unknown
   const userRole = user.role;
   const effectiveUserId = user.userId;
 
-  // super_admin & tech_admin → NO restrictions, see everything globally
-  // center_admin → see everything in their centers
-  // teachers → see everything in their centers (can be restricted further if needed)
+  // super_admin & tech_admin â†’ NO restrictions, see everything globally
+  // center_admin â†’ see everything in their centers
+  // teachers â†’ see everything in their centers (can be restricted further if needed)
   if (userRole !== 'super_admin' && userRole !== 'tech_admin') {
      baseFilter.centerId = { in: user.centerIds || [] };
   }
@@ -62,9 +62,9 @@ const scopedWhere = (user: TokenPayload, otherConditions: Record<string, unknown
   };
 };
 
-/* ─────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    STUDENTS
-───────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const createStudent = async (user: TokenPayload, data: any) => {
   const parsed = studentCreateSchema.safeParse(data);
@@ -465,9 +465,9 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
   };
 };
 
-/* ─────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    ATTENDANCE
-───────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const addAttendance = async (user: TokenPayload, studentId: string, data: any) => {
   await getStudentById(user, studentId);
@@ -490,9 +490,9 @@ export const updateAttendance = async (id: string, data: any) => {
   return prisma.attendanceRecord.update({ where: { id }, data });
 };
 
-/* ─────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    SKILLS
-───────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const addSkill = async (user: TokenPayload, studentId: string, data: any) => {
   const student = await getStudentById(user, studentId);
@@ -534,9 +534,9 @@ export const deleteSkill = async (id: string) => {
   return prisma.studentSkillLog.delete({ where: { id } });
 };
 
-/* ─────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    CAREERS (Linked to Forms)
-───────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const addCareer = async (user: TokenPayload, studentId: string, data: any) => {
   const student = await getStudentById(user, studentId);
@@ -598,9 +598,9 @@ export const deleteCareer = async (id: string) => {
   return prisma.formSubmission.delete({ where: { id } });
 };
 
-/* ─────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    TRANSFER WORKFLOW (FROM VANSH)
-───────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const requestTransfer = async (user: TokenPayload, studentIds: string[]) => {
   const effectiveUserId = user.userId;
@@ -682,9 +682,9 @@ export const completeTransfer = async (
   return { transferred: students.length };
 };
 
-/* ─────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    FEE MANAGEMENT (FROM VANSH)
-───────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const addFeePayment = async (
   user: TokenPayload,
@@ -749,9 +749,9 @@ export const updateStudentFees = async (
   });
 };
 
-/* ─────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    DASHBOARD SUMMARY
-───────────────────────────────────────── */
+â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 export const getDashboardStats = async () => {
   const [totalStudents, totalAttendance, presentCount] = await Promise.all([

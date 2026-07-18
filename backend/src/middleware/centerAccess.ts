@@ -1,8 +1,8 @@
-import type { NextFunction, Request, Response } from "express";
-import type { JwtPayload } from '../lib/auth.js';
+﻿import type { NextFunction, Request, Response } from "express";
+import type { JwtPayload } from '../utils/jwt.js';
 
 /**
- * Attaches `allowedCenterIds` for non-admin users (from JWT — refreshed at login with active assignments).
+ * Attaches `allowedCenterIds` for non-admin users (from JWT â€” refreshed at login with active assignments).
  * Admins get `undefined` (no filter). Use with Prisma `centerId: { in: req.allowedCenterIds }` when not admin.
  */
 export function attachAllowedCenters(req: Request, _res: Response, next: NextFunction): void {

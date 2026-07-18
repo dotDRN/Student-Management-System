@@ -1,4 +1,4 @@
-import type { JwtPayload } from "../lib/auth.js";
+﻿import type { JwtPayload } from "../utils/jwt.js";
 
 declare global {
   namespace Express {
