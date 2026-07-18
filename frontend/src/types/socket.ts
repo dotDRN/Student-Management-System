@@ -1,6 +1,9 @@
 import type { Conversation, Message } from "./chat";
+import type { Notification } from "./notification";
 
 export interface ServerToClientEvents {
+  "notification:new": (data: Omit<Notification, 'isRead' | 'readAt'>) => void;
+
   "message:new": (data: { message: Message }) => void;
 
   "message:updated": (data: {
@@ -13,6 +16,12 @@ export interface ServerToClientEvents {
   "message:deleted": (data: {
     id: string;
     conversationId: string;
+  }) => void;
+
+  "message:reaction_updated": (data: {
+    messageId: string;
+    conversationId: string;
+    reactions: unknown[];
   }) => void;
 
   "conversation:new": (data: {

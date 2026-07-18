@@ -1,17 +1,24 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { socketService } from '../services/socket.service';
 import { useChatStore } from '../store/useChatStore';
 import type { Message, Conversation } from '../types/chat';
+import type { Notification, NotificationListResponse, UnreadCountResponse } from '../types/notification';
+import { useNotificationStore } from '../store/useNotificationStore';
+import { useToast } from './useToast';
 
 export const useChatSocket = () => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const toast = useToast();
   const { 
     addTypingUser, 
     removeTypingUser, 
     updatePresence,
     setSocketConnected
   } = useChatStore();
+  const { addNotification, incrementUnread } = useNotificationStore();
 
   useEffect(() => {
     const handleConnect = (isConnected: boolean) => {
@@ -31,6 +38,7 @@ export const useChatSocket = () => {
       const enrichedMessage: Message = {
         ...message,
         sender: {
+          id: senderMember?.user?.id || message.senderId,
           fullName: senderMember?.user?.fullName || 'Unknown User',
           email: senderMember?.user?.email || ''
         }
@@ -107,6 +115,51 @@ export const useChatSocket = () => {
       );
     };
 
+    const handleNewNotification = async (data: Omit<Notification, 'isRead' | 'readAt'>) => {
+      const notification: Notification = { ...data, isRead: false };
+      const existing = useNotificationStore.getState().notifications.some(
+        (item) => item.notificationRecipientId === notification.notificationRecipientId,
+      );
+
+      if (existing) return;
+
+      addNotification(notification);
+      incrementUnread();
+      toast.notification({
+        title: notification.title,
+        description: notification.body,
+        action: notification.link
+          ? {
+              label: 'Open',
+              onClick: () => {
+                void navigate(notification.link!);
+              },
+            }
+          : undefined,
+      });
+
+      // Prevent in-flight REST responses from overwriting this newer socket state.
+      await queryClient.cancelQueries({ queryKey: ['notifications'] });
+
+      queryClient.setQueriesData<NotificationListResponse>(
+        {
+          predicate: (query) =>
+            query.queryKey[0] === 'notifications' && typeof query.queryKey[1] === 'number',
+        },
+        (old) => old
+          ? {
+              ...old,
+              notifications: [notification, ...old.notifications],
+              pagination: { ...old.pagination, total: old.pagination.total + 1 },
+            }
+          : old,
+      );
+      queryClient.setQueryData<UnreadCountResponse>(
+        ['notifications', 'unreadCount'],
+        (old) => ({ unreadCount: (old?.unreadCount ?? 0) + 1 }),
+      );
+    };
+
     // Conversation Events
     const handleNewConversation = (data: { conversation: Conversation }) => {
       queryClient.setQueryData<Conversation[]>(
@@ -155,6 +208,8 @@ export const useChatSocket = () => {
       // Invalidate queries to refetch data missed during downtime
       queryClient.invalidateQueries({ queryKey: ['messages'] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] });
     };
 
     // Attach listeners
@@ -162,6 +217,7 @@ export const useChatSocket = () => {
     socketService.on('message:updated', handleMessageUpdated);
     socketService.on('message:deleted', handleMessageDeleted);
     socketService.on('message:reaction_updated', handleReactionUpdated);
+    socketService.on('notification:new', handleNewNotification);
     socketService.on('conversation:new', handleNewConversation);
     socketService.on('conversation:read_update', handleReadUpdate);
     socketService.on('typing:update', handleTypingUpdate);
@@ -175,12 +231,23 @@ export const useChatSocket = () => {
       socketService.off('message:updated', handleMessageUpdated);
       socketService.off('message:deleted', handleMessageDeleted);
       socketService.off('message:reaction_updated', handleReactionUpdated);
+      socketService.off('notification:new', handleNewNotification);
       socketService.off('conversation:new', handleNewConversation);
       socketService.off('conversation:read_update', handleReadUpdate);
       socketService.off('typing:update', handleTypingUpdate);
       socketService.off('presence:update', handlePresenceUpdate);
       window.removeEventListener('chat:reconnected', handleReconnected);
     };
-  }, [queryClient, addTypingUser, removeTypingUser, updatePresence, setSocketConnected]);
+  }, [
+    queryClient,
+    addTypingUser,
+    removeTypingUser,
+    updatePresence,
+    setSocketConnected,
+    addNotification,
+    incrementUnread,
+    navigate,
+    toast,
+  ]);
 };
 

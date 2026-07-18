@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import { NotificationDrawer } from '../NotificationDrawer';
+import { socketService } from '../../services/socket.service';
+import { useChatStore } from '../../store/useChatStore';
+import { useChatSocket } from '../../hooks/useChatSocket';
 
 // Define the roles based on your Prisma Schema
 type UserRole = 'super_admin' | 'center_admin' | 'supervisor' | 'teacher' | 'staff' | 'volunteer' | 'student' | 'parent' | 'shareholder' | 'tech_admin';
@@ -16,6 +20,18 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   const currentUser = useAuthStore((state) => state.currentUser);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
+  const resetChatState = useChatStore((state) => state.resetChatState);
+
+  useChatSocket();
+
+  useEffect(() => {
+    socketService.connect();
+
+    return () => {
+      socketService.disconnect();
+      resetChatState();
+    };
+  }, [resetChatState]);
 
   // 1. Authentication Check
   if (!accessToken || !currentUser) {
@@ -34,6 +50,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   return (
     <div className="flex h-screen overflow-hidden bg-neutral-100">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      <NotificationDrawer />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <TopBar onMenuClick={() => setIsSidebarOpen(true)} />

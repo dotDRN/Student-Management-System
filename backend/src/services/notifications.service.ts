@@ -5,12 +5,13 @@ import {
   NotificationChannel,
   NotificationPriority,
   NotificationRecipient,
+  Prisma,
 } from "@prisma/client";
 import type { CreateNotificationDto } from "../dto/notification/create-notification.dto.js";
 
 class NotificationService {
-  private async createNotification(dto: CreateNotificationDto) {
-    return prisma.notification.create({
+  private async createNotification(tx: Prisma.TransactionClient ,dto: CreateNotificationDto) {
+    return tx.notification.create({
       data: {
         actorId: dto.actorId,
         type: dto.type,
@@ -27,11 +28,12 @@ class NotificationService {
   }
 
   private async createRecipients(
+    tx: Prisma.TransactionClient,
     notificationId: string,
     recipientIds: string[],
     channels: NotificationChannel[] = [NotificationChannel.in_app],
   ) {
-    await prisma.notificationRecipient.createMany({
+    await tx.notificationRecipient.createMany({
       data: recipientIds.map((recipientId) => ({
         notificationId,
         recipientId,
@@ -39,7 +41,7 @@ class NotificationService {
       })),
     });
 
-    return prisma.notificationRecipient.findMany({
+    return tx.notificationRecipient.findMany({
       where: {
         notificationId,
       },
@@ -54,16 +56,24 @@ class NotificationService {
 
     for (const recipient of recipients) {
       io.to(`user:${recipient.recipientId}`).emit("notification:new", {
+        notificationRecipientId: recipient.id,
+
         notificationId: notification.id,
         recipientId: recipient.recipientId,
+
         type: notification.type,
         title: notification.title,
         body: notification.body,
+
         priority: notification.priority,
+
         link: notification.link,
+
         entityType: notification.entityType,
         entityId: notification.entityId,
+
         metadata: notification.metadata,
+        
         createdAt: notification.createdAt,
       });
     }
@@ -71,9 +81,10 @@ class NotificationService {
 
   async notify(dto: CreateNotificationDto) {
     const result = await prisma.$transaction(async (tx) => {
-      const notification = await this.createNotification(dto);
+      const notification = await this.createNotification(tx, dto);
 
       await this.createRecipients(
+        tx,
         notification.id,
         dto.recipientIds,
         dto.channels,
