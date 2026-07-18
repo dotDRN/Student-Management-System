@@ -1,5 +1,5 @@
-import type { NextFunction, Request, Response } from "express";
-import type { JwtPayload } from '../lib/auth.js';
+﻿import type { NextFunction, Request, Response } from "express";
+import type { JwtPayload } from '../utils/jwt.js';
 import {
   createExam,
   getExamById,
@@ -40,7 +40,7 @@ export async function listExamsController(req: Request, res: Response, next: Nex
       programId: req.query.programId as string,
       examType: req.query.examType as string,
       academicYearId: req.query.academicYearId as string,
-      examDate: req.query.examDate as string, // ✅ FIX
+      examDate: req.query.examDate as string, // âœ… FIX
     });
 
     return res.status(200).json(result);

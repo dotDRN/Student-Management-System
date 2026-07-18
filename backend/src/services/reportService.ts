@@ -1,6 +1,6 @@
-import type { Prisma } from "@prisma/client";
+﻿import type { Prisma } from "@prisma/client";
 import prisma from '../lib/prisma.js';
-import type { JwtPayload } from '../lib/auth.js';
+import type { JwtPayload } from '../utils/jwt.js';
 import { ForbiddenError } from '../lib/errors.js';
 
 // Helper to apply center scope safely
@@ -308,7 +308,7 @@ export async function getExamAnalytics(user: JwtPayload, query: any) {
 }
 
 // ----------------------------------------------------------------------
-// SKILLS REPORT (no dedicated Skill model — averages from exam scores + skill-like forms)
+// SKILLS REPORT (no dedicated Skill model â€” averages from exam scores + skill-like forms)
 // ----------------------------------------------------------------------
 export async function getSkillsReport(user: JwtPayload, query: { centerId?: string; programId?: string }) {
   if (query.centerId && user.role !== "super_admin" && !user.centerIds.includes(query.centerId as string)) {

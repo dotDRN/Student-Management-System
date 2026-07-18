@@ -1,7 +1,7 @@
-import { Prisma, UserRole } from "@prisma/client";
+﻿import { Prisma, UserRole } from "@prisma/client";
 import { NotFoundError, ForbiddenError } from "../lib/errors.js";
 import prisma from "../lib/prisma.js";
-import type { JwtPayload } from "../lib/auth.js";
+import type { JwtPayload } from "../utils/jwt.js";
 import { resolveAcademicYearId } from "../utils/academicYear.js";
 
 // ================= TYPES =================
@@ -60,7 +60,7 @@ export const createExam = async (user: JwtPayload, data: CreateExamInput) => {
   for (const centerId of data.centerIds) {
     enforceCenterAccess(user, centerId);
 
-    // ✅ Prevent duplicate exam for same date
+    // âœ… Prevent duplicate exam for same date
     const existing = await prisma.exam.findFirst({
       where: {
         centerId,
@@ -155,14 +155,14 @@ export async function listExams(user: JwtPayload, query: ListExamQuery) {
   const academicYearId = await resolveAcademicYearId(query.academicYearId);
 
   if (query.academicYearId && !academicYearId) {
-    return []; // invalid label → no results
+    return []; // invalid label â†’ no results
   }
 
   if (academicYearId) {
     where.academicYearId = academicYearId;
   }
 
-  // ✅ CRITICAL FIX: filter by DATE RANGE
+  // âœ… CRITICAL FIX: filter by DATE RANGE
   if (query.examDate) {
     const d = new Date(query.examDate);
 
@@ -229,14 +229,14 @@ export async function upsertExamScores(
 
   enforceCenterAccess(user, exam.centerId);
 
-  // Build subject lookup: id → id, name → id
+  // Build subject lookup: id â†’ id, name â†’ id
   const subjectMap = new Map<string, string>();
   exam.program?.subjects.forEach((s) => {
     subjectMap.set(s.id, s.id);
     subjectMap.set(s.name.toLowerCase(), s.id);
   });
 
-  // Resolve each score's subjectId — auto-create if subject name is new
+  // Resolve each score's subjectId â€” auto-create if subject name is new
   const processedScores = [];
   for (const s of input.scores) {
     let subjectId =

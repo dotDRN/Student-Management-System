@@ -1,5 +1,5 @@
-import type { NextFunction, Request, Response } from "express";
-import type { JwtPayload } from '../lib/auth.js';
+﻿import type { NextFunction, Request, Response } from "express";
+import type { JwtPayload } from '../utils/jwt.js';
 import { getSkillsByStudent, listSkillDefinitions, createSkillLog } from '../services/skillService.js';
 
 type AuthenticatedRequest = Request & { user?: JwtPayload };

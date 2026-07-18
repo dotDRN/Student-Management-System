@@ -1,5 +1,5 @@
-import type { NextFunction, Request, Response } from "express";
-import type { JwtPayload } from '../lib/auth.js';
+﻿import type { NextFunction, Request, Response } from "express";
+import type { JwtPayload } from '../utils/jwt.js';
 import {
   listActivities,
   getActivity,

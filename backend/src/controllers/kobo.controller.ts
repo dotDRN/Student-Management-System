@@ -1,6 +1,6 @@
-import { Request, Response, NextFunction } from "express";
+﻿import { Request, Response, NextFunction } from "express";
 import { syncKoboForms, syncKoboSubmissions } from "../services/kobo.service.js";
-import { JwtPayload } from "../lib/auth.js";
+import { JwtPayload } from "../utils/jwt.js";
 
 type AuthRequest = Request & { user?: JwtPayload };
 

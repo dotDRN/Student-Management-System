@@ -1,6 +1,6 @@
 import { Socket } from "socket.io";
 import prisma from "../lib/prisma.js";
-import { verifyAccessToken } from "../lib/auth.js";
+import { verifyAccessToken } from "../utils/jwt.js";
 
 export async function authenticateSocket(
     socket: Socket,

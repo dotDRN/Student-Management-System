@@ -1,4 +1,4 @@
-// backend/src/routes/dashboard.routes.ts
+﻿// backend/src/routes/dashboard.routes.ts
 
 import { Router } from "express";
 import type { NextFunction, Request, Response } from "express";
@@ -7,7 +7,7 @@ import { requireAuth as authenticate } from '../lib/auth.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { requireCenterAccess } from '../middleware/center.middleware.js';
 import { PERMISSIONS } from '../config/rbac.js';
-import type { JwtPayload } from '../lib/auth.js';
+import type { JwtPayload } from '../utils/jwt.js';
 import { getDashboardSummary } from '../services/reportService.js';
 
 const dashboardRoutes = Router();

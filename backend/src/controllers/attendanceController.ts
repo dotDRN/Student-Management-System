@@ -1,5 +1,5 @@
-import type { Request, Response, NextFunction } from "express";
-import type { JwtPayload } from "../lib/auth.js";
+﻿import type { Request, Response, NextFunction } from "express";
+import type { JwtPayload } from "../utils/jwt.js";
 import {
   bulkUpdateSessionRecords,
   createSession,
@@ -120,7 +120,7 @@ export async function updateAttendanceSessionRecords(
       records,
     );
 
-    // ✅ Always return consistent structure
+    // âœ… Always return consistent structure
     const full = await getSessionById(
       (req as AuthenticatedRequest).user!,
       req.params.sessionId as string,

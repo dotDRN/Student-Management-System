@@ -1,6 +1,6 @@
-import type { TokenPayload } from '../utils/jwt.js';
+import type { JwtPayload } from '../utils/jwt.js';
 
-export const centerScope = (user: TokenPayload | undefined) => {
+export const centerScope = (user: JwtPayload | undefined) => {
   if (user?.role === "super_admin" || user?.role === "tech_admin") {
     return {};
   }
