@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationService } from '../services/notification.service';
 import { useNotificationStore } from '../store/useNotificationStore';
+import { NotificationItem } from './NotificationItem';
 import type { Notification, NotificationListResponse, UnreadCountResponse } from '../types/notification';
 
 interface NotificationDrawerProps {
@@ -15,6 +16,7 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const notifications = useNotificationStore((state) => state.notifications);
+  const unreadNotifications = notifications.filter((n) => !n.isRead);
   const unreadCount = useNotificationStore((state) => state.unreadCount);
   const isOpen = useNotificationStore((state) => state.isOpen);
   const setNotifications = useNotificationStore((state) => state.setNotifications);
@@ -53,6 +55,19 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
             }
           : old,
       );
+      queryClient.setQueryData(['notifications', 'infinite'], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            notifications: page.notifications.map((n: Notification) => ({
+              ...n,
+              isRead: true
+            }))
+          }))
+        };
+      });
       queryClient.setQueryData<UnreadCountResponse>(
         ['notifications', 'unreadCount'],
         { unreadCount: 0 },
@@ -90,6 +105,20 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
             }
           : old,
       );
+      queryClient.setQueryData(['notifications', 'infinite'], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            notifications: page.notifications.map((n: Notification) =>
+              n.notificationRecipientId === notification.notificationRecipientId
+                ? { ...n, isRead: true, readAt: new Date().toISOString() }
+                : n
+            )
+          }))
+        };
+      });
       queryClient.setQueryData<UnreadCountResponse>(
         ['notifications', 'unreadCount'],
         (old) => ({ unreadCount: Math.max(0, (old?.unreadCount ?? 1) - 1) }),
@@ -122,13 +151,13 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-200">
           <div>
             <h2 className="text-lg font-semibold text-neutral-900">Notifications</h2>
-            <p className="text-sm text-neutral-500">{notifications.length} recent notifications</p>
+            <p className="text-sm text-neutral-500">{unreadNotifications.length} unread notifications</p>
           </div>
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => markAllMutation.mutate()}
-              disabled={markAllMutation.isPending || !notifications.some((item) => !item.isRead)}
+              disabled={markAllMutation.isPending || unreadNotifications.length === 0}
               className="px-2 py-1 text-sm text-primary hover:bg-primary/10 rounded disabled:opacity-50"
             >
               Mark all read
@@ -160,29 +189,23 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
                 Try again
               </button>
             </div>
-          ) : notifications.length === 0 ? (
-            <div className="px-6 py-16 text-center text-sm text-neutral-500">No notifications yet.</div>
+          ) : unreadNotifications.length === 0 ? (
+            <div className="px-6 py-16 flex flex-col items-center justify-center text-center text-neutral-500">
+              <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <p className="font-medium text-neutral-900 mb-1">You're all caught up.</p>
+              <p className="text-sm">No unread notifications.</p>
+            </div>
           ) : (
-            notifications.map((notification) => (
-              <button
+            unreadNotifications.map((notification) => (
+              <NotificationItem
                 key={notification.notificationRecipientId}
-                type="button"
-                onClick={() => handleNotificationClick(notification)}
-                className="w-full text-left px-5 py-4 border-b border-neutral-100 hover:bg-neutral-50 transition-colors"
-              >
-                <div className="flex items-start gap-3">
-                  <span className={`mt-2 h-2 w-2 shrink-0 rounded-full ${notification.isRead ? 'bg-transparent' : 'bg-primary'}`} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="font-medium text-sm text-neutral-900">{notification.title}</p>
-                      <time className="shrink-0 text-xs text-neutral-400">
-                        {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
-                      </time>
-                    </div>
-                    <p className="mt-1 text-sm text-neutral-600 line-clamp-2">{notification.body}</p>
-                  </div>
-                </div>
-              </button>
+                notification={notification}
+                onClick={handleNotificationClick}
+              />
             ))
           )}
         </div>

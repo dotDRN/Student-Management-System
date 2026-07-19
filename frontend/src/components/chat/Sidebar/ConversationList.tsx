@@ -4,6 +4,7 @@ import { Search, Plus, MessageSquare } from 'lucide-react';
 import { chatService } from '../../../services/chat.service';
 import { useChatStore } from '../../../store/useChatStore';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { useNavigate } from 'react-router-dom';
 import { ConversationItem } from './ConversationItem';
 import { ConversationModal } from './ConversationModal';
 import { getConversationDisplayName } from '../../../utils/chatHelpers';
@@ -11,8 +12,9 @@ import { getConversationDisplayName } from '../../../utils/chatHelpers';
 export const ConversationList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const { activeConversationId, setActiveConversationId } = useChatStore();
+  const { activeConversationId } = useChatStore();
   const currentUserId = useAuthStore((state) => state.currentUser?.id);
+  const navigate = useNavigate();
 
   const { data: conversations, isLoading } = useQuery({
     queryKey: ['conversations'],
@@ -70,7 +72,7 @@ export const ConversationList: React.FC = () => {
               key={conv.id}
               conversation={conv}
               isActive={activeConversationId === conv.id}
-              onClick={() => setActiveConversationId(conv.id)}
+              onClick={() => navigate(`/chat/${conv.id}`)}
             />
           ))
         )}

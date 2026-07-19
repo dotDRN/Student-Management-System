@@ -154,6 +154,18 @@ export const useChatSocket = () => {
             }
           : old,
       );
+
+      queryClient.setQueryData(['notifications', 'infinite'], (old: any) => {
+        if (!old || !old.pages || old.pages.length === 0) return old;
+        const newPages = [...old.pages];
+        newPages[0] = {
+          ...newPages[0],
+          notifications: [notification, ...newPages[0].notifications],
+          pagination: { ...newPages[0].pagination, total: newPages[0].pagination.total + 1 },
+        };
+        return { ...old, pages: newPages };
+      });
+
       queryClient.setQueryData<UnreadCountResponse>(
         ['notifications', 'unreadCount'],
         (old) => ({ unreadCount: (old?.unreadCount ?? 0) + 1 }),
