@@ -16,7 +16,8 @@ import {
   UserCog,
   Building2,
   BookOpen,
-  MessageSquare
+  MessageSquare,
+  Bell
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -43,6 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { name: 'Forms', path: '/forms', icon: <FileText size={20} />, viewRoles: ['super_admin','center_admin','tech_admin','teacher','staff'] },
     { name: 'Activities', path: '/activities', icon: <Briefcase size={20} />, viewRoles: ['super_admin','center_admin','tech_admin','teacher','staff'] },
     { name: 'Announcements', path: '/announcements', icon: <LayoutDashboard size={20} />, viewRoles: ['super_admin','center_admin','tech_admin','teacher','staff'] },
+    { name: 'Notifications', path: '/notifications', icon: <Bell size={20} />, viewRoles: ['super_admin','center_admin','tech_admin','teacher','staff'] },
     { name: 'Chat', path: '/chat', icon: <MessageSquare size={20} />, viewRoles: ['super_admin','center_admin','tech_admin','teacher','staff'] },
     { name: 'Centers', path: '/centers', icon: <Building2 size={20} />, viewRoles: ['super_admin','center_admin','tech_admin'] },
     { name: 'Programs', path: '/programs', icon: <BookOpen size={20} />, viewRoles: ['super_admin','center_admin','tech_admin'] },

@@ -4,6 +4,7 @@ import { X, Search, Check, Users } from 'lucide-react';
 import { listUsers } from '../../../services/users.service';
 import { chatService } from '../../../services/chat.service';
 import { useChatStore } from '../../../store/useChatStore';
+import { useNavigate } from 'react-router-dom';
 
 interface ConversationModalProps {
   isOpen: boolean;
@@ -17,7 +18,7 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({ isOpen, on
   const [groupName, setGroupName] = useState('');
   
   const queryClient = useQueryClient();
-  const { setActiveConversationId } = useChatStore();
+  const navigate = useNavigate();
 
   // Debounce search
   useEffect(() => {
@@ -44,7 +45,7 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({ isOpen, on
         return [newConversation, ...old];
       });
       // Focus and navigate
-      setActiveConversationId(newConversation.id);
+      navigate(`/chat/${newConversation.id}`);
       onClose();
       // Reset state
       setSelectedUserIds(newSet => new Set());
