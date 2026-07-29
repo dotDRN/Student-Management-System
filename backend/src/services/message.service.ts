@@ -12,6 +12,7 @@ import {
   NotFoundError,
 } from "../lib/errors.js";
 import NotificationService from "./notifications.service.js";
+import { activeConversationTracker } from "../socket/activeConversationTracker.js";
 
 // Extended DTO to handle attachments as requested by business logic
 export interface SendMessageDto {
@@ -145,6 +146,7 @@ class MessageService {
         },
         select: {
           id: true,
+          conversationId: true,
           type: true,
           content: true,
           createdAt: true,
@@ -189,10 +191,24 @@ class MessageService {
       return message;
     }
 
+    const unnotifiedRecipientIds: string[] = [];
+    await Promise.all(
+      recipientIds.map(async (recipientId) => {
+        const isViewing = await activeConversationTracker.isViewingConversation(recipientId, conversationId);
+        if (!isViewing) {
+          unnotifiedRecipientIds.push(recipientId);
+        }
+      })
+    );
+
+    if (unnotifiedRecipientIds.length === 0) {
+      return message;
+    }
+
     try {
       await NotificationService.notify({
         actorId: userId,
-        recipientIds,
+        recipientIds: unnotifiedRecipientIds,
         type: NotificationType.chat_message,
         title: sender.fullName,
         body: getMessageNotificationBody(message.type, message.content),

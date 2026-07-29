@@ -3,6 +3,7 @@ import { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
 import { authenticateSocket } from "./auth.js";
 import { SocketRoomManager } from "./socketRooms.js";
+import { activeConversationTracker } from "./activeConversationTracker.js";
 
 let io: Server;
 
@@ -55,6 +56,26 @@ export function initializeSocket(server: HttpServer): Server {
         }
       });
 
+      socket.on("conversation:focus", async (data: { conversationId: string }) => {
+        if (data?.conversationId && userId) {
+          try {
+            await activeConversationTracker.focusConversation(userId, data.conversationId);
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      });
+
+      socket.on("conversation:blur", async () => {
+        if (userId) {
+          try {
+            await activeConversationTracker.blurConversation(userId);
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      });
+
       socket.on("typing:start", (data: { conversationId: string }) => {
         if (data?.conversationId && userId) {
           const room = SocketRoomManager.getRoomName(data.conversationId);
@@ -97,6 +118,7 @@ export function initializeSocket(server: HttpServer): Server {
 
         if (userConnections.size === 0) {
           activeConnections.delete(userId);
+          activeConversationTracker.blurConversation(userId).catch(console.error);
           io.emit("presence:update", { userId, status: "offline" });
         }
       }

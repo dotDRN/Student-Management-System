@@ -63,4 +63,10 @@ export interface ClientToServerEvents {
   "conversation:leave": (data: {
     conversationId: string;
   }) => void;
+
+  "conversation:focus": (data: {
+    conversationId: string;
+  }) => void;
+
+  "conversation:blur": () => void;
 }

@@ -12,13 +12,15 @@ export const useChatSocket = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const toast = useToast();
-  const { 
-    addTypingUser, 
-    removeTypingUser, 
-    updatePresence,
-    setSocketConnected
-  } = useChatStore();
-  const { addNotification, incrementUnread } = useNotificationStore();
+  const addTypingUser = useChatStore((state) => state.addTypingUser);
+  const removeTypingUser = useChatStore((state) => state.removeTypingUser);
+  const updatePresence = useChatStore((state) => state.updatePresence);
+  const setSocketConnected = useChatStore((state) => state.setSocketConnected);
+  const activeConversationId = useChatStore((state) => state.activeConversationId);
+  const isSocketConnected = useChatStore((state) => state.isSocketConnected);
+
+  const addNotification = useNotificationStore((state) => state.addNotification);
+  const incrementUnread = useNotificationStore((state) => state.incrementUnread);
 
   useEffect(() => {
     const handleConnect = (isConnected: boolean) => {
@@ -261,5 +263,16 @@ export const useChatSocket = () => {
     navigate,
     toast,
   ]);
+
+  useEffect(() => {
+    if (activeConversationId && isSocketConnected) {
+      socketService.emit('conversation:focus', { conversationId: activeConversationId });
+    }
+    
+    return () => {
+      // It's safe to always try emitting blur. If disconnected, it safely drops.
+      socketService.emit('conversation:blur');
+    };
+  }, [activeConversationId, isSocketConnected]);
 };
 
