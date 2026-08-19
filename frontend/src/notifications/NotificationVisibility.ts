@@ -29,13 +29,15 @@ export class NotificationVisibilityService {
    * Builds the current notification context.
    */
   public getContext(
-    activeConversationId?: string | null
+    activeConversationId?: string | null,
+    browserNotificationsEnabled: boolean = false
   ): NotificationContext {
     return {
       permission: notificationPermission.getPermission(),
       isTabVisible: this.isTabVisible(),
       isWindowFocused: this.isWindowFocused(),
       activeConversationId,
+      browserNotificationsEnabled,
     };
   }
 }

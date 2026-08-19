@@ -23,19 +23,17 @@ export class BrowserNotificationService {
       return null;
     }
 
-    const options: NotificationOptions = {
-      body: notification.body,
-      tag: notification.notificationId,
-    };
+    try {
+      const options: NotificationOptions = {
+        body: notification.body,
+        tag: notification.notificationId,
+      };
 
-    const browserNotification = new Notification(notification.title, options);
-
-    browserNotification.onclick = () => {
-      window.focus();
-      browserNotification.close();
-    };
-
-    return browserNotification;
+      return new Notification(notification.title, options);
+    } catch (error) {
+      console.error("[BrowserNotificationService] Failed to create notification:", error);
+      return null;
+    }
   }
 
   /**

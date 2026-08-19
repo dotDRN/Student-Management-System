@@ -11,32 +11,25 @@ export type NotificationType =
 
 export interface NotificationContext {
   permission: NotificationPermission;
-
   isTabVisible: boolean;
-
   isWindowFocused: boolean;
-
   activeConversationId?: string | null;
+  browserNotificationsEnabled: boolean;
 }
 
 export interface NotificationDecision {
   showToast: boolean;
-
   showBrowserNotification: boolean;
-
   playSound: boolean;
 }
 
 export interface NotificationDispatchInput {
   notification: Notification;
-
   context: NotificationContext;
 }
 
 export interface NotificationAction {
   url?: string;
-
   conversationId?: string;
-
   entityId?: string;
 }

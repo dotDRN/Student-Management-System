@@ -1,5 +1,3 @@
-// NotificationRules.ts
-
 import type { Notification } from "../types/notification";
 import type {
   NotificationContext,
@@ -11,45 +9,56 @@ export class NotificationRules {
     notification: Notification,
     context: NotificationContext
   ): NotificationDecision {
-    // Default decision
     const decision: NotificationDecision = {
       showToast: true,
       showBrowserNotification: false,
       playSound: false,
     };
 
-    // Browser notifications require permission
-    if (context.permission !== "granted") {
+    switch (notification.type) {
+      case "chat_message":
+        return this.evaluateChatMessage(notification, context);
+
+      default:
+        return decision;
+    }
+  }
+
+  private evaluateChatMessage(
+    notification: Notification,
+    context: NotificationContext
+  ): NotificationDecision {
+    const decision: NotificationDecision = {
+      showToast: true,
+      showBrowserNotification: false,
+      playSound: false,
+    };
+
+    // If the user is already viewing this conversation,
+    // don't show a toast or browser notification.
+    const conversationId = notification.metadata?.conversationId;
+
+    if (
+      typeof conversationId === "string" &&
+      conversationId === context.activeConversationId
+    ) {
+      decision.showToast = false;
+      decision.showBrowserNotification = false;
       return decision;
     }
 
-    // User is currently viewing the same conversation
-    if (
-      notification.metadata &&
-      typeof notification.metadata === "object"
-    ) {
-      const conversationId =
-        notification.metadata["conversationId"];
-
-      if (
-        typeof conversationId === "string" &&
-        conversationId === context.activeConversationId
-      ) {
-        decision.showToast = false;
-        decision.showBrowserNotification = false;
-
-        return decision;
-      }
-    }
-
-    // User is away from the tab
+    // If the user isn't currently looking at the app,
+    // prefer a browser notification instead of a toast.
     if (!context.isTabVisible || !context.isWindowFocused) {
-      decision.showBrowserNotification = true;
+      decision.showToast = false;
+      
+      if (context.permission === "granted") {
+        decision.showBrowserNotification = true;
+      }
     }
 
     return decision;
   }
 }
 
-export const notificationRules =
-  new NotificationRules();
+export const notificationRules = new NotificationRules();

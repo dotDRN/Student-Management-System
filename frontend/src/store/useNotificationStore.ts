@@ -1,10 +1,12 @@
 import { create } from 'zustand';
 import type { Notification } from '../types/notification';
+import { notificationPermission } from '../notifications/NotificationPermission';
 
 interface NotificationState {
   notifications: Notification[];
   unreadCount: number;
   isOpen: boolean;
+  browserNotificationsEnabled: boolean;
 
   setNotifications: (notifications: Notification[]) => void;
   addNotification: (notification: Notification) => void;
@@ -14,13 +16,24 @@ interface NotificationState {
   markAsRead: (notificationRecipientId: string) => void;
   markAllAsRead: () => void;
   setDrawerOpen: (isOpen: boolean) => void;
+  setBrowserNotificationsEnabled: (enabled: boolean) => void;
   clear: () => void;
 }
+
+const getInitialBrowserPreference = () => {
+  if (typeof window === 'undefined') return false;
+  const stored = localStorage.getItem('browserNotificationsEnabled');
+  if (stored !== null) {
+    return stored === 'true';
+  }
+  return notificationPermission.isGranted();
+};
 
 export const useNotificationStore = create<NotificationState>((set) => ({
   notifications: [],
   unreadCount: 0,
   isOpen: false,
+  browserNotificationsEnabled: getInitialBrowserPreference(),
 
   setNotifications: (notifications) => set((state) => {
     const notificationsByRecipientId = new Map(
@@ -82,6 +95,13 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   })),
 
   setDrawerOpen: (isOpen) => set({ isOpen }),
+
+  setBrowserNotificationsEnabled: (enabled) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('browserNotificationsEnabled', enabled.toString());
+    }
+    set({ browserNotificationsEnabled: enabled });
+  },
 
   clear: () => set({ notifications: [], unreadCount: 0, isOpen: false }),
 }));
