@@ -1,12 +1,66 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatDistanceToNow } from 'date-fns';
 import { X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationService } from '../services/notification.service';
 import { useNotificationStore } from '../store/useNotificationStore';
 import { NotificationItem } from './NotificationItem';
 import type { Notification, NotificationListResponse, UnreadCountResponse } from '../types/notification';
+import { notificationPermission } from '../notifications/NotificationPermission';
+
+function BrowserNotificationPrompt() {
+  const browserNotificationsEnabled = useNotificationStore(state => state.browserNotificationsEnabled);
+  const setBrowserNotificationsEnabled = useNotificationStore(state => state.setBrowserNotificationsEnabled);
+  const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [isSupported, setIsSupported] = useState(false);
+
+  useEffect(() => {
+    setIsSupported(notificationPermission.isSupported());
+    if (notificationPermission.isSupported()) {
+      setPermission(notificationPermission.getPermission());
+    }
+
+    const handleFocus = () => {
+      if (notificationPermission.isSupported()) {
+        setPermission(notificationPermission.getPermission());
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, []);
+
+  if (!isSupported) return null;
+  if (permission === 'denied') return null;
+  if (permission === 'granted' && browserNotificationsEnabled) return null;
+
+  const requestPermission = async () => {
+    if (permission === 'default') {
+      const newPermission = await notificationPermission.requestPermission();
+      setPermission(newPermission);
+      if (newPermission === 'granted') {
+        setBrowserNotificationsEnabled(true);
+      }
+    } else if (permission === 'granted') {
+      setBrowserNotificationsEnabled(true);
+    }
+  };
+
+  return (
+    <div className="bg-primary/5 px-5 py-3 flex items-center justify-between border-b border-primary/10">
+      <div className="text-sm text-neutral-700">
+        <p className="font-medium text-neutral-900">Enable browser notifications</p>
+        <p className="text-xs text-neutral-600">Get notified when you're away</p>
+      </div>
+      <button
+        type="button"
+        onClick={() => void requestPermission()}
+        className="text-xs font-medium bg-primary text-white px-3 py-1.5 rounded shadow-sm hover:bg-primary/90 transition-colors"
+      >
+        Enable
+      </button>
+    </div>
+  );
+}
 
 interface NotificationDrawerProps {
   page?: number;
@@ -172,6 +226,8 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
             </button>
           </div>
         </div>
+
+        <BrowserNotificationPrompt />
 
         <div className="flex-1 overflow-y-auto">
           {isLoading ? (
