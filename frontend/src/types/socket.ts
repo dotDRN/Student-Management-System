@@ -4,6 +4,23 @@ import type { Notification } from "./notification";
 export interface ServerToClientEvents {
   "notification:new": (data: Omit<Notification, 'isRead' | 'readAt'>) => void;
 
+  "notification:read": (data: {
+    notificationRecipientId: string;
+  }) => void;
+
+  "notification:read_all": () => void;
+
+  "notification:conversation_read": (data: {
+    conversationId: string;
+    notificationRecipientIds: string[];
+    unreadCount: number;
+  }) => void;
+
+  "notification:archived": (data: {
+    notificationRecipientId: string;
+    unreadCount: number;
+  }) => void;
+
   "message:new": (data: { message: Message }) => void;
 
   "message:updated": (data: {
@@ -26,6 +43,19 @@ export interface ServerToClientEvents {
 
   "conversation:new": (data: {
     conversation: Conversation;
+  }) => void;
+
+  "conversation:updated": (data: {
+    conversation: Partial<Conversation> & { id: string };
+  }) => void;
+
+  "conversation:archived": (data: {
+    conversationId: string;
+  }) => void;
+
+  "conversation:member_removed": (data: {
+    conversationId: string;
+    userId: string;
   }) => void;
 
   "conversation:read_update": (data: {

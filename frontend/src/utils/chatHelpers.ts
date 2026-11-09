@@ -43,7 +43,7 @@ export const getConversationDisplayName = (
 
 export const getConversationAvatar = (
   conversation: Conversation,
-  currentUserId?: string
+  _currentUserId?: string
 ): string | undefined => {
   if (conversation.avatarUrl) {
     return conversation.avatarUrl;

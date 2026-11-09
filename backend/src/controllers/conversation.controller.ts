@@ -1,14 +1,33 @@
 import { Request, Response } from "express";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import conversationService from "../services/conversation.service.js";
+import { getIO } from "../socket/index.js";
+
+const safeGetIO = () => {
+    try {
+        return getIO();
+    } catch {
+        return null;
+    }
+};
+
+export const searchChatUsers = asyncHandler(async (req: Request, res: Response) => {
+    const search = typeof req.query.search === "string" ? req.query.search : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 20;
+    const result = await conversationService.searchChatUsers(req.user.userId, search, limit);
+
+    return res.status(200).json(result);
+});
 
 export const createConversation = asyncHandler(async (req: Request, res: Response) => {
     const conversation = await conversationService.createConversation(req.user.userId, req.body);
 
-    const io = (await import("../socket/index.js")).getIO();
-    conversation.members?.forEach((member: any) => {
-        io.to(`user:${member.userId}`).emit("conversation:new", { conversation });
-    });
+    const io = safeGetIO();
+    if (io) {
+        conversation.members?.forEach((member: any) => {
+            io.to(`user:${member.userId}`).emit("conversation:new", { conversation });
+        });
+    }
 
     return res.status(201).json({
         success: true,
@@ -18,7 +37,9 @@ export const createConversation = asyncHandler(async (req: Request, res: Respons
 });
 
 export const getUserConversations = asyncHandler(async (req: Request, res: Response) => {
-    const conversations = await conversationService.getUserConversations(req.user.userId);
+    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 20;
+    const conversations = await conversationService.getUserConversations(req.user.userId, cursor, limit);
 
     return res.status(200).json({
         success: true,
@@ -41,11 +62,19 @@ export const getConversationById = asyncHandler(async (req: Request, res: Respon
 });
 
 export const updateConversation = asyncHandler(async (req: Request, res: Response) => {
+    const conversationId = String(req.params.conversationId);
     const conversation = await conversationService.updateConversation(
         req.user.userId,
-        String(req.params.conversationId),
+        conversationId,
         req.body
     );
+
+    const io = safeGetIO();
+    if (io) {
+        io.to(`conversation:${conversationId}`).emit("conversation:updated", {
+            conversation
+        });
+    }
 
     return res.status(200).json({
         success: true,
@@ -55,10 +84,18 @@ export const updateConversation = asyncHandler(async (req: Request, res: Respons
 });
 
 export const archiveConversation = asyncHandler(async (req: Request, res: Response) => {
+    const conversationId = String(req.params.conversationId);
     await conversationService.archiveConversation(
         req.user.userId,
-        String(req.params.conversationId)
+        conversationId
     );
+
+    const io = safeGetIO();
+    if (io) {
+        io.to(`conversation:${conversationId}`).emit("conversation:archived", {
+            conversationId
+        });
+    }
 
     return res.status(200).json({
         success: true,
@@ -80,11 +117,26 @@ export const getConversationMembers = asyncHandler(async (req: Request, res: Res
 });
 
 export const addMember = asyncHandler(async (req: Request, res: Response) => {
+    const conversationId = String(req.params.conversationId);
     const member = await conversationService.addMember(
         req.user.userId,
-        String(req.params.conversationId),
+        conversationId,
         req.body
     );
+
+    const io = safeGetIO();
+    if (io) {
+        try {
+            const fullConversation = await conversationService.getConversationById(
+                req.user.userId,
+                conversationId
+            );
+            io.to(`user:${member.userId}`).emit("conversation:new", { conversation: fullConversation });
+            io.to(`conversation:${conversationId}`).emit("conversation:updated", { conversation: fullConversation });
+        } catch (err) {
+            console.error("Failed to broadcast member addition:", err);
+        }
+    }
 
     return res.status(201).json({
         success: true,
@@ -94,11 +146,21 @@ export const addMember = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const removeMember = asyncHandler(async (req: Request, res: Response) => {
+    const conversationId = String(req.params.conversationId);
+    const memberId = String(req.params.memberId);
     await conversationService.removeMember(
         req.user.userId,
-        String(req.params.conversationId),
-        String(req.params.memberId)
+        conversationId,
+        memberId
     );
+
+    const io = safeGetIO();
+    if (io) {
+        io.to(`conversation:${conversationId}`).emit("conversation:member_removed", {
+            conversationId,
+            userId: memberId
+        });
+    }
 
     return res.status(200).json({
         success: true,
@@ -107,17 +169,20 @@ export const removeMember = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const markConversationAsRead = asyncHandler(async (req: Request, res: Response) => {
-    await conversationService.markConversationAsRead(
+    const conversationId = String(req.params.conversationId);
+    const lastReadAt = await conversationService.markConversationAsRead(
         req.user.userId,
-        String(req.params.conversationId)
+        conversationId
     );
 
-    const io = (await import("../socket/index.js")).getIO();
-    io.to(`conversation:${String(req.params.conversationId)}`).emit("conversation:read_update", {
-        conversationId: String(req.params.conversationId),
-        userId: req.user.userId,
-        lastReadAt: new Date().toISOString()
-    });
+    const io = safeGetIO();
+    if (io) {
+        io.to(`conversation:${conversationId}`).emit("conversation:read_update", {
+            conversationId,
+            userId: req.user.userId,
+            lastReadAt: lastReadAt.toISOString()
+        });
+    }
 
     return res.status(200).json({
         success: true,

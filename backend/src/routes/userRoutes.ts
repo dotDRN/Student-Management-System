@@ -19,14 +19,14 @@ const userRoutes = Router();
 // 1. All user routes require a valid login
 userRoutes.use(authenticate);
 
-// 2. Any logged-in user can see their assigned centers
+// 2. Any logged-in user can see their assigned centers and list/search users for directory/chat
 userRoutes.get("/me/centers", myCentersController);
+userRoutes.get("/", requireCenterAccess(), listUsersController);
 
 // 3. User Management - Restricted to Admins
 userRoutes.use(requirePermission(PERMISSIONS.MANAGE_USERS));
 userRoutes.use(requireCenterAccess());
 
-userRoutes.get("/", listUsersController);
 userRoutes.get("/:userId", getUserController);
 userRoutes.post("/", createUserController);
 userRoutes.put("/:userId", updateUserController);

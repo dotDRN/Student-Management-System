@@ -9,18 +9,14 @@ export class NotificationRules {
     notification: Notification,
     context: NotificationContext
   ): NotificationDecision {
-    const decision: NotificationDecision = {
-      showToast: true,
-      showBrowserNotification: false,
-      playSound: false,
-    };
-
     switch (notification.type) {
       case "chat_message":
+      case "chat_reply":
+      case "chat_mention":
         return this.evaluateChatMessage(notification, context);
 
       default:
-        return decision;
+        return this.evaluateGeneralNotification(context);
     }
   }
 
@@ -52,6 +48,26 @@ export class NotificationRules {
     if (!context.isTabVisible || !context.isWindowFocused) {
       decision.showToast = false;
       
+      if (context.permission === "granted") {
+        decision.showBrowserNotification = true;
+      }
+    }
+
+    return decision;
+  }
+
+  private evaluateGeneralNotification(
+    context: NotificationContext
+  ): NotificationDecision {
+    const decision: NotificationDecision = {
+      showToast: true,
+      showBrowserNotification: false,
+      playSound: false,
+    };
+
+    if (!context.isTabVisible || !context.isWindowFocused) {
+      decision.showToast = false;
+
       if (context.permission === "granted") {
         decision.showBrowserNotification = true;
       }

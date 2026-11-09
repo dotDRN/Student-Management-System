@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+    searchChatUsers,
     createConversation,
     getUserConversations,
     getConversationById,
@@ -16,14 +17,18 @@ const router = Router();
 
 router.use(authenticate);
 
+router.get("/users", searchChatUsers);
 router.post("/", createConversation);
 router.get("/", getUserConversations);
 router.get("/:conversationId", getConversationById);
 router.patch("/:conversationId", updateConversation);
+router.put("/:conversationId", updateConversation);
 router.patch("/:conversationId/archive", archiveConversation);
+router.post("/:conversationId/archive", archiveConversation);
 router.get("/:conversationId/members", getConversationMembers);
 router.post("/:conversationId/members", addMember);
 router.delete("/:conversationId/members/:memberId", removeMember);
 router.patch("/:conversationId/read", markConversationAsRead);
+router.post("/:conversationId/read", markConversationAsRead);
 
 export default router;

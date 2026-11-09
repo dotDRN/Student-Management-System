@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { MessageSquare, AlertCircle } from 'lucide-react';
 import { ChatHeader } from './ChatHeader';
@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../../../store/useChatStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { chatService } from '../../../services/chat.service';
-import type { Message } from '../../../types/chat';
+import type { Conversation, Message, MessageType } from '../../../types/chat';
 
 export const ChatWindow: React.FC = () => {
   const { activeConversationId } = useChatStore();
@@ -32,41 +32,64 @@ export const ChatWindow: React.FC = () => {
     hasNextPage 
   } = useInfiniteQuery({
     queryKey: ['messages', activeConversationId],
-    queryFn: ({ pageParam }) => chatService.getMessages(activeConversationId!, pageParam as string | undefined),
+    queryFn: ({ pageParam }) => chatService.getMessages(activeConversationId!, pageParam),
     getNextPageParam: (lastPage) => {
-      // The backend returns messages in descending order (newest first).
-      // To get older messages, we use the oldest message in the last page as the cursor.
       return lastPage.length === 50 ? lastPage[lastPage.length - 1].id : undefined; 
     },
-    initialPageParam: undefined,
+    initialPageParam: undefined as string | undefined,
     enabled: !!activeConversationId,
   });
 
-  const messages = [...(messagesData?.pages.flat() || [])].reverse();
+  // Mark conversation as read when opened
+  useEffect(() => {
+    if (!activeConversationId || !currentUserId) return;
 
-  const handleOptimisticSend = (tempId: string, content: string, attachments: any[]) => {
-    // Add optimistic message to cache immediately
+    const nowIso = new Date().toISOString();
+    queryClient.setQueryData<Conversation[]>(['conversations'], (old = []) =>
+      old.map((c) => {
+        if (c.id !== activeConversationId) return c;
+        return {
+          ...c,
+          members:
+            c.members?.map((m) =>
+              m.userId === currentUserId ? { ...m, lastReadAt: nowIso } : m,
+            ) || c.members,
+        };
+      }),
+    );
+
+    void chatService.markAsRead(activeConversationId).catch(() => {});
+  }, [activeConversationId, currentUserId, queryClient]);
+
+  const messages: Message[] = [...(messagesData?.pages.flat() || [])].reverse();
+
+  const handleOptimisticSend = (
+    tempId: string,
+    content: string,
+    attachments: any[],
+    type: MessageType = 'text',
+  ) => {
     const tempMsg: Message = {
       id: tempId,
       clientMsgId: tempId,
       conversationId: activeConversationId!,
       senderId: currentUserId || 'unknown',
-      content,
-      type: 'text',
-      status: 'SENDING',
+      content: content || undefined,
+      type,
+      status: 'sending',
       isEdited: false,
       isDeleted: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       reactions: [],
-      attachments: attachments.map(a => ({
+      attachments: attachments.map((a) => ({
         id: a.id,
-        url: a.previewUrl,
-        fileName: a.file.name,
-        mimeType: a.file.type,
-        fileSize: a.file.size,
-        createdAt: new Date().toISOString()
-      }))
+        url: a.uploaded?.url || a.previewUrl || '',
+        fileName: a.uploaded?.fileName || a.file?.name || 'Attachment',
+        mimeType: a.uploaded?.mimeType || a.file?.type || 'application/octet-stream',
+        fileSize: a.uploaded?.fileSize || a.file?.size || 0,
+        createdAt: new Date().toISOString(),
+      })),
     };
 
     queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
@@ -75,38 +98,65 @@ export const ChatWindow: React.FC = () => {
       newPages[0] = [tempMsg, ...newPages[0]];
       return { ...oldData, pages: newPages };
     });
+
+    queryClient.setQueryData<Conversation[]>(['conversations'], (old = []) => {
+      const updated = old.map((c) =>
+        c.id === activeConversationId
+          ? { ...c, updatedAt: tempMsg.createdAt, messages: [tempMsg] }
+          : c,
+      );
+      return updated.sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+    });
   };
 
   const handleOptimisticSuccess = (tempId: string, realMessage: Message) => {
-    // Enrich sender
-    const conversations = queryClient.getQueryData<any[]>(['conversations']);
-    const activeConv = conversations?.find((c: any) => c.id === activeConversationId);
-    const senderMember = activeConv?.members?.find((m: any) => m.userId === realMessage.senderId);
+    const conversations = queryClient.getQueryData<Conversation[]>(['conversations']);
+    const activeConv = conversations?.find((c) => c.id === activeConversationId);
+    const senderMember = activeConv?.members?.find((m) => m.userId === realMessage.senderId);
     const enrichedMessage: Message = {
       ...realMessage,
-      sender: {
-        fullName: senderMember?.user?.fullName || 'Unknown User',
-        email: senderMember?.user?.email || ''
-      }
+      status: 'sent',
+      sender: realMessage.sender?.fullName
+        ? realMessage.sender
+        : {
+            id: senderMember?.user?.id || realMessage.senderId,
+            fullName: senderMember?.user?.fullName || 'Unknown User',
+            email: senderMember?.user?.email || '',
+          },
     };
 
     queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
       if (!oldData?.pages) return oldData;
-      
+
       const newPages = oldData.pages.map((page: Message[]) => {
-        if (page.some(m => m.id === realMessage.id)) {
-          return page.filter(m => m.id !== tempId);
+        if (page.some((m) => m.id === realMessage.id)) {
+          return page.filter((m) => m.id !== tempId);
         }
-        return page.map(m => m.id === tempId ? enrichedMessage : m);
+        return page.map((m) => (m.id === tempId ? enrichedMessage : m));
       });
       return { ...oldData, pages: newPages };
+    });
+
+    queryClient.setQueryData<Conversation[]>(['conversations'], (old = []) => {
+      const updated = old.map((c) =>
+        c.id === activeConversationId
+          ? { ...c, updatedAt: enrichedMessage.createdAt, messages: [enrichedMessage] }
+          : c,
+      );
+      return updated.sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
     });
   };
 
   const handleOptimisticError = (tempId: string) => {
     queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
       if (!oldData?.pages) return oldData;
-      const newPages = oldData.pages.map((page: Message[]) => page.filter(m => m.id !== tempId));
+      const newPages = oldData.pages.map((page: Message[]) =>
+        page.filter((m) => m.id !== tempId),
+      );
       return { ...oldData, pages: newPages };
     });
   };
@@ -117,38 +167,47 @@ export const ChatWindow: React.FC = () => {
       return {
         ...oldData,
         pages: oldData.pages.map((page: Message[]) =>
-          page.map(m => m.id === messageId ? { ...m, content: newContent, isEdited: true, updatedAt: new Date().toISOString() } : m)
-        )
+          page.map((m) =>
+            m.id === messageId
+              ? { ...m, content: newContent, isEdited: true, updatedAt: new Date().toISOString() }
+              : m,
+          ),
+        ),
       };
     });
   };
 
   const handleDeleteMessage = async (messageId: string) => {
     try {
-      // Optimistic or immediate update
       queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
         if (!oldData?.pages) return oldData;
         return {
           ...oldData,
           pages: oldData.pages.map((page: Message[]) =>
-            page.map(m => m.id === messageId ? { ...m, isDeleted: true, content: '[This message was deleted]' } : m)
-          )
+            page.map((m) =>
+              m.id === messageId
+                ? { ...m, isDeleted: true, content: '[This message was deleted]', attachments: [] }
+                : m,
+            ),
+          ),
         };
       });
       await chatService.deleteMessage(messageId);
     } catch (error) {
       console.error('Failed to delete message:', error);
-      // Optional: revert cache on failure
     }
   };
 
   if (!activeConversationId) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-neutral-50/50 hidden md:flex">
+      <div className="flex-1 flex-col items-center justify-center bg-neutral-50/50 hidden md:flex min-w-0 h-full">
         <div className="w-20 h-20 bg-brand-50 rounded-full flex items-center justify-center mb-6 shadow-sm">
           <MessageSquare size={36} className="text-brand-500" />
         </div>
-        <h2 className="text-2xl font-bold text-neutral-800 mb-2" style={{ fontFamily: 'var(--font-heading)' }}>
+        <h2
+          className="text-2xl font-bold text-neutral-800 mb-2"
+          style={{ fontFamily: 'var(--font-heading)' }}
+        >
           Your Messages
         </h2>
         <p className="text-neutral-500 text-center max-w-sm">
@@ -160,7 +219,7 @@ export const ChatWindow: React.FC = () => {
 
   if (isLoadingConv) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-white">
+      <div className="flex-1 flex items-center justify-center bg-white min-w-0 h-full">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
       </div>
     );
@@ -168,11 +227,14 @@ export const ChatWindow: React.FC = () => {
 
   if (isConvError) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-neutral-50/50 hidden md:flex">
+      <div className="flex-1 flex flex-col items-center justify-center bg-neutral-50/50 min-w-0 h-full p-4">
         <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mb-6 shadow-sm">
           <AlertCircle size={36} className="text-red-500" />
         </div>
-        <h2 className="text-2xl font-bold text-neutral-800 mb-2" style={{ fontFamily: 'var(--font-heading)' }}>
+        <h2
+          className="text-2xl font-bold text-neutral-800 mb-2"
+          style={{ fontFamily: 'var(--font-heading)' }}
+        >
           Conversation Not Found
         </h2>
         <p className="text-neutral-500 text-center max-w-sm mb-6">
@@ -189,20 +251,20 @@ export const ChatWindow: React.FC = () => {
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-white relative">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 h-full overflow-hidden bg-white relative">
       {conversation && <ChatHeader conversation={conversation} />}
-      
-      <MessageList 
-        conversationId={activeConversationId} 
-        messages={messages} 
+
+      <MessageList
+        conversationId={activeConversationId}
+        messages={messages}
         isLoading={isLoadingMessages}
         onLoadMore={() => fetchNextPage()}
         hasNextPage={!!hasNextPage}
         onDelete={handleDeleteMessage}
       />
-      
-      <Composer 
-        conversationId={activeConversationId} 
+
+      <Composer
+        conversationId={activeConversationId}
         onOptimisticSend={handleOptimisticSend}
         onOptimisticSuccess={handleOptimisticSuccess}
         onOptimisticError={handleOptimisticError}

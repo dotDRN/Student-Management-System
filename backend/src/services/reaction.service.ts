@@ -70,15 +70,14 @@ class ReactionService {
         return { reaction: newReaction, conversationId: message.conversationId };
     }
 
-    async removeReaction(userId: string, messageId: string) {
+    async removeReaction(userId: string, messageId: string, reaction?: ReactionType) {
         const message = await this.validateMembershipForMessage(userId, messageId);
 
-        // Since the controller doesn't specify which reaction to remove, we remove all reactions
-        // made by this user on this specific message.
         await prisma.messageReaction.deleteMany({
             where: {
                 messageId,
-                userId
+                userId,
+                ...(reaction ? { reaction } : {})
             }
         });
 

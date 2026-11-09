@@ -2,7 +2,9 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { socketService } from "../services/socket.service";
+import { chatService } from "../services/chat.service";
 import { useChatStore } from "../store/useChatStore";
+import { useAuthStore } from "../store/useAuthStore";
 import type { Message, Conversation } from "../types/chat";
 import type {
   Notification,
@@ -43,8 +45,10 @@ export const useChatSocket = () => {
     // Message Events
     const handleNewMessage = (data: { message: Message }) => {
       const { message } = data;
+      const currentUserId = useAuthStore.getState().currentUser?.id;
+      const currentActiveConvId = useChatStore.getState().activeConversationId;
 
-      // Enrich sender information locally since backend message:new payload omits it
+      // Enrich sender information locally if needed
       const conversations = queryClient.getQueryData<Conversation[]>([
         "conversations",
       ]);
@@ -56,13 +60,16 @@ export const useChatSocket = () => {
       );
       const enrichedMessage: Message = {
         ...message,
-        sender: {
-          id: senderMember?.user?.id || message.senderId,
-          fullName: senderMember?.user?.fullName || "Unknown User",
-          email: senderMember?.user?.email || "",
-        },
+        sender: message.sender?.fullName
+          ? message.sender
+          : {
+              id: senderMember?.user?.id || message.senderId,
+              fullName: senderMember?.user?.fullName || "Unknown User",
+              email: senderMember?.user?.email || "",
+            },
       };
 
+      // 1. Update messages infinite query cache
       queryClient.setQueryData(
         ["messages", message.conversationId],
         (old: any) => {
@@ -71,7 +78,6 @@ export const useChatSocket = () => {
           const newPages = [...old.pages];
 
           if (newPages.length > 0) {
-            // Prevent duplicates
             const exists = newPages.some((page) =>
               page.find(
                 (m: Message) =>
@@ -89,6 +95,37 @@ export const useChatSocket = () => {
           };
         },
       );
+
+      // 2. Update conversations sidebar list (preview + sort by updatedAt)
+      queryClient.setQueryData<Conversation[]>(
+        ["conversations"],
+        (old = []) => {
+          const exists = old.some((c) => c.id === message.conversationId);
+          if (!exists) return old;
+
+          const updated = old.map((c) => {
+            if (c.id !== message.conversationId) return c;
+            return {
+              ...c,
+              updatedAt: enrichedMessage.createdAt,
+              messages: [enrichedMessage],
+            };
+          });
+
+          return updated.sort(
+            (a, b) =>
+              new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+          );
+        },
+      );
+
+      // 3. If user is currently viewing this conversation and message is from another user, mark conversation as read
+      if (
+        currentActiveConvId === message.conversationId &&
+        message.senderId !== currentUserId
+      ) {
+        void chatService.markAsRead(message.conversationId).catch(() => {});
+      }
     };
 
     const handleMessageUpdated = (data: {
@@ -107,12 +144,38 @@ export const useChatSocket = () => {
             pages: old.pages.map((page: Message[]) =>
               page.map((m) =>
                 m.id === data.id
-                  ? { ...m, content: data.content, updatedAt: data.updatedAt }
+                  ? {
+                      ...m,
+                      content: data.content,
+                      isEdited: true,
+                      updatedAt: data.updatedAt,
+                    }
                   : m,
               ),
             ),
           };
         },
+      );
+
+      queryClient.setQueryData<Conversation[]>(
+        ["conversations"],
+        (old = []) =>
+          old.map((c) => {
+            if (c.id === data.conversationId && c.messages?.[0]?.id === data.id) {
+              return {
+                ...c,
+                messages: [
+                  {
+                    ...c.messages[0],
+                    content: data.content,
+                    isEdited: true,
+                    updatedAt: data.updatedAt,
+                  },
+                ],
+              };
+            }
+            return c;
+          }),
       );
     };
 
@@ -140,6 +203,26 @@ export const useChatSocket = () => {
             ),
           };
         },
+      );
+
+      queryClient.setQueryData<Conversation[]>(
+        ["conversations"],
+        (old = []) =>
+          old.map((c) => {
+            if (c.id === data.conversationId && c.messages?.[0]?.id === data.id) {
+              return {
+                ...c,
+                messages: [
+                  {
+                    ...c.messages[0],
+                    isDeleted: true,
+                    content: "[This message was deleted]",
+                  },
+                ],
+              };
+            }
+            return c;
+          }),
       );
     };
 
@@ -254,6 +337,187 @@ export const useChatSocket = () => {
       );
     };
 
+    const handleNotificationRead = (data: { notificationRecipientId: string }) => {
+      useNotificationStore.getState().markAsRead(data.notificationRecipientId);
+
+      queryClient.setQueriesData<NotificationListResponse>(
+        {
+          predicate: (query) =>
+            query.queryKey[0] === "notifications" &&
+            typeof query.queryKey[1] === "number",
+        },
+        (old) =>
+          old
+            ? {
+                ...old,
+                notifications: old.notifications.map((item) =>
+                  item.notificationRecipientId === data.notificationRecipientId
+                    ? { ...item, isRead: true, readAt: new Date().toISOString() }
+                    : item,
+                ),
+              }
+            : old,
+      );
+
+      queryClient.setQueryData(["notifications", "infinite"], (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            notifications: page.notifications.map((item: Notification) =>
+              item.notificationRecipientId === data.notificationRecipientId
+                ? { ...item, isRead: true, readAt: new Date().toISOString() }
+                : item,
+            ),
+          })),
+        };
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["notifications", "unreadCount"] });
+    };
+
+    const handleNotificationReadAll = () => {
+      useNotificationStore.getState().markAllAsRead();
+
+      queryClient.setQueriesData<NotificationListResponse>(
+        {
+          predicate: (query) =>
+            query.queryKey[0] === "notifications" &&
+            typeof query.queryKey[1] === "number",
+        },
+        (old) =>
+          old
+            ? {
+                ...old,
+                notifications: old.notifications.map((item) => ({
+                  ...item,
+                  isRead: true,
+                })),
+              }
+            : old,
+      );
+
+      queryClient.setQueryData(["notifications", "infinite"], (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            notifications: page.notifications.map((item: Notification) => ({
+              ...item,
+              isRead: true,
+            })),
+          })),
+        };
+      });
+
+      queryClient.setQueryData<UnreadCountResponse>(
+        ["notifications", "unreadCount"],
+        { unreadCount: 0 },
+      );
+    };
+
+    const handleNotificationConversationRead = (data: {
+      conversationId: string;
+      notificationRecipientIds: string[];
+      unreadCount: number;
+    }) => {
+      const idSet = new Set(data.notificationRecipientIds);
+      for (const id of idSet) {
+        useNotificationStore.getState().markAsRead(id);
+      }
+      useNotificationStore.getState().setUnreadCount(data.unreadCount);
+
+      queryClient.setQueriesData<NotificationListResponse>(
+        {
+          predicate: (query) =>
+            query.queryKey[0] === "notifications" &&
+            typeof query.queryKey[1] === "number",
+        },
+        (old) =>
+          old
+            ? {
+                ...old,
+                notifications: old.notifications.map((item) =>
+                  idSet.has(item.notificationRecipientId)
+                    ? { ...item, isRead: true, readAt: new Date().toISOString() }
+                    : item,
+                ),
+              }
+            : old,
+      );
+
+      queryClient.setQueryData(["notifications", "infinite"], (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            notifications: page.notifications.map((item: Notification) =>
+              idSet.has(item.notificationRecipientId)
+                ? { ...item, isRead: true, readAt: new Date().toISOString() }
+                : item,
+            ),
+          })),
+        };
+      });
+
+      queryClient.setQueryData<UnreadCountResponse>(
+        ["notifications", "unreadCount"],
+        { unreadCount: data.unreadCount },
+      );
+    };
+
+    const handleNotificationArchived = (data: {
+      notificationRecipientId: string;
+      unreadCount: number;
+    }) => {
+      useNotificationStore.getState().setUnreadCount(data.unreadCount);
+      const currentNotifs = useNotificationStore.getState().notifications;
+      useNotificationStore.setState({
+        notifications: currentNotifs.filter(
+          (n) => n.notificationRecipientId !== data.notificationRecipientId,
+        ),
+      });
+
+      queryClient.setQueriesData<NotificationListResponse>(
+        {
+          predicate: (query) =>
+            query.queryKey[0] === "notifications" &&
+            typeof query.queryKey[1] === "number",
+        },
+        (old) =>
+          old
+            ? {
+                ...old,
+                notifications: old.notifications.filter(
+                  (n) => n.notificationRecipientId !== data.notificationRecipientId,
+                ),
+              }
+            : old,
+      );
+
+      queryClient.setQueryData(["notifications", "infinite"], (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            notifications: page.notifications.filter(
+              (n: Notification) =>
+                n.notificationRecipientId !== data.notificationRecipientId,
+            ),
+          })),
+        };
+      });
+
+      queryClient.setQueryData<UnreadCountResponse>(
+        ["notifications", "unreadCount"],
+        { unreadCount: data.unreadCount },
+      );
+    };
+
     // Conversation Events
     const handleNewConversation = (data: { conversation: Conversation }) => {
       queryClient.setQueryData<Conversation[]>(
@@ -263,11 +527,60 @@ export const useChatSocket = () => {
           return [data.conversation, ...old];
         },
       );
-      // Ensure we join the room for this new conversation on the client side if necessary,
-      // though the backend should handle joining the room on the socket directly or we just emit an event to server
       socketService.emit("conversation:join", {
         conversationId: data.conversation.id,
       });
+    };
+
+    const handleConversationUpdated = (data: {
+      conversation: Partial<Conversation> & { id: string };
+    }) => {
+      queryClient.setQueryData<Conversation[]>(["conversations"], (old = []) =>
+        old.map((c) =>
+          c.id === data.conversation.id ? { ...c, ...data.conversation } : c,
+        ),
+      );
+      queryClient.setQueryData<Conversation>(
+        ["conversation", data.conversation.id],
+        (old) => (old ? { ...old, ...data.conversation } : old),
+      );
+    };
+
+    const handleConversationArchived = (data: { conversationId: string }) => {
+      queryClient.setQueryData<Conversation[]>(["conversations"], (old = []) =>
+        old.filter((c) => c.id !== data.conversationId),
+      );
+      if (useChatStore.getState().activeConversationId === data.conversationId) {
+        useChatStore.getState().setActiveConversationId(null);
+        void navigate("/chat");
+      }
+    };
+
+    const handleMemberRemoved = (data: {
+      conversationId: string;
+      userId: string;
+    }) => {
+      const currentUserId = useAuthStore.getState().currentUser?.id;
+      if (data.userId === currentUserId) {
+        socketService.emit("conversation:leave", {
+          conversationId: data.conversationId,
+        });
+        queryClient.setQueryData<Conversation[]>(
+          ["conversations"],
+          (old = []) => old.filter((c) => c.id !== data.conversationId),
+        );
+        if (
+          useChatStore.getState().activeConversationId === data.conversationId
+        ) {
+          useChatStore.getState().setActiveConversationId(null);
+          void navigate("/chat");
+        }
+      } else {
+        queryClient.invalidateQueries({
+          queryKey: ["conversation", data.conversationId],
+        });
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      }
     };
 
     const handleReadUpdate = (data: {
@@ -278,7 +591,6 @@ export const useChatSocket = () => {
       queryClient.setQueryData<Conversation[]>(["conversations"], (old = []) =>
         old.map((c) => {
           if (c.id === data.conversationId) {
-            // Update the specific participant's lastReadAt
             const updatedMembers =
               c.members?.map((m) =>
                 m.userId === data.userId
@@ -289,6 +601,21 @@ export const useChatSocket = () => {
           }
           return c;
         }),
+      );
+      queryClient.setQueryData<Conversation>(
+        ["conversation", data.conversationId],
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            members:
+              old.members?.map((m) =>
+                m.userId === data.userId
+                  ? { ...m, lastReadAt: data.lastReadAt }
+                  : m,
+              ) || old.members,
+          };
+        },
       );
     };
 
@@ -318,7 +645,6 @@ export const useChatSocket = () => {
 
     // Reconnection healing
     const handleReconnected = () => {
-      // Invalidate queries to refetch data missed during downtime
       queryClient.invalidateQueries({ queryKey: ["messages"] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -333,7 +659,17 @@ export const useChatSocket = () => {
     socketService.on("message:deleted", handleMessageDeleted);
     socketService.on("message:reaction_updated", handleReactionUpdated);
     socketService.on("notification:new", handleNewNotification);
+    socketService.on("notification:read", handleNotificationRead);
+    socketService.on("notification:read_all", handleNotificationReadAll);
+    socketService.on(
+      "notification:conversation_read",
+      handleNotificationConversationRead,
+    );
+    socketService.on("notification:archived", handleNotificationArchived);
     socketService.on("conversation:new", handleNewConversation);
+    socketService.on("conversation:updated", handleConversationUpdated);
+    socketService.on("conversation:archived", handleConversationArchived);
+    socketService.on("conversation:member_removed", handleMemberRemoved);
     socketService.on("conversation:read_update", handleReadUpdate);
     socketService.on("typing:update", handleTypingUpdate);
     socketService.on("presence:update", handlePresenceUpdate);
@@ -347,7 +683,17 @@ export const useChatSocket = () => {
       socketService.off("message:deleted", handleMessageDeleted);
       socketService.off("message:reaction_updated", handleReactionUpdated);
       socketService.off("notification:new", handleNewNotification);
+      socketService.off("notification:read", handleNotificationRead);
+      socketService.off("notification:read_all", handleNotificationReadAll);
+      socketService.off(
+        "notification:conversation_read",
+        handleNotificationConversationRead,
+      );
+      socketService.off("notification:archived", handleNotificationArchived);
       socketService.off("conversation:new", handleNewConversation);
+      socketService.off("conversation:updated", handleConversationUpdated);
+      socketService.off("conversation:archived", handleConversationArchived);
+      socketService.off("conversation:member_removed", handleMemberRemoved);
       socketService.off("conversation:read_update", handleReadUpdate);
       socketService.off("typing:update", handleTypingUpdate);
       socketService.off("presence:update", handlePresenceUpdate);
@@ -373,7 +719,6 @@ export const useChatSocket = () => {
     }
 
     return () => {
-      // It's safe to always try emitting blur. If disconnected, it safely drops.
       socketService.emit("conversation:blur");
     };
   }, [activeConversationId, isSocketConnected]);

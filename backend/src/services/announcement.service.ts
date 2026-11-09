@@ -1,10 +1,19 @@
 import prisma from '../lib/prisma.js';
+import {
+  NotificationEntityType,
+  NotificationPriority,
+  NotificationType,
+  Prisma,
+  UserRole,
+} from '@prisma/client';
 import { AppError } from '../lib/errors.js';
-import { buildCursorPagination, centerScopeWhere } from '../utils/queryHelpers.js';
+import { buildCursorPagination } from '../utils/queryHelpers.js';
+import notificationService from './notifications.service.js';
 
 interface CreateAnnouncementData {
   title: string;
-  body: string;
+  body?: string;
+  message?: string;
   targetRoles: string[];
   isPinned?: boolean;
   expiresAt?: Date;
@@ -24,12 +33,79 @@ export const createAnnouncement = async (
     throw new AppError('Cannot create announcement for unauthorized center', 403);
   }
 
+  const bodyText = data.body ?? data.message ?? '';
+
   const announcement = await prisma.announcement.create({
     data: {
-      ...data,
+      title: data.title,
+      body: bodyText,
+      targetRoles: data.targetRoles || [],
+      isPinned: data.isPinned ?? false,
+      expiresAt: data.expiresAt,
+      centerId: data.centerId,
+      programId: data.programId,
       createdBy: userId,
     },
   });
+
+  // Dispatch realtime & in-app notifications to matching users
+  try {
+    const validRoles = Object.values(UserRole);
+    const targetRolesFilter = (data.targetRoles || []).filter((r): r is UserRole =>
+      validRoles.includes(r as UserRole)
+    );
+
+    const userWhere: Prisma.UserWhereInput = {
+      isActive: true,
+      id: { not: userId },
+      ...(targetRolesFilter.length > 0 ? { role: { in: targetRolesFilter } } : {}),
+      ...(data.centerId
+        ? {
+            OR: [
+              { role: { in: [UserRole.super_admin, UserRole.tech_admin] } },
+              {
+                centerAssignments: {
+                  some: {
+                    centerId: data.centerId,
+                    validUntil: null,
+                  },
+                },
+              },
+            ],
+          }
+        : {}),
+    };
+
+    const recipients = await prisma.user.findMany({
+      where: userWhere,
+      select: { id: true },
+    });
+
+    const recipientIds = recipients.map((r) => r.id);
+    if (recipientIds.length > 0) {
+      await notificationService.notify({
+        actorId: userId,
+        recipientIds,
+        type: NotificationType.announcement,
+        title: `Announcement: ${announcement.title}`,
+        body: announcement.body,
+        entityType: NotificationEntityType.announcement,
+        entityId: announcement.id,
+        link: '/announcements',
+        priority: announcement.isPinned
+          ? NotificationPriority.high
+          : NotificationPriority.medium,
+        expiresAt: announcement.expiresAt ?? undefined,
+        metadata: {
+          announcementId: announcement.id,
+          centerId: announcement.centerId,
+          programId: announcement.programId,
+        },
+      });
+    }
+  } catch (error) {
+    console.error('Failed to dispatch announcement notifications:', error);
+  }
 
   return announcement;
 };
@@ -64,7 +140,7 @@ export const listAnnouncements = async (
 export const updateAnnouncement = async (
   id: string,
   data: Partial<CreateAnnouncementData>,
-  { userId, role, allowedCenterIds }: { userId: string; role: string; allowedCenterIds: string[] }
+  { userId: _userId, role, allowedCenterIds }: { userId: string; role: string; allowedCenterIds: string[] }
 ) => {
   const existing = await prisma.announcement.findUnique({ where: { id } });
   if (!existing) throw new AppError('Announcement not found', 404);

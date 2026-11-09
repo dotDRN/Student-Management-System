@@ -1034,7 +1034,7 @@ model PushSubscription {
   userAgent String?
 
   isActive  Boolean  @default(true)
-  createdAt DateTime @updatedAt @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
   user User @relation(fields: [userId], references: [id])

@@ -6,14 +6,31 @@ import { TopBar } from './TopBar';
 import { NotificationDrawer } from '../NotificationDrawer';
 import { socketService } from '../../services/socket.service';
 import { useChatStore } from '../../store/useChatStore';
+import { useNotificationStore } from '../../store/useNotificationStore';
 import { useChatSocket } from '../../hooks/useChatSocket';
 
 // Define the roles based on your Prisma Schema
-type UserRole = 'super_admin' | 'center_admin' | 'supervisor' | 'teacher' | 'staff' | 'volunteer' | 'student' | 'parent' | 'shareholder' | 'tech_admin';
+export type UserRole = 'super_admin' | 'center_admin' | 'supervisor' | 'teacher' | 'staff' | 'volunteer' | 'student' | 'parent' | 'shareholder' | 'tech_admin';
 
 interface ProtectedRouteProps {
   allowedRoles?: UserRole[];
 }
+
+export const RoleGuard: React.FC<{ allowedRoles: UserRole[] }> = ({ allowedRoles }) => {
+  const currentUser = useAuthStore((state) => state.currentUser);
+  const location = useLocation();
+
+  if (!currentUser) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (!allowedRoles.includes(currentUser.role as UserRole)) {
+    console.log(`BOUNCE: Role mismatch! Redirecting to a safe page. ${currentUser.role} tried to access ${location.pathname}`);
+    return <Navigate to="/students" replace />;
+  }
+
+  return <Outlet />;
+};
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
   const accessToken = useAuthStore((state) => state.accessToken);
@@ -21,17 +38,21 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
   const resetChatState = useChatStore((state) => state.resetChatState);
+  const clearNotifications = useNotificationStore((state) => state.clear);
 
   useChatSocket();
 
   useEffect(() => {
-    socketService.connect();
+    if (accessToken) {
+      socketService.connect();
+    }
 
     return () => {
       socketService.disconnect();
       resetChatState();
+      clearNotifications();
     };
-  }, [resetChatState]);
+  }, [accessToken, resetChatState, clearNotifications]);
 
   // 1. Authentication Check
   if (!accessToken || !currentUser) {
@@ -62,7 +83,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
               : "flex-1 overflow-y-auto p-4 md:p-6 lg:p-8"
           }
         >
-          <Outlet key={location.pathname} />
+          <Outlet key={location.pathname.startsWith('/chat') ? '/chat' : location.pathname} />
         </main>
       </div>
     </div>

@@ -16,6 +16,8 @@ const EMOJI_MAP: Record<string, string> = {
   love: '❤️',
   laugh: '😂',
   wow: '😮',
+  sad: '😢',
+  angry: '😡',
 };
 
 export const ReactionBar: React.FC<ReactionBarProps> = ({ messageId, reactions }) => {
@@ -73,7 +75,7 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({ messageId, reactions }
 
     try {
       if (hasReacted) {
-        await chatService.removeReaction(messageId);
+        await chatService.removeReaction(messageId, reactionType);
       } else {
         await chatService.addReaction(messageId, reactionType);
       }

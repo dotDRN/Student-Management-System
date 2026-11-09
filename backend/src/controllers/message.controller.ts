@@ -5,6 +5,15 @@ import {
     SendMessageDto,
     UpdateMessageDto
 } from "../dto/chat/message.dto.js";
+import { getIO } from "../socket/index.js";
+
+const safeGetIO = () => {
+    try {
+        return getIO();
+    } catch {
+        return null;
+    }
+};
 
 export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
     const message = await messageService.sendMessage(
@@ -13,8 +22,10 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
         req.body as SendMessageDto
     );
 
-    const io = (await import("../socket/index.js")).getIO();
-    io.to(`conversation:${String(req.params.conversationId)}`).emit("message:new", { message });
+    const io = safeGetIO();
+    if (io) {
+        io.to(`conversation:${String(req.params.conversationId)}`).emit("message:new", { message });
+    }
 
     return res.status(201).json({
         success: true,
@@ -24,9 +35,13 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getMessages = asyncHandler(async (req: Request, res: Response) => {
+    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
     const messages = await messageService.getMessages(
         req.user.userId,
-        String(req.params.conversationId)
+        String(req.params.conversationId),
+        cursor,
+        limit
     );
 
     return res.status(200).json({
@@ -76,13 +91,15 @@ export const editMessage = asyncHandler(async (req: Request, res: Response) => {
         req.body as UpdateMessageDto
     );
 
-    const io = (await import("../socket/index.js")).getIO();
-    io.to(`conversation:${oldMessage.conversationId}`).emit("message:updated", {
-        id: message.id,
-        conversationId: oldMessage.conversationId,
-        content: message.content,
-        updatedAt: message.updatedAt
-    });
+    const io = safeGetIO();
+    if (io) {
+        io.to(`conversation:${oldMessage.conversationId}`).emit("message:updated", {
+            id: message.id,
+            conversationId: oldMessage.conversationId,
+            content: message.content,
+            updatedAt: message.updatedAt
+        });
+    }
 
     return res.status(200).json({
         success: true,
@@ -102,11 +119,13 @@ export const deleteMessage = asyncHandler(async (req: Request, res: Response) =>
         String(req.params.messageId)
     );
 
-    const io = (await import("../socket/index.js")).getIO();
-    io.to(`conversation:${message.conversationId}`).emit("message:deleted", {
-        id: message.id,
-        conversationId: message.conversationId
-    });
+    const io = safeGetIO();
+    if (io) {
+        io.to(`conversation:${message.conversationId}`).emit("message:deleted", {
+            id: message.id,
+            conversationId: message.conversationId
+        });
+    }
 
     return res.status(200).json({
         success: true,
