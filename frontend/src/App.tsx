@@ -41,7 +41,7 @@ function App() {
         });
         if (res.ok) {
           const data = await res.json();
-          setAuth(data.user, data.accessToken);
+          setAuth(data.user, data.accessToken, data.organization || null);
         } else {
           logout();
         }

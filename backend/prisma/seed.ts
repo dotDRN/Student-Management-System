@@ -16,8 +16,17 @@ async function main() {
 
   // Tier 1: Leaf nodes (No dependencies)
 
+  await prisma.notificationRecipient.deleteMany();
+  await prisma.notification.deleteMany();
+  await prisma.pushSubscription.deleteMany();
+  await prisma.messageReaction.deleteMany();
+  await prisma.messageAttachment.deleteMany();
+  await prisma.message.deleteMany();
+  await prisma.conversationMember.deleteMany();
+  await prisma.conversation.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.alert.deleteMany();
+  await prisma.alertRule.deleteMany();
   await prisma.activityStatusLog.deleteMany();
   await prisma.activityEnrollment.deleteMany();
   await prisma.announcement.deleteMany();
@@ -52,9 +61,26 @@ async function main() {
   await prisma.program.deleteMany();
   await prisma.academicYear.deleteMany();
 
+  console.log("🏛️ Seeding Default Organization...");
+  const defaultOrg = await prisma.organization.upsert({
+    where: { slug: "default" },
+    update: {
+      name: "SPARSHA Default Organization",
+      isActive: true,
+    },
+    create: {
+      id: "00000000-0000-0000-0000-000000000001",
+      name: "SPARSHA Default Organization",
+      slug: "default",
+      plan: "starter",
+      isActive: true,
+    },
+  });
+
   console.log("📅 Seeding Academic Years...");
   const ay2026 = await prisma.academicYear.create({
     data: {
+      tenantId: defaultOrg.id,
       label: "2026-27",
       startDate: new Date(2026, 5, 1),
       endDate: new Date(2027, 4, 31),
@@ -79,7 +105,7 @@ async function main() {
   const pMap: any = {};
   for (const p of programData) {
     pMap[p.code] = await prisma.program.create({
-      data: { ...p, isActive: true },
+      data: { ...p, tenantId: defaultOrg.id, isActive: true },
     });
     const subjects = [
       "English",
@@ -107,7 +133,7 @@ async function main() {
   const centers = [];
   for (const c of centerData) {
     const center = await prisma.center.create({
-      data: { name: c.name, location: c.location, isActive: true },
+      data: { tenantId: defaultOrg.id, name: c.name, location: c.location, isActive: true },
     });
     centers.push(center);
     await prisma.centerProgram.create({
@@ -125,6 +151,7 @@ async function main() {
 
   const superAdmin = await prisma.user.create({
     data: {
+      tenantId: defaultOrg.id,
       email: "super_admin@sparsha.org",
       fullName: "System Super Admin",
       passwordHash: superPassword,
@@ -135,6 +162,7 @@ async function main() {
 
   const techAdmin = await prisma.user.create({
     data: {
+      tenantId: defaultOrg.id,
       email: "tech_admin@sparsha.org",
       fullName: "Technical Support Admin",
       passwordHash: superPassword,
