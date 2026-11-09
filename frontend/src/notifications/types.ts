@@ -2,11 +2,11 @@ import type { Notification } from "../types/notification";
 
 export type NotificationType =
   | "chat_message"
-  | "reaction"
-  | "mention"
-  | "voice_call"
-  | "video_call"
+  | "chat_reply"
+  | "chat_mention"
   | "announcement"
+  | "incoming_call"
+  | "missed_call"
   | "system";
 
 export interface NotificationContext {

@@ -6,8 +6,8 @@ class SocketService {
   private socket: Socket<
     ServerToClientEvents,
     ClientToServerEvents
-> | null = null;
-  private url: string = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000';
+  > | null = null;
+  private url: string = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
   private connectionListeners: ((isConnected: boolean) => void)[] = [];
   private eventListeners = new Map<
     keyof ServerToClientEvents,
@@ -15,13 +15,14 @@ class SocketService {
   >();
 
   connect() {
+    const token = useAuthStore.getState().accessToken;
+    if (!token) return;
+
     if (this.socket) {
+      this.socket.auth = { token };
       if (!this.socket.connected) this.socket.connect();
       return;
     }
-    
-    const token = useAuthStore.getState().accessToken;
-    if (!token) return;
 
     this.socket = io(this.url, {
       path: '/socket.io',
@@ -41,7 +42,18 @@ class SocketService {
       console.log('Socket disconnected:', reason);
       this.notifyListeners(false);
       if (reason === 'io server disconnect') {
-        this.socket?.connect();
+        const latestToken = useAuthStore.getState().accessToken;
+        if (latestToken && this.socket) {
+          this.socket.auth = { token: latestToken };
+          this.socket.connect();
+        }
+      }
+    });
+
+    this.socket.io.on('reconnect_attempt', () => {
+      const latestToken = useAuthStore.getState().accessToken;
+      if (latestToken && this.socket) {
+        this.socket.auth = { token: latestToken };
       }
     });
 
@@ -58,6 +70,15 @@ class SocketService {
     });
 
     this.socket.connect();
+  }
+
+  updateToken(token: string) {
+    if (this.socket) {
+      this.socket.auth = { token };
+      if (!this.socket.connected) {
+        this.socket.connect();
+      }
+    }
   }
 
   disconnect() {

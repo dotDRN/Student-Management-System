@@ -32,15 +32,17 @@ export interface UpdateMessageDto {
 }
 
 function getMessageNotificationBody(type: MessageType, content: string | null) {
+  const trimmed = content?.trim();
+  if (trimmed) return trimmed;
   switch (type) {
     case MessageType.text:
-      return content?.trim() ?? "Sent a message";
+      return "Sent a message";
     case MessageType.image:
-      return "Sent an image";
+      return "📷 Sent an image";
     case MessageType.file:
-      return "Sent an attachment";
+      return "📎 Sent an attachment";
     case MessageType.audio:
-      return "Sent a voice message";
+      return "🎵 Sent a voice message";
     case MessageType.system:
       return "System message";
     default:
@@ -105,10 +107,11 @@ class MessageService {
   ) {
     await this.validateMembership(userId, conversationId);
 
+    let replyTargetSenderId: string | null = null;
     if (payload.replyToId) {
       const parentMessage = await prisma.message.findUnique({
         where: { id: payload.replyToId },
-        select: { conversationId: true },
+        select: { conversationId: true, senderId: true },
       });
 
       if (!parentMessage) {
@@ -120,6 +123,25 @@ class MessageService {
           "Reply target message belongs to a different conversation.",
         );
       }
+
+      replyTargetSenderId = parentMessage.senderId;
+    }
+
+    let resolvedType: MessageType = payload.type || MessageType.text;
+    if (!payload.type && payload.attachments && payload.attachments.length > 0) {
+      const allImages = payload.attachments.every((a) =>
+        a.mimeType?.startsWith("image/"),
+      );
+      const allAudio = payload.attachments.every((a) =>
+        a.mimeType?.startsWith("audio/"),
+      );
+      if (allImages) {
+        resolvedType = MessageType.image;
+      } else if (allAudio) {
+        resolvedType = MessageType.audio;
+      } else {
+        resolvedType = MessageType.file;
+      }
     }
 
     // Keep message persistence atomic, including attachment creation and the
@@ -129,7 +151,7 @@ class MessageService {
         data: {
           conversationId,
           senderId: userId,
-          type: payload.type || MessageType.text,
+          type: resolvedType,
           content: payload.content,
           replyToId: payload.replyToId,
           attachments:
@@ -150,11 +172,16 @@ class MessageService {
           type: true,
           content: true,
           createdAt: true,
+          updatedAt: true,
+          isEdited: true,
+          isDeleted: true,
           replyToId: true,
           senderId: true,
           sender: {
             select: {
+              id: true,
               fullName: true,
+              email: true,
             },
           },
           attachments: {
@@ -164,6 +191,7 @@ class MessageService {
               fileName: true,
               mimeType: true,
               fileSize: true,
+              createdAt: true,
             },
           },
         },
@@ -174,58 +202,136 @@ class MessageService {
         data: { updatedAt: new Date() },
       });
 
-      return message;
+      return {
+        ...message,
+        reactions: [],
+      };
     });
-    const { sender, ...message } = createdMessage;
 
     const recipients = await prisma.conversationMember.findMany({
       where: {
         conversationId,
         userId: { not: userId },
       },
-      select: { userId: true },
+      select: {
+        userId: true,
+        user: {
+          select: {
+            fullName: true,
+            email: true,
+          },
+        },
+      },
     });
-    const recipientIds = recipients.map((recipient) => recipient.userId);
 
-    if (recipientIds.length === 0) {
-      return message;
+    if (recipients.length === 0) {
+      return createdMessage;
     }
 
-    const unnotifiedRecipientIds: string[] = [];
+    const unnotifiedRecipients: typeof recipients = [];
     await Promise.all(
-      recipientIds.map(async (recipientId) => {
-        const isViewing = await activeConversationTracker.isViewingConversation(recipientId, conversationId);
+      recipients.map(async (recipient) => {
+        const isViewing = await activeConversationTracker.isViewingConversation(
+          recipient.userId,
+          conversationId,
+        );
         if (!isViewing) {
-          unnotifiedRecipientIds.push(recipientId);
+          unnotifiedRecipients.push(recipient);
         }
-      })
+      }),
     );
 
-    if (unnotifiedRecipientIds.length === 0) {
-      return message;
+    if (unnotifiedRecipients.length === 0) {
+      return createdMessage;
     }
 
     try {
-      await NotificationService.notify({
-        actorId: userId,
-        recipientIds: unnotifiedRecipientIds,
-        type: NotificationType.chat_message,
-        title: sender.fullName,
-        body: getMessageNotificationBody(message.type, message.content),
-        entityType: NotificationEntityType.message,
-        entityId: message.id,
-        priority: NotificationPriority.medium,
-        link: `/chat/${conversationId}`,
-        metadata: {
-          conversationId,
-          messageId: message.id,
-        },
-      });
+      const notificationBody = getMessageNotificationBody(
+        createdMessage.type,
+        createdMessage.content,
+      );
+      const lowerContent = (createdMessage.content || "").toLowerCase();
+
+      const replyRecipientIds: string[] = [];
+      const mentionRecipientIds: string[] = [];
+      const regularRecipientIds: string[] = [];
+
+      for (const r of unnotifiedRecipients) {
+        const fullNameTag = `@${r.user.fullName.toLowerCase()}`;
+        const firstNameTag = `@${r.user.fullName.split(" ")[0].toLowerCase()}`;
+        const emailTag = `@${r.user.email.toLowerCase()}`;
+
+        if (
+          lowerContent.includes(fullNameTag) ||
+          lowerContent.includes(emailTag) ||
+          (firstNameTag.length > 2 && lowerContent.includes(firstNameTag))
+        ) {
+          mentionRecipientIds.push(r.userId);
+        } else if (replyTargetSenderId && r.userId === replyTargetSenderId) {
+          replyRecipientIds.push(r.userId);
+        } else {
+          regularRecipientIds.push(r.userId);
+        }
+      }
+
+      if (mentionRecipientIds.length > 0) {
+        await NotificationService.notify({
+          actorId: userId,
+          recipientIds: mentionRecipientIds,
+          type: NotificationType.chat_mention,
+          title: `${createdMessage.sender.fullName} mentioned you`,
+          body: notificationBody,
+          entityType: NotificationEntityType.message,
+          entityId: createdMessage.id,
+          priority: NotificationPriority.high,
+          link: `/chat/${conversationId}`,
+          metadata: {
+            conversationId,
+            messageId: createdMessage.id,
+          },
+        });
+      }
+
+      if (replyRecipientIds.length > 0) {
+        await NotificationService.notify({
+          actorId: userId,
+          recipientIds: replyRecipientIds,
+          type: NotificationType.chat_reply,
+          title: `${createdMessage.sender.fullName} replied to your message`,
+          body: notificationBody,
+          entityType: NotificationEntityType.message,
+          entityId: createdMessage.id,
+          priority: NotificationPriority.medium,
+          link: `/chat/${conversationId}`,
+          metadata: {
+            conversationId,
+            messageId: createdMessage.id,
+          },
+        });
+      }
+
+      if (regularRecipientIds.length > 0) {
+        await NotificationService.notify({
+          actorId: userId,
+          recipientIds: regularRecipientIds,
+          type: NotificationType.chat_message,
+          title: createdMessage.sender.fullName,
+          body: notificationBody,
+          entityType: NotificationEntityType.message,
+          entityId: createdMessage.id,
+          priority: NotificationPriority.medium,
+          link: `/chat/${conversationId}`,
+          metadata: {
+            conversationId,
+            messageId: createdMessage.id,
+          },
+        });
+      }
     } catch (error) {
       console.error("Failed to send notification:", error);
     }
 
-    return message;
+    return createdMessage;
   }
 
   async getMessages(
@@ -248,6 +354,7 @@ class MessageService {
       where: { conversationId },
       select: {
         id: true,
+        conversationId: true,
         senderId: true,
         type: true,
         content: true,
@@ -263,16 +370,21 @@ class MessageService {
             fileName: true,
             mimeType: true,
             fileSize: true,
+            createdAt: true,
           },
         },
         reactions: {
           select: {
+            id: true,
+            messageId: true,
             reaction: true,
             userId: true,
+            createdAt: true,
           },
         },
         sender: {
           select: {
+            id: true,
             fullName: true,
             email: true,
           },
@@ -315,14 +427,19 @@ class MessageService {
       },
       select: {
         id: true,
+        conversationId: true,
         senderId: true,
         type: true,
         content: true,
         createdAt: true,
+        updatedAt: true,
         isEdited: true,
+        isDeleted: true,
         sender: {
           select: {
+            id: true,
             fullName: true,
+            email: true,
           },
         },
       },
@@ -352,11 +469,14 @@ class MessageService {
             fileName: true,
             mimeType: true,
             fileSize: true,
+            createdAt: true,
           },
         },
         sender: {
           select: {
+            id: true,
             fullName: true,
+            email: true,
           },
         },
       },
@@ -397,6 +517,7 @@ class MessageService {
       data: {
         content: payload.content,
         isEdited: true,
+        updatedAt: new Date(),
       },
       select: {
         id: true,

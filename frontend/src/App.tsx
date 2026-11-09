@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ProtectedRoute } from './components/layout/ProtectedRoute';
+import { ProtectedRoute, RoleGuard } from './components/layout/ProtectedRoute';
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { StudentList } from './pages/StudentList';
@@ -71,8 +71,9 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
 
-        {/* --- LEVEL 1: SHARED ACCESS (Teachers & Admins) --- */}
+        {/* Single persistent authenticated layout & Socket.IO connection */}
         <Route element={<ProtectedRoute />}>
+          {/* --- LEVEL 1: SHARED ACCESS (Teachers & Admins) --- */}
           <Route path="/" element={<Navigate to={isAdmin ? "/dashboard" : "/students"} replace />} />
 
           <Route path="/students" element={<StudentList />} />
@@ -89,27 +90,27 @@ function App() {
           <Route path="/announcements" element={<Announcements />} />
           <Route path="/chat/:conversationId?" element={<ChatPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
-        </Route>
 
-        {/* --- LEVEL 2: DATA ENTRY (Teachers & Admins) --- */}
-        <Route element={<ProtectedRoute allowedRoles={['teacher', 'staff', 'super_admin', 'center_admin', 'tech_admin']} />}>
-          <Route path="/students/new" element={<StudentRegistration />} />
-          <Route path="/students/:id/edit" element={<StudentRegistration />} />
-        </Route>
+          {/* --- LEVEL 2: DATA ENTRY (Teachers & Admins) --- */}
+          <Route element={<RoleGuard allowedRoles={['teacher', 'staff', 'super_admin', 'center_admin', 'tech_admin']} />}>
+            <Route path="/students/new" element={<StudentRegistration />} />
+            <Route path="/students/:id/edit" element={<StudentRegistration />} />
+          </Route>
 
-        {/* --- LEVEL 3: ADMIN & SUPER ADMIN & TECH ADMIN ONLY (Management) --- */}
-        <Route element={<ProtectedRoute allowedRoles={['super_admin', 'center_admin', 'tech_admin']} />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/users" element={<UsersAdmin />} />
-          <Route path="/centers" element={<CentersPage />} />
-          <Route path="/programs" element={<ProgramsPage />} />
-          <Route path="/forms/new" element={<FormBuilderPage />} />
-          <Route path="/forms/:templateId/edit" element={<FormBuilderPage />} />
-        </Route>
+          {/* --- LEVEL 3: ADMIN & SUPER ADMIN & TECH ADMIN ONLY (Management) --- */}
+          <Route element={<RoleGuard allowedRoles={['super_admin', 'center_admin', 'tech_admin']} />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/users" element={<UsersAdmin />} />
+            <Route path="/centers" element={<CentersPage />} />
+            <Route path="/programs" element={<ProgramsPage />} />
+            <Route path="/forms/new" element={<FormBuilderPage />} />
+            <Route path="/forms/:templateId/edit" element={<FormBuilderPage />} />
+          </Route>
 
-        {/* --- LEVEL 4: SYSTEM ADMINS ONLY (Critical System Config) --- */}
-        <Route element={<ProtectedRoute allowedRoles={['super_admin', 'tech_admin']} />}>
-          <Route path="/settings" element={<Settings />} />
+          {/* --- LEVEL 4: SYSTEM ADMINS ONLY (Critical System Config) --- */}
+          <Route element={<RoleGuard allowedRoles={['super_admin', 'tech_admin']} />}>
+            <Route path="/settings" element={<Settings />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

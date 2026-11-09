@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Search, Check, Users } from 'lucide-react';
-import { listUsers } from '../../../services/users.service';
 import { chatService } from '../../../services/chat.service';
-import { useChatStore } from '../../../store/useChatStore';
+import { useAuthStore } from '../../../store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
+import type { Conversation } from '../../../types/chat';
 
 interface ConversationModalProps {
   isOpen: boolean;
@@ -16,6 +16,7 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({ isOpen, on
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [groupName, setGroupName] = useState('');
+  const currentUserId = useAuthStore((state) => state.currentUser?.id);
   
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -29,8 +30,8 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({ isOpen, on
   }, [searchTerm]);
 
   const { data: usersData, isLoading: isLoadingUsers } = useQuery({
-    queryKey: ['users', debouncedSearch],
-    queryFn: () => listUsers({ search: debouncedSearch, limit: 20 }),
+    queryKey: ['chat-users', debouncedSearch],
+    queryFn: () => chatService.searchUsers({ search: debouncedSearch, limit: 20 }),
     enabled: isOpen,
   });
 
@@ -40,7 +41,7 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({ isOpen, on
     },
     onSuccess: (newConversation) => {
       // Update cache
-      queryClient.setQueryData<any[]>(['conversations'], (old = []) => {
+      queryClient.setQueryData<Conversation[]>(['conversations'], (old = []) => {
         if (old.find((c) => c.id === newConversation.id)) return old;
         return [newConversation, ...old];
       });
@@ -48,7 +49,7 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({ isOpen, on
       navigate(`/chat/${newConversation.id}`);
       onClose();
       // Reset state
-      setSelectedUserIds(newSet => new Set());
+      setSelectedUserIds(new Set());
       setSearchTerm('');
       setGroupName('');
     },
@@ -81,14 +82,14 @@ export const ConversationModal: React.FC<ConversationModalProps> = ({ isOpen, on
       }
       createMutation.mutate({
         type: 'group',
-        title: groupName,
+        title: groupName.trim(),
         members: Array.from(selectedUserIds).map(userId => ({ userId })),
       });
     }
   };
 
   const isGroup = selectedUserIds.size > 1;
-  const users = usersData?.users || [];
+  const users = (usersData?.users || []).filter((u) => u.id !== currentUserId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

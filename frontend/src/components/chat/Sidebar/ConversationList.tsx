@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { ConversationItem } from './ConversationItem';
 import { ConversationModal } from './ConversationModal';
 import { getConversationDisplayName } from '../../../utils/chatHelpers';
+import { cn } from '../../ui/Button';
 
 export const ConversationList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -21,30 +22,44 @@ export const ConversationList: React.FC = () => {
     queryFn: () => chatService.getUserConversations(),
   });
 
-  const filteredConversations = conversations?.filter(c => {
-    if (!searchTerm) return true;
-    const name = getConversationDisplayName(c, currentUserId);
-    return name.toLowerCase().includes(searchTerm.toLowerCase());
-  }) || [];
+  const filteredConversations =
+    conversations?.filter((c) => {
+      if (!searchTerm) return true;
+      const name = getConversationDisplayName(c, currentUserId);
+      return name.toLowerCase().includes(searchTerm.toLowerCase());
+    }) || [];
 
   return (
-    <div className="w-full md:w-80 lg:w-96 flex flex-col h-full bg-white border-r border-neutral-200 shrink-0 z-20">
+    <div
+      className={cn(
+        'w-full md:w-80 lg:w-96 flex-col h-full min-h-0 bg-white border-r border-neutral-200 shrink-0 z-20',
+        activeConversationId ? 'hidden md:flex' : 'flex',
+      )}
+    >
       {/* Header & Search */}
-      <div className="p-4 border-b border-neutral-200">
+      <div className="p-4 border-b border-neutral-200 shrink-0">
         <div className="flex justify-between items-center mb-4">
-          <h1 className="text-xl font-bold text-neutral-800" style={{ fontFamily: 'var(--font-heading)' }}>
+          <h1
+            className="text-xl font-bold text-neutral-800"
+            style={{ fontFamily: 'var(--font-heading)' }}
+          >
             Messages
           </h1>
-          <button 
+          <button
+            type="button"
             onClick={() => setIsModalOpen(true)}
             className="p-2 bg-brand-50 text-brand-600 rounded-full hover:bg-brand-100 transition-colors shadow-sm"
+            title="New conversation"
           >
             <Plus size={18} />
           </button>
         </div>
-        
+
         <div className="relative">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
+          />
           <input
             type="text"
             placeholder="Search conversations..."
@@ -56,7 +71,7 @@ export const ConversationList: React.FC = () => {
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {isLoading ? (
           <div className="flex justify-center p-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-500"></div>
@@ -78,9 +93,9 @@ export const ConversationList: React.FC = () => {
         )}
       </div>
 
-      <ConversationModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
+      <ConversationModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
       />
     </div>
   );

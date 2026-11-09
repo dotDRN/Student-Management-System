@@ -41,6 +41,15 @@ export interface Attachment {
   createdAt: string;
 }
 
+export interface UploadedAttachmentDto {
+  id?: string;
+  url: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  resourceType?: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -86,6 +95,7 @@ export interface SendMessageDto {
   content?: string;
   type?: MessageType;
   replyToId?: string;
+  attachments?: UploadedAttachmentDto[];
 }
 
 export interface CreateConversationDto {

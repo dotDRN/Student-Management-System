@@ -2,11 +2,11 @@ import React, { useMemo } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
-import { Bell } from 'lucide-react';
+import { Bell, CheckCheck } from 'lucide-react';
 import { notificationService } from '../services/notification.service';
 import { useNotificationStore } from '../store/useNotificationStore';
 import { NotificationItem } from '../components/NotificationItem';
-import type { Notification } from '../types/notification';
+import type { Notification, NotificationListResponse, UnreadCountResponse } from '../types/notification';
 
 const groupNotifications = (notifications: Notification[]) => {
   const groups: Record<string, Notification[]> = {
@@ -39,6 +39,7 @@ export const NotificationsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const markAsRead = useNotificationStore(state => state.markAsRead);
+  const markAllAsRead = useNotificationStore(state => state.markAllAsRead);
   
   const {
     data,
@@ -52,7 +53,6 @@ export const NotificationsPage: React.FC = () => {
     queryFn: ({ pageParam = 1 }) => notificationService.getNotifications(pageParam),
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => {
-      // If we've loaded fewer items than total, fetch the next page
       const loadedCount = allPages.reduce((acc, page) => acc + page.notifications.length, 0);
       if (loadedCount < lastPage.pagination.total) {
         return allPages.length + 1;
@@ -61,16 +61,51 @@ export const NotificationsPage: React.FC = () => {
     }
   });
 
-  // Keep history page in sync with realtime events and read actions
-  // The useChatSocket sets query data for ['notifications', <number>].
-  // We handle marking as read here for the infinite list explicitly.
-  
+  const markAllMutation = useMutation({
+    mutationFn: () => notificationService.markAllAsRead(),
+    onMutate: () => {
+      markAllAsRead();
+      queryClient.setQueriesData<NotificationListResponse>(
+        {
+          predicate: (query) =>
+            query.queryKey[0] === 'notifications' && typeof query.queryKey[1] === 'number',
+        },
+        (old) =>
+          old
+            ? {
+                ...old,
+                notifications: old.notifications.map((n) => ({ ...n, isRead: true })),
+              }
+            : old,
+      );
+      queryClient.setQueryData(['notifications', 'infinite'], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            notifications: page.notifications.map((n: Notification) => ({
+              ...n,
+              isRead: true,
+            })),
+          })),
+        };
+      });
+      queryClient.setQueryData<UnreadCountResponse>(
+        ['notifications', 'unreadCount'],
+        { unreadCount: 0 },
+      );
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'unreadCount'] });
+    },
+  });
+
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.isRead) {
-      // Optimistically mark as read in store and query caches
       markAsRead(notification.notificationRecipientId);
       
-      // Update infinite query cache
       queryClient.setQueryData(['notifications', 'infinite'], (old: any) => {
         if (!old) return old;
         return {
@@ -86,7 +121,6 @@ export const NotificationsPage: React.FC = () => {
         };
       });
 
-      // Update regular queries (for drawer)
       queryClient.setQueriesData<any>(
         { predicate: (query) => query.queryKey[0] === 'notifications' && typeof query.queryKey[1] === 'number' },
         (old: any) => old ? {
@@ -99,7 +133,6 @@ export const NotificationsPage: React.FC = () => {
         } : old
       );
 
-      // Decrement unread count
       queryClient.setQueryData<any>(['notifications', 'unreadCount'], (old: any) => 
         ({ unreadCount: Math.max(0, (old?.unreadCount ?? 1) - 1) })
       );
@@ -118,6 +151,7 @@ export const NotificationsPage: React.FC = () => {
     return data?.pages.flatMap(page => page.notifications) || [];
   }, [data]);
 
+  const hasUnread = useMemo(() => notifications.some((n) => !n.isRead), [notifications]);
   const groupedNotifications = useMemo(() => groupNotifications(notifications), [notifications]);
 
   if (isLoading) {
@@ -154,6 +188,17 @@ export const NotificationsPage: React.FC = () => {
               Notifications
             </h1>
           </div>
+          {notifications.length > 0 && (
+            <button
+              type="button"
+              onClick={() => markAllMutation.mutate()}
+              disabled={markAllMutation.isPending || !hasUnread}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-brand-50 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <CheckCheck size={16} />
+              <span>Mark all read</span>
+            </button>
+          )}
         </div>
 
         {notifications.length === 0 ? (

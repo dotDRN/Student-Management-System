@@ -1,7 +1,22 @@
 import api from './api';
-import type { Conversation, Message, SendMessageDto, CreateConversationDto, UpdateConversationDto } from '../types/chat';
+import type {
+  Conversation,
+  ConversationMember,
+  Message,
+  SendMessageDto,
+  CreateConversationDto,
+  UpdateConversationDto,
+  UploadedAttachmentDto,
+} from '../types/chat';
+import type { UsersListResponse } from './users.service';
 
 class ChatService {
+  // --- Users Directory for Chat ---
+  async searchUsers(params?: { search?: string; limit?: number }): Promise<UsersListResponse> {
+    const response = await api.get<UsersListResponse>('/chat/conversations/users', { params });
+    return response.data;
+  }
+
   // --- Conversations ---
   async getUserConversations(): Promise<Conversation[]> {
     const response = await api.get('/chat/conversations');
@@ -19,21 +34,27 @@ class ChatService {
   }
 
   async updateConversation(conversationId: string, data: UpdateConversationDto): Promise<Conversation> {
-    const response = await api.put(`/chat/conversations/${conversationId}`, data);
+    const response = await api.patch(`/chat/conversations/${conversationId}`, data);
     return response.data.data;
   }
 
   async archiveConversation(conversationId: string): Promise<void> {
-    await api.post(`/chat/conversations/${conversationId}/archive`);
+    await api.patch(`/chat/conversations/${conversationId}/archive`);
   }
 
   async markAsRead(conversationId: string): Promise<void> {
-    await api.post(`/chat/conversations/${conversationId}/read`);
+    await api.patch(`/chat/conversations/${conversationId}/read`);
   }
 
   // --- Members ---
-  async addMember(conversationId: string, userId: string, role: string = 'member'): Promise<void> {
-    await api.post(`/chat/conversations/${conversationId}/members`, { userId, role });
+  async getConversationMembers(conversationId: string): Promise<ConversationMember[]> {
+    const response = await api.get(`/chat/conversations/${conversationId}/members`);
+    return response.data.data;
+  }
+
+  async addMember(conversationId: string, userId: string, role: string = 'member'): Promise<ConversationMember> {
+    const response = await api.post(`/chat/conversations/${conversationId}/members`, { userId, role });
+    return response.data.data;
   }
 
   async removeMember(conversationId: string, memberId: string): Promise<void> {
@@ -73,12 +94,17 @@ class ChatService {
     await api.post(`/chat/messages/${messageId}/reactions`, { reaction });
   }
 
-  async removeReaction(messageId: string): Promise<void> {
-    await api.delete(`/chat/messages/${messageId}/reactions`);
+  async removeReaction(messageId: string, reaction?: string): Promise<void> {
+    await api.delete(`/chat/messages/${messageId}/reactions`, {
+      params: reaction ? { reaction } : undefined,
+    });
   }
 
   // --- Attachments ---
-  async uploadAttachment(file: File, onProgress?: (percent: number) => void): Promise<{ id: string; url: string }> {
+  async uploadAttachment(
+    file: File,
+    onProgress?: (percent: number) => void,
+  ): Promise<UploadedAttachmentDto> {
     const formData = new FormData();
     formData.append('file', file);
 

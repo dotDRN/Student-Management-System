@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { ReactionType } from "@prisma/client";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import reactionService from "../services/reaction.service.js";
 import { AddReactionDto } from "../dto/chat/reaction.dto.js";
@@ -17,12 +18,16 @@ const emitReactionUpdate = async (conversationId: string, messageId: string) => 
         }
     });
 
-    const roomName = SocketRoomManager.getRoomName(conversationId);
-    getIO().to(roomName).emit("message:reaction_updated", {
-        messageId,
-        conversationId,
-        reactions
-    });
+    try {
+        const roomName = SocketRoomManager.getRoomName(conversationId);
+        getIO().to(roomName).emit("message:reaction_updated", {
+            messageId,
+            conversationId,
+            reactions
+        });
+    } catch {
+        // Socket.IO not initialized in unit test environments
+    }
 };
 
 export const addReaction = asyncHandler(async (req: Request, res: Response) => {
@@ -43,9 +48,11 @@ export const addReaction = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const removeReaction = asyncHandler(async (req: Request, res: Response) => {
+    const reactionType = (req.query.reaction || req.body?.reaction) as ReactionType | undefined;
     const { conversationId } = await reactionService.removeReaction(
         req.user.userId,
-        String(req.params.messageId)
+        String(req.params.messageId),
+        reactionType
     );
 
     // Emit socket event

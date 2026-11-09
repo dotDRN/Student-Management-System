@@ -1,4 +1,4 @@
-﻿import type { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import type { JwtPayload } from '../utils/jwt.js';
 import { UserRole } from "@prisma/client";
 import {
@@ -17,8 +17,6 @@ type AuthenticatedRequest = Request & { user?: JwtPayload };
 
 export async function listUsersController(req: Request, res: Response, next: NextFunction) {
   try {
-    const requester = (req as AuthenticatedRequest).user;
-
     // 1. Logic Fix: Merge all filters into one object to avoid calling listUsers twice
     const result = await listUsers({
       role: req.query.role as UserRole | undefined,
@@ -30,10 +28,6 @@ export async function listUsersController(req: Request, res: Response, next: Nex
       search: req.query.search as string | undefined,
       page: req.query.page ? Number(req.query.page) : 1,
       limit: req.query.limit ? Number(req.query.limit) : 50,
-      // Admins see all users; other roles only see users they created
-      createdBy: (requester?.role === 'super_admin' || requester?.role === 'center_admin') 
-        ? undefined 
-        : requester?.userId
     });
 
     return res.status(200).json(result);
@@ -84,7 +78,7 @@ export async function createUserController(req: Request, res: Response, next: Ne
       return res.status(403).json({ success: false, error: "Access Denied." });
     }
 
-    // ðŸ”¥ THE FIX: Explicitly include centerIds in the data passed to the service
+    // Explicitly include centerIds in the data passed to the service
     const userData = {
       ...req.body,
       centerIds: centerIds || [], // Ensure this is an array

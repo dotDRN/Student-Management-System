@@ -1,9 +1,10 @@
 import axios from "axios";
 import { useAuthStore } from "../store/useAuthStore";
+import { socketService } from "./socket.service";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
-  withCredentials: true, // 🔥 required for cookies
+  withCredentials: true, // required for cookies
 });
 
 // ----------------------
@@ -11,7 +12,7 @@ const api = axios.create({
 // ----------------------
 
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().accessToken; // 🔥 pull from Zustand (persisted)
+  const token = useAuthStore.getState().accessToken; // pull from Zustand (persisted)
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -67,8 +68,9 @@ api.interceptors.response.use(
 
         const newToken = res.data.accessToken;
 
-        // Save new token to Zustand
+        // Save new token to Zustand and update Socket.IO auth
         useAuthStore.getState().setAccessToken(newToken);
+        socketService.updateToken(newToken);
 
         // Update header
         api.defaults.headers.Authorization = `Bearer ${newToken}`;

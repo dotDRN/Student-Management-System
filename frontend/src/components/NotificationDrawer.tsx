@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { X } from 'lucide-react';
+import { X, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationService } from '../services/notification.service';
 import { useNotificationStore } from '../store/useNotificationStore';
@@ -69,8 +69,10 @@ interface NotificationDrawerProps {
 export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [filter, setFilter] = useState<'unread' | 'all'>('unread');
   const notifications = useNotificationStore((state) => state.notifications);
   const unreadNotifications = notifications.filter((n) => !n.isRead);
+  const displayedNotifications = filter === 'unread' ? unreadNotifications : notifications;
   const unreadCount = useNotificationStore((state) => state.unreadCount);
   const isOpen = useNotificationStore((state) => state.isOpen);
   const setNotifications = useNotificationStore((state) => state.setNotifications);
@@ -227,6 +229,23 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
           </div>
         </div>
 
+        <div className="flex items-center gap-2 px-5 py-2 border-b border-neutral-100 bg-neutral-50/50">
+          <button
+            type="button"
+            onClick={() => setFilter('unread')}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filter === 'unread' ? 'bg-primary text-white' : 'text-neutral-600 hover:bg-neutral-200/60'}`}
+          >
+            Unread ({unreadNotifications.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilter('all')}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${filter === 'all' ? 'bg-primary text-white' : 'text-neutral-600 hover:bg-neutral-200/60'}`}
+          >
+            All ({notifications.length})
+          </button>
+        </div>
+
         <BrowserNotificationPrompt />
 
         <div className="flex-1 overflow-y-auto">
@@ -245,7 +264,7 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
                 Try again
               </button>
             </div>
-          ) : unreadNotifications.length === 0 ? (
+          ) : displayedNotifications.length === 0 ? (
             <div className="px-6 py-16 flex flex-col items-center justify-center text-center text-neutral-500">
               <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mb-4">
                 <svg className="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -253,10 +272,10 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
                 </svg>
               </div>
               <p className="font-medium text-neutral-900 mb-1">You're all caught up.</p>
-              <p className="text-sm">No unread notifications.</p>
+              <p className="text-sm">{filter === 'unread' ? 'No unread notifications.' : 'No notifications yet.'}</p>
             </div>
           ) : (
-            unreadNotifications.map((notification) => (
+            displayedNotifications.map((notification) => (
               <NotificationItem
                 key={notification.notificationRecipientId}
                 notification={notification}
@@ -264,6 +283,20 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
               />
             ))
           )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-neutral-200 bg-neutral-50">
+          <button
+            type="button"
+            onClick={() => {
+              setDrawerOpen(false);
+              navigate('/notifications');
+            }}
+            className="w-full py-2 text-sm font-medium text-primary hover:text-primary/80 flex items-center justify-center gap-1.5"
+          >
+            <span>View all notifications</span>
+            <ArrowRight size={16} />
+          </button>
         </div>
       </aside>
     </>

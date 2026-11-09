@@ -1,16 +1,24 @@
 import prisma from "../lib/prisma.js";
 import { getIO } from "../socket/index.js";
+import { NotFoundError } from "../lib/errors.js";
 import {
   Notification as PrismaNotification,
   NotificationChannel,
-  NotificationPriority,
   NotificationRecipient,
   Prisma,
 } from "@prisma/client";
 import type { CreateNotificationDto } from "../dto/notification/create-notification.dto.js";
 
 class NotificationService {
-  private async createNotification(tx: Prisma.TransactionClient ,dto: CreateNotificationDto) {
+  private safeGetIO() {
+    try {
+      return getIO();
+    } catch {
+      return null;
+    }
+  }
+
+  private async createNotification(tx: Prisma.TransactionClient, dto: CreateNotificationDto) {
     return tx.notification.create({
       data: {
         actorId: dto.actorId,
@@ -33,12 +41,16 @@ class NotificationService {
     recipientIds: string[],
     channels: NotificationChannel[] = [NotificationChannel.in_app],
   ) {
+    const uniqueRecipientIds = [...new Set(recipientIds)];
+    if (uniqueRecipientIds.length === 0) return [];
+
     await tx.notificationRecipient.createMany({
-      data: recipientIds.map((recipientId) => ({
+      data: uniqueRecipientIds.map((recipientId) => ({
         notificationId,
         recipientId,
         channels,
       })),
+      skipDuplicates: true,
     });
 
     return tx.notificationRecipient.findMany({
@@ -52,7 +64,8 @@ class NotificationService {
     notification: PrismaNotification,
     recipients: NotificationRecipient[],
   ) {
-    const io = getIO();
+    const io = this.safeGetIO();
+    if (!io) return;
 
     for (const recipient of recipients) {
       io.to(`user:${recipient.recipientId}`).emit("notification:new", {
@@ -73,20 +86,25 @@ class NotificationService {
         entityId: notification.entityId,
 
         metadata: notification.metadata,
-        
+
         createdAt: notification.createdAt,
       });
     }
   }
 
   async notify(dto: CreateNotificationDto) {
+    const uniqueRecipientIds = [...new Set(dto.recipientIds)];
+    if (uniqueRecipientIds.length === 0) {
+      return null;
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const notification = await this.createNotification(tx, dto);
 
       await this.createRecipients(
         tx,
         notification.id,
-        dto.recipientIds,
+        uniqueRecipientIds,
         dto.channels,
       );
 
@@ -179,14 +197,14 @@ class NotificationService {
     });
 
     if (!recipient) {
-      throw new Error("Notification not found.");
+      throw new NotFoundError("Notification");
     }
 
     if (recipient.isRead) {
       return recipient;
     }
 
-    return prisma.notificationRecipient.update({
+    const updated = await prisma.notificationRecipient.update({
       where: {
         id: notificationRecipientId,
       },
@@ -195,10 +213,19 @@ class NotificationService {
         readAt: new Date(),
       },
     });
+
+    const io = this.safeGetIO();
+    if (io) {
+      io.to(`user:${userId}`).emit("notification:read", {
+        notificationRecipientId,
+      });
+    }
+
+    return updated;
   }
 
   async markAllAsRead(userId: string) {
-    return prisma.notificationRecipient.updateMany({
+    const result = await prisma.notificationRecipient.updateMany({
       where: {
         recipientId: userId,
         isRead: false,
@@ -208,10 +235,58 @@ class NotificationService {
         readAt: new Date(),
       },
     });
+
+    const io = this.safeGetIO();
+    if (io) {
+      io.to(`user:${userId}`).emit("notification:read_all", {});
+    }
+
+    return result;
+  }
+
+  async markConversationNotificationsAsRead(userId: string, conversationId: string) {
+    const unreadForConv = await prisma.notificationRecipient.findMany({
+      where: {
+        recipientId: userId,
+        isRead: false,
+        isArchived: false,
+        notification: {
+          link: `/chat/${conversationId}`,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (unreadForConv.length === 0) {
+      return { count: 0 };
+    }
+
+    const recipientIds = unreadForConv.map((r) => r.id);
+    const result = await prisma.notificationRecipient.updateMany({
+      where: {
+        id: { in: recipientIds },
+      },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    });
+
+    const io = this.safeGetIO();
+    if (io) {
+      const unreadCount = await this.getUnreadCount(userId);
+      io.to(`user:${userId}`).emit("notification:conversation_read", {
+        conversationId,
+        notificationRecipientIds: recipientIds,
+        unreadCount,
+      });
+    }
+
+    return result;
   }
 
   async archiveNotification(notificationRecipientId: string, userId: string) {
-    return prisma.notificationRecipient.updateMany({
+    const result = await prisma.notificationRecipient.updateMany({
       where: {
         id: notificationRecipientId,
         recipientId: userId,
@@ -220,6 +295,17 @@ class NotificationService {
         isArchived: true,
       },
     });
+
+    const io = this.safeGetIO();
+    if (io) {
+      const unreadCount = await this.getUnreadCount(userId);
+      io.to(`user:${userId}`).emit("notification:archived", {
+        notificationRecipientId,
+        unreadCount,
+      });
+    }
+
+    return result;
   }
 }
 

@@ -10,6 +10,7 @@ import {
     ForbiddenError,
     NotFoundError
 } from "../lib/errors.js";
+import notificationService from "./notifications.service.js";
 
 // These types are missing from the DTO file but imported in the controller
 export interface CreateConversationDto {
@@ -88,6 +89,46 @@ class ConversationService {
         }
     }
 
+    async searchChatUsers(userId: string, search?: string, limit: number = 20) {
+        const take = Math.min(Math.max(limit, 1), 100);
+        const where: Prisma.UserWhereInput = {
+            isActive: true,
+            id: { not: userId },
+            ...(search && search.trim()
+                ? {
+                      OR: [
+                          { fullName: { contains: search.trim(), mode: "insensitive" } },
+                          { email: { contains: search.trim(), mode: "insensitive" } },
+                      ],
+                  }
+                : {}),
+        };
+
+        const [users, total] = await Promise.all([
+            prisma.user.findMany({
+                where,
+                take,
+                orderBy: { fullName: "asc" },
+                select: {
+                    id: true,
+                    fullName: true,
+                    email: true,
+                    role: true,
+                    isActive: true,
+                    createdAt: true,
+                },
+            }),
+            prisma.user.count({ where }),
+        ]);
+
+        return {
+            users,
+            total,
+            page: 1,
+            totalPages: Math.ceil(total / take),
+        };
+    }
+
     async createConversation(userId: string, payload: CreateConversationDto) {
         await this.checkEntityExists(payload);
 
@@ -111,21 +152,60 @@ class ConversationService {
                 throw new BadRequestError("Direct messages must have exactly two distinct members.");
             }
 
-            // Check for existing DM
+            // Check for existing DM where both users are members
             const existingDM = await prisma.conversation.findFirst({
                 where: {
                     type: ConversationType.direct,
+                    AND: [
+                        { members: { some: { userId } } },
+                        { members: { some: { userId: otherUser.userId } } }
+                    ]
+                },
+                select: {
+                    id: true,
+                    type: true,
+                    title: true,
+                    description: true,
+                    avatarUrl: true,
+                    isArchived: true,
+                    createdAt: true,
+                    updatedAt: true,
+                    messages: {
+                        orderBy: { createdAt: 'desc' },
+                        take: 1,
+                        select: {
+                            id: true,
+                            content: true,
+                            type: true,
+                            createdAt: true,
+                            senderId: true,
+                            isDeleted: true
+                        }
+                    },
                     members: {
-                        every: {
-                            userId: { in: [userId, otherUser.userId] }
+                        select: {
+                            id: true,
+                            conversationId: true,
+                            userId: true,
+                            role: true,
+                            joinedAt: true,
+                            lastReadAt: true,
+                            isPinned: true,
+                            isArchived: true,
+                            user: {
+                                select: {
+                                    id: true,
+                                    fullName: true,
+                                    email: true
+                                }
+                            }
                         }
                     }
-                },
-                select: { id: true }
+                }
             });
 
             if (existingDM) {
-                throw new ConflictError("A direct message conversation already exists between these users.");
+                return existingDM;
             }
         }
 
@@ -152,13 +232,28 @@ class ConversationService {
                     id: true,
                     type: true,
                     title: true,
+                    description: true,
+                    avatarUrl: true,
                     isArchived: true,
                     createdAt: true,
+                    updatedAt: true,
                     members: {
                         select: {
+                            id: true,
+                            conversationId: true,
                             userId: true,
                             role: true,
-                            joinedAt: true
+                            joinedAt: true,
+                            lastReadAt: true,
+                            isPinned: true,
+                            isArchived: true,
+                            user: {
+                                select: {
+                                    id: true,
+                                    fullName: true,
+                                    email: true
+                                }
+                            }
                         }
                     }
                 }
@@ -170,16 +265,19 @@ class ConversationService {
     async getUserConversations(userId: string, cursor?: string, limit: number = 20) {
         const query: Prisma.ConversationFindManyArgs = {
             where: {
+                isArchived: false,
                 members: {
-                    some: { userId }
+                    some: { userId, isArchived: false }
                 }
             },
             select: {
                 id: true,
                 type: true,
                 title: true,
+                description: true,
                 avatarUrl: true,
                 isArchived: true,
+                createdAt: true,
                 updatedAt: true,
                 messages: {
                     orderBy: { createdAt: 'desc' },
@@ -190,16 +288,35 @@ class ConversationService {
                         type: true,
                         createdAt: true,
                         senderId: true,
-                        isDeleted: true
+                        isDeleted: true,
+                        attachments: {
+                            select: {
+                                id: true,
+                                url: true,
+                                fileName: true,
+                                mimeType: true,
+                                fileSize: true,
+                                createdAt: true
+                            }
+                        }
                     }
                 },
                 members: {
                     select: { 
+                        id: true,
+                        conversationId: true,
                         userId: true,
                         role: true,
+                        joinedAt: true,
                         lastReadAt: true,
+                        isPinned: true,
+                        isArchived: true,
                         user: {
-                            select: { fullName: true }
+                            select: {
+                                id: true,
+                                fullName: true,
+                                email: true
+                            }
                         }
                     }
                 }
@@ -230,17 +347,24 @@ class ConversationService {
                 avatarUrl: true,
                 isArchived: true,
                 createdAt: true,
+                updatedAt: true,
                 centerId: true,
                 activityId: true,
                 batchId: true,
                 programId: true,
                 members: {
                     select: {
+                        id: true,
+                        conversationId: true,
                         userId: true,
                         role: true,
                         joinedAt: true,
+                        lastReadAt: true,
+                        isPinned: true,
+                        isArchived: true,
                         user: {
                             select: {
+                                id: true,
                                 fullName: true,
                                 email: true
                             }
@@ -267,13 +391,16 @@ class ConversationService {
             data: {
                 title: payload.title,
                 description: payload.description,
-                avatarUrl: payload.avatarUrl
+                avatarUrl: payload.avatarUrl,
+                updatedAt: new Date()
             },
             select: {
                 id: true,
+                type: true,
                 title: true,
                 description: true,
                 avatarUrl: true,
+                isArchived: true,
                 updatedAt: true
             }
         });
@@ -281,7 +408,6 @@ class ConversationService {
 
     async archiveConversation(userId: string, conversationId: string) {
         const member = await this.validateMembership(userId, conversationId);
-        this.validateNotArchived(member.conversation.isArchived);
         this.validateAdminOrOwner(member.role);
 
         await prisma.$transaction([
@@ -302,11 +428,15 @@ class ConversationService {
         return await prisma.conversationMember.findMany({
             where: { conversationId },
             select: {
+                id: true,
+                conversationId: true,
                 userId: true,
                 role: true,
                 joinedAt: true,
+                lastReadAt: true,
                 user: {
                     select: {
+                        id: true,
                         fullName: true,
                         email: true
                     }
@@ -349,9 +479,18 @@ class ConversationService {
                 role: payload.role || ConversationRole.member
             },
             select: {
+                id: true,
+                conversationId: true,
                 userId: true,
                 role: true,
-                joinedAt: true
+                joinedAt: true,
+                user: {
+                    select: {
+                        id: true,
+                        fullName: true,
+                        email: true
+                    }
+                }
             }
         });
     }
@@ -376,7 +515,20 @@ class ConversationService {
                     });
 
                     if (otherOwners === 0) {
-                        throw new BadRequestError("You must transfer ownership before leaving the conversation.");
+                        // Promote another member (prefer admin, otherwise earliest joined member) to owner so owner can leave cleanly
+                        const nextOwner = await prisma.conversationMember.findFirst({
+                            where: { conversationId, userId: { not: userId } },
+                            orderBy: [
+                                { role: "asc" },
+                                { joinedAt: "asc" }
+                            ]
+                        });
+                        if (nextOwner) {
+                            await prisma.conversationMember.update({
+                                where: { id: nextOwner.id },
+                                data: { role: ConversationRole.owner }
+                            });
+                        }
                     }
                 }
             }
@@ -398,14 +550,24 @@ class ConversationService {
     async markConversationAsRead(userId: string, conversationId: string) {
         await this.validateMembership(userId, conversationId);
 
+        const lastReadAt = new Date();
         await prisma.conversationMember.update({
             where: {
                 conversationId_userId: { conversationId, userId }
             },
             data: {
-                lastReadAt: new Date()
+                lastReadAt
             }
         });
+
+        // Also mark any unread chat notifications for this conversation as read
+        try {
+            await notificationService.markConversationNotificationsAsRead(userId, conversationId);
+        } catch (err) {
+            console.error("Failed to mark conversation notifications as read:", err);
+        }
+
+        return lastReadAt;
     }
 }
 
