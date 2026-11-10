@@ -21,6 +21,7 @@ import {
   CalendarRange,
   Megaphone,
   Layers,
+  Video,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -82,6 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     {
       label: 'Collaboration & Workflows',
       items: [
+        { name: 'Meeting Rooms', path: '/meetings', icon: <Video size={18} />, viewRoles: ['super_admin', 'center_admin', 'tech_admin', 'supervisor', 'teacher', 'staff'] },
         { name: 'Dynamic Forms', path: '/forms', icon: <FileText size={18} />, viewRoles: ['super_admin', 'center_admin', 'tech_admin', 'teacher', 'staff'] },
         { name: 'Messages', path: '/chat', icon: <MessageSquare size={18} />, viewRoles: ['super_admin', 'center_admin', 'tech_admin', 'teacher', 'staff'] },
         { name: 'Announcements', path: '/announcements', icon: <Megaphone size={18} />, viewRoles: ['super_admin', 'center_admin', 'tech_admin', 'teacher', 'staff'] },
