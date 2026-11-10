@@ -14,6 +14,9 @@ const REFRESH_EXPIRY = "7d";
 
 export interface JwtPayload {
   userId: string;
+  tenantId: string;
+  tenantSlug?: string;
+  tenantName?: string;
   email: string;
   role: string;
   centerIds: string[];

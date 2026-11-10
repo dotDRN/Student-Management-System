@@ -4,6 +4,7 @@ import { Server, Socket } from "socket.io";
 import { authenticateSocket } from "./auth.js";
 import { SocketRoomManager } from "./socketRooms.js";
 import { activeConversationTracker } from "./activeConversationTracker.js";
+import { DEFAULT_TENANT_ID } from "../lib/tenantContext.js";
 
 let io: Server;
 
@@ -30,23 +31,22 @@ export function initializeSocket(server: HttpServer): Server {
 
   io.use(authenticateSocket);
 
-  // Map userIds to a Set of socketIds for multi-device presence support
-  const activeConnections = new Map<string, Set<string>>();
+  // Map tenantId -> (userId -> Set of socketIds) for tenant-isolated presence support
+  const tenantConnections = new Map<string, Map<string, Set<string>>>();
 
-  // Converted to async to support asynchronous room loading from Prisma
   io.on("connection", async (socket: Socket) => {
     const user = socket.data.user;
     const userId = user?.id;
+    const tenantId = user?.tenantId || DEFAULT_TENANT_ID;
+    const tenantRoom = SocketRoomManager.getTenantRoomName(tenantId);
 
     console.log(
-      `🟢 ${user?.fullName || "Unknown User"} connected: ${socket.id}`,
+      `🟢 ${user?.fullName || "Unknown User"} (tenant: ${tenantId}) connected: ${socket.id}`,
     );
 
-    // Register runtime event handlers synchronously BEFORE any `await` so events
-    // emitted immediately after client `connect` are never dropped.
     socket.on("conversation:join", (data: { conversationId: string }) => {
       if (data?.conversationId) {
-        SocketRoomManager.joinConversation(socket, data.conversationId);
+        void SocketRoomManager.joinConversation(socket, data.conversationId);
       }
     });
 
@@ -108,36 +108,45 @@ export function initializeSocket(server: HttpServer): Server {
       if (userId) {
         activeConversationTracker.blurConversation(userId, socket.id).catch(console.error);
 
-        if (activeConnections.has(userId)) {
-          const userConnections = activeConnections.get(userId)!;
+        const activeInTenant = tenantConnections.get(tenantId);
+        if (activeInTenant?.has(userId)) {
+          const userConnections = activeInTenant.get(userId)!;
           userConnections.delete(socket.id);
 
           if (userConnections.size === 0) {
-            activeConnections.delete(userId);
-            io.emit("presence:update", { userId, status: "offline" });
+            activeInTenant.delete(userId);
+            io.to(tenantRoom).emit("presence:update", { userId, status: "offline" });
+          }
+          if (activeInTenant.size === 0) {
+            tenantConnections.delete(tenantId);
           }
         }
       }
     });
 
     try {
-      // Presence logic: Send existing online users to this newly connected socket
-      for (const [onlineUserId, sockets] of activeConnections.entries()) {
+      if (!tenantConnections.has(tenantId)) {
+        tenantConnections.set(tenantId, new Map());
+      }
+      const activeInTenant = tenantConnections.get(tenantId)!;
+
+      // Presence logic: Send existing online users in THIS tenant only to the newly connected socket
+      for (const [onlineUserId, sockets] of activeInTenant.entries()) {
         if (sockets.size > 0) {
           socket.emit("presence:update", { userId: onlineUserId, status: "online" });
         }
       }
 
       if (userId) {
-        if (!activeConnections.has(userId)) {
-          activeConnections.set(userId, new Set());
-          // Broadcast online presence since it's the first connection
-          socket.broadcast.emit("presence:update", { userId, status: "online" });
+        if (!activeInTenant.has(userId)) {
+          activeInTenant.set(userId, new Set());
+          // Broadcast online presence only to sockets in the same tenant
+          socket.to(tenantRoom).emit("presence:update", { userId, status: "online" });
         }
-        activeConnections.get(userId)!.add(socket.id);
+        activeInTenant.get(userId)!.add(socket.id);
       }
 
-      // Join personal and conversation rooms
+      // Join personal, tenant, and conversation rooms
       await SocketRoomManager.joinUserRooms(socket);
     } catch (error) {
       console.error(

@@ -1,20 +1,37 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export interface OrganizationInfo {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl?: string | null;
+  plan?: string;
+}
+
 export interface User {
   id: string;
+  tenantId?: string;
+  tenantSlug?: string;
+  tenantName?: string;
   email: string;
   role: string;
   centerIds: string[];
   name?: string;
+  fullName?: string;
 }
 
 interface AuthState {
   currentUser: User | null;
+  currentTenant: OrganizationInfo | null;
   accessToken: string | null;
   selectedCenterId: string | null;
 
-  setAuth: (user: User, token: string) => void;
+  setAuth: (
+    user: User,
+    token: string,
+    tenant?: OrganizationInfo | null,
+  ) => void;
   setAccessToken: (token: string) => void;
   setSelectedCenterId: (id: string | null) => void;
   initializeAuth: () => void;
@@ -25,14 +42,32 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       currentUser: null,
+      currentTenant: null,
       accessToken: null,
       selectedCenterId: null,
 
-      setAuth: (user, token) => {
+      setAuth: (user, token, tenant) => {
+        const resolvedTenant: OrganizationInfo | null =
+          tenant ||
+          (user.tenantId
+            ? {
+                id: user.tenantId,
+                name: user.tenantName || "SPARSHA Workspace",
+                slug: user.tenantSlug || "default",
+              }
+            : null);
+
         set({
-          currentUser: user,
+          currentUser: {
+            ...user,
+            name: user.name || user.fullName,
+          },
+          currentTenant: resolvedTenant,
           accessToken: token,
-          selectedCenterId: user.centerIds.length > 0 ? user.centerIds[0] : null,
+          selectedCenterId:
+            user.centerIds && user.centerIds.length > 0
+              ? user.centerIds[0]
+              : null,
         });
       },
 
@@ -58,6 +93,7 @@ export const useAuthStore = create<AuthState>()(
 
         set({
           currentUser: null,
+          currentTenant: null,
           accessToken: null,
           selectedCenterId: null,
         });
@@ -65,6 +101,6 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "auth-storage",
-    }
-  )
+    },
+  ),
 );

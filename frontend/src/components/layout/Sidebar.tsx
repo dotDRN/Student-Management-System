@@ -27,6 +27,10 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const currentUser = useAuthStore((state) => state.currentUser);
+  const currentTenant = useAuthStore((state) => state.currentTenant);
+
+  const instanceName = currentTenant?.name || currentUser?.tenantName || 'SPARSHA';
+  const instanceSlug = currentTenant?.slug || currentUser?.tenantSlug;
 
   // Define Nav Items with detailed role-based access
   const navItems: Array<{
@@ -70,10 +74,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
           isOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <div className="h-16 flex items-center justify-between px-6 border-b border-neutral-100">
-          <span className="font-bold text-xl text-brand-600 tracking-tight" style={{ fontFamily: 'var(--font-heading)' }}>
-            SPARSHA
-          </span>
+        <div className="h-16 flex items-center justify-between px-5 border-b border-neutral-100">
+          <div className="min-w-0 flex-1">
+            <div
+              className="font-bold text-base text-brand-600 tracking-tight truncate"
+              style={{ fontFamily: 'var(--font-heading)' }}
+              title={instanceName}
+            >
+              {instanceName}
+            </div>
+            {instanceSlug && (
+              <div className="text-[11px] font-mono text-neutral-400 truncate">
+                /{instanceSlug}
+              </div>
+            )}
+          </div>
           <button onClick={onClose} className="md:hidden p-1 text-neutral-400 hover:text-neutral-600 rounded-lg">
             <X size={20} />
           </button>
@@ -102,4 +117,4 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       </aside>
     </>
   );
-};
+};

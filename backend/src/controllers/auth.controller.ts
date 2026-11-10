@@ -1,8 +1,80 @@
 import { Request, Response, NextFunction } from "express";
-import * as authService from '../services/auth.service.js';
-import { verifyRefreshToken, generateAccessToken } from '../utils/jwt.js';
-import { AppError } from '../lib/errors.js';
-// Extend Request to include user (from auth middleware)
+import * as authService from "../services/auth.service.js";
+import { AppError } from "../lib/errors.js";
+import {
+  registerInstanceSchema,
+  loginSchema,
+} from "../validators/auth.schema.js";
+
+/**
+ * GET /api/auth/check-slug?slug=...
+ */
+export const checkSlug = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<Response | void> => {
+  try {
+    const rawSlug = String(req.query.slug || "").trim();
+    if (!rawSlug) {
+      return res.status(400).json({
+        success: false,
+        message: "slug query parameter is required",
+      });
+    }
+
+    const result = await authService.checkSlugAvailability(rawSlug);
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * POST /api/auth/register-instance
+ * Provisions a new SaaS Organization instance, default center, academic year, and super_admin user.
+ */
+export const registerInstance = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<Response | void> => {
+  try {
+    const parsed = registerInstanceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const firstIssue = parsed.error.issues[0];
+      return res.status(400).json({
+        success: false,
+        message: firstIssue?.message || "Invalid instance registration data",
+        errors: parsed.error.issues,
+      });
+    }
+
+    const { accessToken, refreshToken, user, organization } =
+      await authService.registerInstance(parsed.data);
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Instance created successfully",
+      accessToken,
+      user,
+      organization,
+    });
+  } catch (err) {
+    console.error("Register Instance Error:", err);
+    next(err);
+  }
+};
 
 /**
  * POST /api/auth/register
@@ -39,7 +111,6 @@ export const register = async (
       password,
     });
 
-    // set refresh token cookie
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -67,14 +138,25 @@ export const login = async (
   next: NextFunction,
 ) => {
   try {
-    const { email, password } = req.body;
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        success: false,
+        message: parsed.error.issues[0]?.message || "Email and password are required",
+      });
+    }
 
-    const { accessToken, refreshToken, user } = await authService.loginUser({
-      email,
-      password,
-    });
+    const result = await authService.loginUser(parsed.data);
 
-    // 🔥 store refresh token in cookie
+    if ("requiresWorkspaceSelection" in result && result.requiresWorkspaceSelection) {
+      return res.status(200).json({
+        requiresWorkspaceSelection: true,
+        workspaces: result.workspaces,
+      });
+    }
+
+    const { accessToken, refreshToken, user, organization } = result;
+
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -85,6 +167,7 @@ export const login = async (
     return res.json({
       accessToken,
       user,
+      organization,
     });
   } catch (err) {
     console.error("Login Error:", err);
@@ -148,7 +231,7 @@ export const getMe = async (
 };
 
 /**
- * PUT /api/auth/change-password  (protected)
+ * POST /api/auth/change-password  (protected)
  */
 export const changePassword = async (
   req: Request,

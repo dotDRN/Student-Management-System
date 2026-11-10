@@ -1,10 +1,11 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyAccessToken, JwtPayload } from '../utils/jwt.js';
-import { ADMIN_ROLES, Role } from '../config/rbac.js';
+import { verifyAccessToken } from "../utils/jwt.js";
+import { ADMIN_ROLES, Role } from "../config/rbac.js";
+import { DEFAULT_TENANT_ID, runWithTenantContext } from "../lib/tenantContext.js";
 
 /**
  * AUTHENTICATE: The "Front Gate"
- * Verifies the JWT token and checks if the account is active.
+ * Verifies the JWT token, checks if the account is active, and binds the tenant context.
  */
 export const authenticate = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -20,7 +21,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
 
   try {
     const decoded = verifyAccessToken(token);
-    
+
     // Check if account is still active (Kill-switch)
     if (decoded.isActive === false) {
       return res.status(403).json({
@@ -30,15 +31,32 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     }
 
     // Ensure user has at least one center assigned (unless admin)
-    if (!ADMIN_ROLES.includes(decoded.role as Role) && (!decoded.centerIds || decoded.centerIds.length === 0)) {
+    if (
+      !ADMIN_ROLES.includes(decoded.role as Role) &&
+      (!decoded.centerIds || decoded.centerIds.length === 0)
+    ) {
       return res.status(403).json({
         success: false,
         message: "No centers assigned to user.",
       });
     }
 
-    (req).user = decoded;
-    next();
+    const tenantId =
+      decoded.tenantId ||
+      (req.headers["x-tenant-id"] as string | undefined) ||
+      DEFAULT_TENANT_ID;
+
+    decoded.tenantId = tenantId;
+    req.user = decoded;
+
+    return runWithTenantContext(
+      {
+        tenantId,
+        userId: decoded.userId,
+        role: decoded.role,
+      },
+      () => next(),
+    );
   } catch (err) {
     return res.status(401).json({
       success: false,
