@@ -136,33 +136,67 @@ enum NotificationChannel {
 }
 
 // =============================================================================
+// 0. TENANCY / ORGANIZATIONS
+// =============================================================================
+
+model Organization {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  slug      String   @unique
+  logoUrl   String?  @map("logo_url")
+  plan      String   @default("starter")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  academicYears AcademicYear[]
+  centers       Center[]
+  programs      Program[]
+  users         User[]
+  formTemplates FormTemplate[]
+  announcements Announcement[]
+  alertRules    AlertRule[]
+  auditLogs     AuditLog[]
+  conversations Conversation[]
+  notifications Notification[]
+
+  @@map("organizations")
+}
+
+// =============================================================================
 // 1. FOUNDATION TABLES
 // =============================================================================
 
 model AcademicYear {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  label     String   @unique
+  tenantId  String   @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
+  label     String
   startDate DateTime @map("start_date") @db.Date
   endDate   DateTime @map("end_date") @db.Date
   isCurrent Boolean  @default(false) @map("is_current")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
+  organization       Organization        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   students           Student[]
   attendanceSessions AttendanceSession[]
   exams              Exam[]
 
+  @@unique([tenantId, label])
+  @@index([tenantId])
   @@map("academic_years")
 }
 
 model Center {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String   @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
   name      String
   location  String?
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
+  organization       Organization           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   centerPrograms     CenterProgram[]
   users              UserCenterAssignment[]
   activities         Activity[]
@@ -185,12 +219,14 @@ model Center {
   activityStatusLogs ActivityStatusLog[]
   conversations      Conversation[]
 
+  @@index([tenantId])
   @@map("centers")
 }
 
 model Program {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code        String   @unique
+  tenantId    String   @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
+  code        String
   name        String
   ageMin      Int?     @map("age_min")
   ageMax      Int?     @map("age_max")
@@ -199,6 +235,7 @@ model Program {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
+  organization       Organization        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   centerPrograms     CenterProgram[]
   subjects           ProgramSubject[]
   skillDefinitions   SkillDefinition[]
@@ -211,6 +248,8 @@ model Program {
   announcements      Announcement[]
   conversations      Conversation[]
 
+  @@unique([tenantId, code])
+  @@index([tenantId])
   @@map("programs")
 }
 
@@ -265,7 +304,8 @@ model SkillDefinition {
 
 model User {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email        String    @unique
+  tenantId     String    @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
+  email        String
   passwordHash String    @map("password_hash")
   fullName     String    @map("full_name")
   phone        String?
@@ -275,6 +315,7 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime  @default(now()) @map("updated_at") @db.Timestamptz
   createdBy    String?   @map("created_by") @db.Uuid
+  organization Organization @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   creator      User?     @relation("UserToCreator", fields: [createdBy], references: [id])
   createdUsers User[]    @relation("UserToCreator")
 
@@ -315,6 +356,8 @@ model User {
   receivedNotifications NotificationRecipient[] @relation("NotificationRecipient")
   pushSubscriptions     PushSubscription[]
 
+  @@unique([tenantId, email])
+  @@index([tenantId])
   @@map("users")
 }
 
@@ -655,6 +698,7 @@ model StudentSkillLog {
 
 model FormTemplate {
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
   name          String
   description   String?
   formType      String   @map("form_type")
@@ -672,14 +716,17 @@ model FormTemplate {
   updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
   externalSource String? // "kobo"
-  externalId     String? @unique // Kobo UID
+  externalId     String? // Kobo UID
 
+  organization  Organization     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   center        Center?          @relation(fields: [centerId], references: [id])
   program       Program?         @relation(fields: [programId], references: [id])
   createdByUser User             @relation("UserCreatedFormTemplates", fields: [createdBy], references: [id])
   assignments   FormAssignment[]
   submissions   FormSubmission[]
 
+  @@unique([tenantId, externalId])
+  @@index([tenantId])
   @@map("form_templates")
 }
 
@@ -773,6 +820,7 @@ model EquipmentLog {
 
 model Announcement {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String    @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
   centerId    String?   @map("center_id") @db.Uuid
   programId   String?   @map("program_id") @db.Uuid
   title       String
@@ -783,10 +831,12 @@ model Announcement {
   createdBy   String    @map("created_by") @db.Uuid
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
-  center        Center?  @relation(fields: [centerId], references: [id])
-  program       Program? @relation(fields: [programId], references: [id])
-  createdByUser User     @relation("AnnouncementCreatedBy", fields: [createdBy], references: [id])
+  organization  Organization @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  center        Center?      @relation(fields: [centerId], references: [id])
+  program       Program?     @relation(fields: [programId], references: [id])
+  createdByUser User         @relation("AnnouncementCreatedBy", fields: [createdBy], references: [id])
 
+  @@index([tenantId])
   @@map("announcements")
 }
 
@@ -796,6 +846,7 @@ model Announcement {
 
 model AlertRule {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
   centerId    String?  @map("center_id") @db.Uuid
   programId   String?  @map("program_id") @db.Uuid
   metric      String
@@ -807,11 +858,13 @@ model AlertRule {
   createdBy   String   @map("created_by") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  center        Center?  @relation(fields: [centerId], references: [id])
-  program       Program? @relation(fields: [programId], references: [id])
-  createdByUser User     @relation("RuleCreatedBy", fields: [createdBy], references: [id])
+  organization  Organization @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  center        Center?      @relation(fields: [centerId], references: [id])
+  program       Program?     @relation(fields: [programId], references: [id])
+  createdByUser User         @relation("RuleCreatedBy", fields: [createdBy], references: [id])
   alerts        Alert[]
 
+  @@index([tenantId])
   @@map("alert_rules")
 }
 
@@ -840,6 +893,7 @@ model Alert {
 
 model AuditLog {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId  String?  @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
   userId    String?  @map("user_id") @db.Uuid
   action    String
   tableName String?  @map("table_name")
@@ -850,8 +904,10 @@ model AuditLog {
   userAgent String?  @map("user_agent")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  user User? @relation("AuditUser", fields: [userId], references: [id])
+  organization Organization? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user         User?         @relation("AuditUser", fields: [userId], references: [id])
 
+  @@index([tenantId])
   @@map("audit_log")
 }
 
@@ -880,6 +936,7 @@ model ActivityStatusLog {
 
 model Conversation {
   id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String           @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
   type        ConversationType
   title       String?
   description String?
@@ -894,15 +951,17 @@ model Conversation {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt  DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
-  creator  User      @relation("ConversationCreator", fields: [createdBy], references: [id])
-  center   Center?   @relation(fields: [centerId], references: [id])
-  activity Activity? @relation(fields: [activityId], references: [id])
-  batch    Batch?    @relation(fields: [batchId], references: [id])
-  program  Program?  @relation(fields: [programId], references: [id])
+  organization Organization @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  creator      User         @relation("ConversationCreator", fields: [createdBy], references: [id])
+  center       Center?      @relation(fields: [centerId], references: [id])
+  activity     Activity?    @relation(fields: [activityId], references: [id])
+  batch        Batch?       @relation(fields: [batchId], references: [id])
+  program      Program?     @relation(fields: [programId], references: [id])
 
   members  ConversationMember[]
   messages Message[]
 
+  @@index([tenantId])
   @@map("conversations")
 }
 
@@ -976,11 +1035,12 @@ model MessageReaction {
 }
 
 model Notification {
-  id      String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  actorId String?          @map("actor_id") @db.Uuid
-  type    NotificationType
-  title   String
-  body    String
+  id       String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId String?          @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
+  actorId  String?          @map("actor_id") @db.Uuid
+  type     NotificationType
+  title    String
+  body     String
   metadata Json?
 
   entityType NotificationEntityType?
@@ -988,13 +1048,15 @@ model Notification {
 
   link String?
 
-  priority  NotificationPriority @default(medium)
-  createdAt DateTime             @default(now()) @db.Timestamptz
-  expiresAt DateTime?            @db.Timestamptz
-  actor     User?                @relation("NotificationActor", fields: [actorId], references: [id])
+  priority     NotificationPriority @default(medium)
+  createdAt    DateTime             @default(now()) @db.Timestamptz
+  expiresAt    DateTime?            @db.Timestamptz
+  organization Organization?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor        User?                @relation("NotificationActor", fields: [actorId], references: [id])
 
   recipients NotificationRecipient[]
 
+  @@index([tenantId])
   @@index([createdAt])
   @@index([type])
   @@map("notifications")

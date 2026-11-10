@@ -28,6 +28,7 @@ export async function authenticateSocket(
             },
             select: {
                 id: true,
+                tenantId: true,
                 fullName: true,
                 email: true,
                 role: true,
@@ -49,6 +50,7 @@ export async function authenticateSocket(
 
         socket.data.user = {
             id: user.id,
+            tenantId: user.tenantId,
             fullName: user.fullName,
             email: user.email,
             role: user.role,

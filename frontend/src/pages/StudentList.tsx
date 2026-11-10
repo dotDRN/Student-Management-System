@@ -191,7 +191,7 @@ export const StudentList: React.FC = () => {
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
-    XLSX.writeFile(workbook, 'SPARSHA_Students_Export.xlsx', { compression: true });
+    XLSX.writeFile(workbook, 'EduSpace_Students_Export.xlsx', { compression: true });
   };
 
   // Teacher: toggle transfer selection

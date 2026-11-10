@@ -22,6 +22,7 @@ import { Announcements } from './pages/Announcements';
 import { Activities } from './pages/Activities';
 import { ChatPage } from './pages/ChatPage';
 import { NotificationsPage } from './pages/NotificationsPage';
+import { MeetingRoomsPage } from './pages/MeetingRoomsPage';
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "./store/useAuthStore";
@@ -41,7 +42,7 @@ function App() {
         });
         if (res.ok) {
           const data = await res.json();
-          setAuth(data.user, data.accessToken);
+          setAuth(data.user, data.accessToken, data.organization || null);
         } else {
           logout();
         }
@@ -91,8 +92,9 @@ function App() {
           <Route path="/chat/:conversationId?" element={<ChatPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
 
-          {/* --- LEVEL 2: DATA ENTRY (Teachers & Admins) --- */}
-          <Route element={<RoleGuard allowedRoles={['teacher', 'staff', 'super_admin', 'center_admin', 'tech_admin']} />}>
+          {/* --- LEVEL 2: DATA ENTRY & STAFF COLLABORATION (Employees & Admins Only) --- */}
+          <Route element={<RoleGuard allowedRoles={['teacher', 'staff', 'supervisor', 'super_admin', 'center_admin', 'tech_admin']} />}>
+            <Route path="/meetings" element={<MeetingRoomsPage />} />
             <Route path="/students/new" element={<StudentRegistration />} />
             <Route path="/students/:id/edit" element={<StudentRegistration />} />
           </Route>

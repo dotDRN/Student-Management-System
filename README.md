@@ -1,10 +1,10 @@
-# SPARSHA Organization Management System (OMS)
+# EduSpace — Multi-Tenant Academic Operations & Student Workspace Platform
 
-Welcome to the SPARSHA OMS repository. This is an enterprise-grade platform built for the SPARSHA NGO to manage students, staff, academics, and operations across multiple centers.
+Welcome to **EduSpace**, an enterprise-grade, multi-tenant institutional operations and learner intelligence SaaS built to manage distributed centers, students, academic lifecycles, dynamic form workflows, and real-time collaboration.
 
 **Tech Stack:** 
-- **Frontend**: React + Vite (Tailwind CSS, Zustand)
-- **Backend**: Node.js + Express (Prisma ORM, PostgreSQL)
+- **Frontend**: React 19 + Vite (Tailwind CSS v4, Zustand, React Query, Socket.IO Client)
+- **Backend**: Node.js + Express 5 + TypeScript (Prisma ORM, PostgreSQL 15+, Zod, Socket.IO)
 
 ---
 

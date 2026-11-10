@@ -15,7 +15,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className="w-full flex flex-col gap-1.5 touch-manipulation">
         {label && (
-          <label htmlFor={inputId} className="text-xs uppercase tracking-wide text-neutral-600 font-medium">
+          <label htmlFor={inputId} className="text-xs font-semibold text-neutral-700">
             {label}
             {props.required && <span className="text-danger ml-1">*</span>}
           </label>
@@ -24,8 +24,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           id={inputId}
           ref={ref}
           className={cn(
-            "flex h-12 md:h-11 w-full rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm text-neutral-900 transition-colors placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500",
-            error && "border-danger focus:ring-danger text-danger",
+            "flex h-10 w-full rounded-lg border border-neutral-200 bg-white px-3.5 py-2 text-sm text-neutral-900 shadow-2xs transition-all placeholder:text-neutral-400 focus:outline-none focus:ring-3 focus:ring-brand-500/15 focus:border-brand-500 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500",
+            error && "border-danger focus:ring-danger/15 focus:border-danger text-danger",
             className
           )}
           {...props}

@@ -17,6 +17,12 @@ const koboClient = axios.create({
  */
 export async function syncKoboForms(userId: string) {
   try {
+    const creator = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { tenantId: true },
+    });
+    const tenantId = creator?.tenantId || "00000000-0000-0000-0000-000000000001";
+
     const res = await koboClient.get("/api/v2/assets/");
     const assets = res.data.results;
     let syncedCount = 0;
@@ -36,13 +42,19 @@ export async function syncKoboForms(userId: string) {
       }
 
       await prisma.formTemplate.upsert({
-        where: { externalId: asset.uid },
+        where: {
+          tenantId_externalId: {
+            tenantId,
+            externalId: asset.uid,
+          },
+        },
         update: {
           name: asset.name,
           description: asset.settings?.description || "Synced from KoboToolbox",
           schema: schema,
         },
         create: {
+          tenantId,
           name: asset.name,
           description: asset.settings?.description || "Synced from KoboToolbox",
           formType: "kobo_survey",
