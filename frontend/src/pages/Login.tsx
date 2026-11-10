@@ -13,13 +13,13 @@ import { Card } from '../components/ui/Card';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import {
-  GraduationCap,
   Building2,
   CheckCircle2,
   XCircle,
   ArrowRight,
   LogIn,
   Sparkles,
+  Layers,
 } from 'lucide-react';
 
 function slugify(value: string): string {
@@ -234,16 +234,26 @@ export const Login: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-neutral-100">
-      <Card className="max-w-lg w-full shadow-lg border-primary/10">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-950 relative overflow-hidden">
+      {/* Subtle Executive Indigo & Violet Ambient Glow */}
+      <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 h-[420px] w-[720px] rounded-full bg-gradient-to-tr from-brand-600/25 via-violet-600/15 to-transparent blur-3xl" />
+
+      <Card className="max-w-lg w-full shadow-2xl border border-slate-800/10 relative z-10 p-6 sm:p-8">
         {/* Brand Header */}
         <div className="flex flex-col items-center mb-6">
-          <div className="h-14 w-14 bg-brand-50 rounded-2xl flex items-center justify-center mb-3 text-brand-600">
-            <GraduationCap size={30} />
+          <div className="h-13 w-13 bg-gradient-to-br from-brand-500 to-violet-600 rounded-2xl flex items-center justify-center mb-3.5 text-white shadow-md shadow-brand-500/25">
+            <Layers size={26} />
           </div>
-          <h1 className="text-2xl font-bold text-neutral-900">SPARSHA Cloud</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-extrabold text-neutral-900 tracking-tight">
+              EduSpace
+            </h1>
+            <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-brand-50 text-brand-700 border border-brand-200/80">
+              Workspace
+            </span>
+          </div>
           <p className="text-sm text-neutral-500 mt-1 text-center">
-            Multi-Center Student & Institution Management SaaS
+            Multi-Tenant Academic Operations & Student Workspace Platform
           </p>
         </div>
 

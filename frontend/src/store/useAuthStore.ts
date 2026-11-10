@@ -47,15 +47,26 @@ export const useAuthStore = create<AuthState>()(
       selectedCenterId: null,
 
       setAuth: (user, token, tenant) => {
-        const resolvedTenant: OrganizationInfo | null =
-          tenant ||
-          (user.tenantId
+        const normalizeName = (raw?: string | null) =>
+          !raw ||
+          raw === "SPARSHA Default Organization" ||
+          raw === "SPARSHA Workspace" ||
+          raw === "VantageEd Workspace"
+            ? "EduSpace Workspace"
+            : raw;
+
+        const resolvedTenant: OrganizationInfo | null = tenant
+          ? {
+              ...tenant,
+              name: normalizeName(tenant.name),
+            }
+          : user.tenantId
             ? {
                 id: user.tenantId,
-                name: user.tenantName || "SPARSHA Workspace",
+                name: normalizeName(user.tenantName),
                 slug: user.tenantSlug || "default",
               }
-            : null);
+            : null;
 
         set({
           currentUser: {

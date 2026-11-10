@@ -65,12 +65,12 @@ async function main() {
   const defaultOrg = await prisma.organization.upsert({
     where: { slug: "default" },
     update: {
-      name: "SPARSHA Default Organization",
+      name: "EduSpace Default Workspace",
       isActive: true,
     },
     create: {
       id: "00000000-0000-0000-0000-000000000001",
-      name: "SPARSHA Default Organization",
+      name: "EduSpace Default Workspace",
       slug: "default",
       plan: "starter",
       isActive: true,
