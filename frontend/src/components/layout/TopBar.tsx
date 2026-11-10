@@ -1,18 +1,42 @@
 import React from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
-import { Menu, UserCircle, LogOut, Building2 } from 'lucide-react';
+import { Menu, LogOut, Building2, ShieldCheck } from 'lucide-react';
 import { NotificationBell } from '../NotificationBell';
 
 interface TopBarProps {
   onMenuClick: () => void;
 }
 
+function formatWorkspaceName(rawName?: string | null): string {
+  if (
+    !rawName ||
+    rawName === 'SPARSHA' ||
+    rawName === 'SPARSHA Default Organization' ||
+    rawName === 'SPARSHA Workspace' ||
+    rawName === 'VantageEd Workspace'
+  ) {
+    return 'EduSpace Workspace';
+  }
+  return rawName;
+}
+
 export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
   const { currentUser, currentTenant, logout } = useAuthStore();
 
-  const instanceName =
-    currentTenant?.name || currentUser?.tenantName || 'SPARSHA System';
+  const instanceName = formatWorkspaceName(
+    currentTenant?.name || currentUser?.tenantName,
+  );
   const instanceSlug = currentTenant?.slug || currentUser?.tenantSlug;
+
+  const displayName =
+    currentUser?.name || currentUser?.fullName || currentUser?.email || 'User';
+  const initials = displayName
+    .split(' ')
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
 
   const handleLogout = async () => {
     await logout();
@@ -20,20 +44,25 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
   };
 
   return (
-    <header className="bg-white border-b border-neutral-200 h-16 flex items-center justify-between px-4 sticky top-0 z-20">
+    <header className="bg-white/90 backdrop-blur-md border-b border-neutral-200/80 h-16 flex items-center justify-between px-4 md:px-6 sticky top-0 z-20">
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
           className="p-2 md:hidden hover:bg-neutral-100 rounded-lg text-neutral-600 transition-colors"
         >
-          <Menu size={24} />
+          <Menu size={22} />
         </button>
         <div className="hidden md:flex items-center gap-2.5">
-          <span className="font-semibold text-lg text-primary">{instanceName}</span>
+          <span className="font-semibold text-sm text-neutral-900">
+            {instanceName}
+          </span>
           {instanceSlug && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-brand-50 text-brand-700 border border-brand-100">
-              <Building2 size={12} />
-              {instanceSlug}
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-brand-50 text-brand-700 border border-brand-200/60"
+              style={{ fontFamily: 'var(--font-mono)' }}
+            >
+              <Building2 size={11} />
+              /{instanceSlug}
             </span>
           )}
         </div>
@@ -41,25 +70,32 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
 
       <div className="flex items-center gap-3">
         <NotificationBell />
-        <div className="flex flex-col items-end hidden sm:flex">
-          <span className="text-sm font-medium text-neutral-900">
-            {currentUser?.name || currentUser?.fullName || currentUser?.email || 'User'}
-          </span>
-          <span className="text-xs text-neutral-500 capitalize">
-            {currentUser?.role?.replace('_', ' ') || 'Guest'}
-          </span>
-        </div>
 
-        <div className="h-8 w-8 rounded-full bg-primary/10 text-primary flex items-center justify-center border border-primary/20">
-          <UserCircle size={20} />
+        <div className="h-5 w-px bg-neutral-200 hidden sm:block" />
+
+        <div className="flex items-center gap-2.5">
+          <div className="hidden sm:flex flex-col items-end">
+            <span className="text-sm font-semibold text-neutral-900 leading-tight">
+              {displayName}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-500 capitalize">
+              <ShieldCheck size={11} className="text-brand-600" />
+              {currentUser?.role?.replace('_', ' ') || 'Guest'}
+            </span>
+          </div>
+
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-tr from-brand-600 to-violet-600 text-white text-xs font-bold flex items-center justify-center shadow-2xs">
+            {initials || 'U'}
+          </div>
         </div>
 
         <button
           onClick={handleLogout}
-          className="p-2 hover:bg-danger/10 text-neutral-400 hover:text-danger rounded-lg transition-colors ml-2"
+          className="p-2 hover:bg-red-50 text-neutral-400 hover:text-red-600 rounded-lg transition-colors ml-1"
           aria-label="Logout"
+          title="Sign out"
         >
-          <LogOut size={20} />
+          <LogOut size={18} />
         </button>
       </div>
     </header>
