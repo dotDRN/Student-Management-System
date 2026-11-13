@@ -177,7 +177,7 @@ export const createCenterSchema = z.object({
 
 export const updateCenterSchema = z.object({
   name: z.string().trim().min(2, "Center name must be at least 2 characters").optional(),
-  location: z.string().trim().optional(),
+  location: preprocessEmptyToNull(z.string().trim()),
   isActive: z.boolean().optional(),
 });
 
@@ -246,4 +246,54 @@ export const assignVolunteerSchema = z.object({
     .min(1)
     .refine((s) => !Number.isNaN(Date.parse(s)), "Invalid validFrom date"),
   validUntil: preprocessEmptyToNull(optionalDateString),
+});
+
+export const assignCenterProgramSchema = z.object({
+  programId: uuid,
+});
+
+export const assignCenterUserSchema = z
+  .object({
+    userId: uuid,
+    validFrom: preprocessEmptyToUndefined(optionalDateString),
+    validUntil: preprocessEmptyToNull(optionalDateString),
+  })
+  .refine(
+    (d) =>
+      !d.validFrom ||
+      !d.validUntil ||
+      Date.parse(d.validUntil) >= Date.parse(d.validFrom),
+    "validUntil cannot be earlier than validFrom",
+  );
+
+export const createProgramSubjectSchema = z.object({
+  name: z.string().trim().min(1, "Subject name is required").max(120),
+  maxMarks: z.coerce
+    .number()
+    .positive("Max marks must be greater than 0")
+    .max(9999.99, "Max marks cannot exceed 9999.99")
+    .optional(),
+});
+
+export const updateProgramSubjectSchema = z.object({
+  name: z.string().trim().min(1, "Subject name cannot be empty").max(120).optional(),
+  maxMarks: z.coerce
+    .number()
+    .positive("Max marks must be greater than 0")
+    .max(9999.99, "Max marks cannot exceed 9999.99")
+    .optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const createSkillDefinitionSchema = z.object({
+  name: z.string().trim().min(1, "Skill name is required").max(120),
+  description: preprocessEmptyToNull(z.string().trim().max(500)),
+  maxLevel: z.coerce.number().int().min(1).max(20).optional(),
+});
+
+export const updateSkillDefinitionSchema = z.object({
+  name: z.string().trim().min(1, "Skill name cannot be empty").max(120).optional(),
+  description: preprocessEmptyToNull(z.string().trim().max(500)),
+  maxLevel: z.coerce.number().int().min(1).max(20).optional(),
+  isActive: z.boolean().optional(),
 });

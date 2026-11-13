@@ -5,7 +5,11 @@ import {
   assignUserToCenter,
   createCenter,
   createProgram,
+  createProgramSubject,
+  createSkillDefinition,
   deleteCenter,
+  deleteProgramSubject,
+  deleteSkillDefinition,
   getCenterDetails,
   getProgramCenters,
   getProgramDetails,
@@ -15,6 +19,8 @@ import {
   removeUserFromCenter,
   updateCenter,
   updateProgram,
+  updateProgramSubject,
+  updateSkillDefinition,
 } from '../services/centerService.js';
 
 type AuthenticatedRequest = Request & { user?: JwtPayload };
@@ -51,7 +57,7 @@ export async function createCenterController(req: Request, res: Response, next: 
 
 export async function deleteCenterController(req: Request, res: Response, next: NextFunction) {
   try {
-    await deleteCenter(req.params.centerId as string);
+    await deleteCenter(req.params.centerId as string, (req as AuthenticatedRequest).user!);
     return res.status(204).send();
   } catch (error) {
     return next(error);
@@ -60,7 +66,11 @@ export async function deleteCenterController(req: Request, res: Response, next: 
 
 export async function updateCenterController(req: Request, res: Response, next: NextFunction) {
   try {
-    const center = await updateCenter(req.params.centerId as string, req.body);
+    const center = await updateCenter(
+      req.params.centerId as string,
+      req.body,
+      (req as AuthenticatedRequest).user!,
+    );
     return res.status(200).json(center);
   } catch (error) {
     return next(error);
@@ -72,6 +82,7 @@ export async function assignProgramController(req: Request, res: Response, next:
     const result = await assignProgramToCenter(
       req.params.centerId as string,
       req.body.programId as string,
+      (req as AuthenticatedRequest).user!,
     );
     return res.status(200).json(result);
   } catch (error) {
@@ -84,6 +95,7 @@ export async function removeProgramController(req: Request, res: Response, next:
     const result = await removeProgramFromCenter(
       req.params.centerId as string,
       req.params.programId as string,
+      (req as AuthenticatedRequest).user!,
     );
     return res.status(200).json(result);
   } catch (error) {
@@ -94,7 +106,7 @@ export async function removeProgramController(req: Request, res: Response, next:
 export async function assignUserController(req: Request, res: Response, next: NextFunction) {
   try {
     const user = (req as AuthenticatedRequest).user!;
-    const result = await assignUserToCenter(user.userId, req.params.centerId as string, req.body);
+    const result = await assignUserToCenter(user.userId, req.params.centerId as string, req.body, user);
     return res.status(200).json(result);
   } catch (error) {
     return next(error);
@@ -106,6 +118,7 @@ export async function removeUserController(req: Request, res: Response, next: Ne
     const result = await removeUserFromCenter(
       req.params.centerId as string,
       req.params.userId as string,
+      (req as AuthenticatedRequest).user!,
     );
     return res.status(200).json(result);
   } catch (error) {
@@ -159,6 +172,74 @@ export async function getProgramDetailsController(req: Request, res: Response, n
       (req as AuthenticatedRequest).user,
     );
     return res.status(200).json(details);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function createProgramSubjectController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const subject = await createProgramSubject(req.params.programId as string, req.body);
+    return res.status(201).json(subject);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function updateProgramSubjectController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const subject = await updateProgramSubject(
+      req.params.programId as string,
+      req.params.subjectId as string,
+      req.body,
+    );
+    return res.status(200).json(subject);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function deleteProgramSubjectController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await deleteProgramSubject(
+      req.params.programId as string,
+      req.params.subjectId as string,
+    );
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function createSkillDefinitionController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const skill = await createSkillDefinition(req.params.programId as string, req.body);
+    return res.status(201).json(skill);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function updateSkillDefinitionController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const skill = await updateSkillDefinition(
+      req.params.programId as string,
+      req.params.skillId as string,
+      req.body,
+    );
+    return res.status(200).json(skill);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function deleteSkillDefinitionController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const result = await deleteSkillDefinition(
+      req.params.programId as string,
+      req.params.skillId as string,
+    );
+    return res.status(200).json(result);
   } catch (error) {
     return next(error);
   }

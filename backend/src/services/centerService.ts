@@ -3,11 +3,18 @@ import type { JwtPayload } from '../utils/jwt.js';
 import prisma from '../lib/prisma.js';
 import { AppError, NotFoundError, ValidationError } from '../lib/errors.js';
 import { getScopedCenterIds, isGlobalAdmin } from '../config/rbac.js';
+import { assertCenterAccess } from '../lib/centerScope.js';
+import {
+  getTodayUtcDateOnly,
+  parseOptionalUtcDateOnly,
+  parseUtcDateOnly,
+} from '../utils/dateOnly.js';
 
 function activeAssignmentWhere(userId?: string) {
+  const todayUtc = getTodayUtcDateOnly();
   return {
     ...(userId ? { userId } : {}),
-    OR: [{ validUntil: null }, { validUntil: { gte: new Date() } }],
+    OR: [{ validUntil: null }, { validUntil: { gte: todayUtc } }],
   };
 }
 
@@ -71,9 +78,19 @@ export async function getCenterDetails(user: JwtPayload, centerId: string) {
         select: { id: true, fullName: true, email: true, role: true, isActive: true },
       },
     },
+    orderBy: { user: { fullName: 'asc' } },
   });
-  const teachers = assignments
-    .filter((a) => a.user.isActive && ['teacher', 'staff', 'supervisor'].includes(a.user.role))
+  const staffAssignments = assignments
+    .filter((a) => a.user.isActive)
+    .map((a) => ({
+      id: a.id,
+      userId: a.userId,
+      validFrom: a.validFrom,
+      validUntil: a.validUntil,
+      user: a.user,
+    }));
+  const teachers = staffAssignments
+    .filter((a) => ['teacher', 'staff', 'supervisor'].includes(a.user.role))
     .map((a) => a.user);
 
   // 4. Fetch students enrolled in this center
@@ -91,8 +108,9 @@ export async function getCenterDetails(user: JwtPayload, centerId: string) {
   return {
     ...center,
     teachers,
+    staffAssignments,
     students,
-    userCount: teachers.length,
+    userCount: staffAssignments.length,
     studentCount,
   };
 }
@@ -120,7 +138,7 @@ export async function createCenter(
           userId: user.userId,
           centerId: center.id,
           createdBy: user.userId,
-          validFrom: new Date(),
+          validFrom: getTodayUtcDateOnly(),
         },
       });
     }
@@ -129,7 +147,10 @@ export async function createCenter(
   });
 }
 
-export async function deleteCenter(centerId: string) {
+export async function deleteCenter(centerId: string, user?: JwtPayload) {
+  if (user) {
+    assertCenterAccess(user, centerId);
+  }
   const center = await prisma.center.findUnique({ where: { id: centerId } });
   if (!center) throw new NotFoundError("Center");
 
@@ -156,8 +177,12 @@ export async function deleteCenter(centerId: string) {
 
 export async function updateCenter(
   centerId: string,
-  input: { name?: string; location?: string; isActive?: boolean },
+  input: { name?: string; location?: string | null; isActive?: boolean },
+  user?: JwtPayload,
 ) {
+  if (user) {
+    assertCenterAccess(user, centerId);
+  }
   const existing = await prisma.center.findUnique({ where: { id: centerId } });
   if (!existing) throw new NotFoundError("Center");
 
@@ -169,19 +194,26 @@ export async function updateCenter(
     where: { id: centerId },
     data: {
       ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-      ...(input.location !== undefined ? { location: input.location.trim() || null } : {}),
+      ...(input.location !== undefined ? { location: input.location?.trim() || null } : {}),
       ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
     },
   });
 }
 
-export async function assignProgramToCenter(centerId: string, programId: string) {
+export async function assignProgramToCenter(
+  centerId: string,
+  programId: string,
+  user?: JwtPayload,
+) {
+  if (user) {
+    assertCenterAccess(user, centerId);
+  }
   const [center, program] = await Promise.all([
-    prisma.center.findUnique({ where: { id: centerId }, select: { id: true } }),
-    prisma.program.findUnique({ where: { id: programId }, select: { id: true } }),
+    prisma.center.findUnique({ where: { id: centerId }, select: { id: true, isActive: true } }),
+    prisma.program.findUnique({ where: { id: programId }, select: { id: true, isActive: true } }),
   ]);
-  if (!center) throw new NotFoundError("Center");
-  if (!program) throw new NotFoundError("Program");
+  if (!center || !center.isActive) throw new NotFoundError("Center");
+  if (!program || !program.isActive) throw new NotFoundError("Program");
 
   const existing = await prisma.centerProgram.findFirst({
     where: { centerId, programId },
@@ -190,6 +222,7 @@ export async function assignProgramToCenter(centerId: string, programId: string)
   if (!existing) {
     return prisma.centerProgram.create({
       data: { centerId, programId, isActive: true },
+      include: { program: true, center: true },
     });
   }
 
@@ -197,13 +230,21 @@ export async function assignProgramToCenter(centerId: string, programId: string)
     return prisma.centerProgram.update({
       where: { id: existing.id },
       data: { isActive: true },
+      include: { program: true, center: true },
     });
   }
 
   return existing;
 }
 
-export async function removeProgramFromCenter(centerId: string, programId: string) {
+export async function removeProgramFromCenter(
+  centerId: string,
+  programId: string,
+  user?: JwtPayload,
+) {
+  if (user) {
+    assertCenterAccess(user, centerId);
+  }
   const centerProgram = await prisma.centerProgram.findFirst({
     where: { centerId, programId },
   });
@@ -225,21 +266,39 @@ export async function removeProgramFromCenter(centerId: string, programId: strin
 export async function assignUserToCenter(
   createdBy: string,
   centerId: string,
-  input: { userId: string; validFrom?: string; validUntil?: string },
+  input: { userId: string; validFrom?: string; validUntil?: string | null },
+  user?: JwtPayload,
 ) {
+  if (user) {
+    assertCenterAccess(user, centerId);
+  }
   const [center, targetUser] = await Promise.all([
-    prisma.center.findUnique({ where: { id: centerId }, select: { id: true } }),
-    prisma.user.findUnique({ where: { id: input.userId }, select: { id: true } }),
+    prisma.center.findUnique({ where: { id: centerId }, select: { id: true, isActive: true } }),
+    prisma.user.findUnique({ where: { id: input.userId }, select: { id: true, isActive: true } }),
   ]);
-  if (!center) throw new NotFoundError("Center");
+  if (!center || !center.isActive) throw new NotFoundError("Center");
   if (!targetUser) throw new NotFoundError("User");
+  if (!targetUser.isActive) {
+    throw new ValidationError("Cannot assign an inactive user to a center");
+  }
 
-  const validFrom = input.validFrom ? new Date(input.validFrom) : undefined;
-  const validUntil = input.validUntil ? new Date(input.validUntil) : null;
+  const validFrom = parseOptionalUtcDateOnly(input.validFrom, "validFrom");
+  const validUntil =
+    input.validUntil === null || input.validUntil === undefined
+      ? null
+      : parseUtcDateOnly(input.validUntil, "validUntil");
 
   const existing = await prisma.userCenterAssignment.findFirst({
     where: { centerId, userId: input.userId },
   });
+
+  const effectiveValidFrom =
+    validFrom ??
+    (existing ? parseUtcDateOnly(existing.validFrom, "validFrom") : getTodayUtcDateOnly());
+
+  if (validUntil && validUntil.getTime() < effectiveValidFrom.getTime()) {
+    throw new ValidationError("validUntil cannot be earlier than validFrom");
+  }
 
   if (!existing) {
     return prisma.userCenterAssignment.create({
@@ -247,8 +306,13 @@ export async function assignUserToCenter(
         centerId,
         userId: input.userId,
         createdBy,
-        ...(validFrom ? { validFrom } : {}),
+        validFrom: effectiveValidFrom,
         validUntil,
+      },
+      include: {
+        user: {
+          select: { id: true, fullName: true, email: true, role: true, isActive: true },
+        },
       },
     });
   }
@@ -259,18 +323,31 @@ export async function assignUserToCenter(
       ...(validFrom ? { validFrom } : {}),
       validUntil,
     },
+    include: {
+      user: {
+        select: { id: true, fullName: true, email: true, role: true, isActive: true },
+      },
+    },
   });
 }
 
-export async function removeUserFromCenter(centerId: string, userId: string) {
+export async function removeUserFromCenter(
+  centerId: string,
+  userId: string,
+  user?: JwtPayload,
+) {
+  if (user) {
+    assertCenterAccess(user, centerId);
+  }
   const assignment = await prisma.userCenterAssignment.findFirst({
     where: { centerId, userId },
   });
   if (!assignment) throw new NotFoundError("User center assignment");
 
+  const yesterdayUtc = new Date(getTodayUtcDateOnly().getTime() - 86_400_000);
   return prisma.userCenterAssignment.update({
     where: { id: assignment.id },
-    data: { validUntil: new Date() },
+    data: { validUntil: yesterdayUtc },
   });
 }
 
@@ -358,6 +435,15 @@ export async function getProgramDetails(programId: string, user?: JwtPayload) {
       centerPrograms: {
         where: { isActive: true, ...centerFilter },
         include: { center: { select: { id: true, name: true, location: true } } },
+        orderBy: { center: { name: "asc" } },
+      },
+      subjects: {
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+      },
+      skillDefinitions: {
+        where: { isActive: true },
+        orderBy: { name: "asc" },
       },
     },
   });
@@ -394,4 +480,230 @@ export async function getProgramCenters(programId: string, user?: JwtPayload) {
     },
     orderBy: { center: { name: "asc" } },
   });
+}
+
+async function requireActiveProgram(programId: string) {
+  const program = await prisma.program.findUnique({
+    where: { id: programId },
+    select: { id: true, isActive: true },
+  });
+  if (!program || !program.isActive) {
+    throw new NotFoundError("Program");
+  }
+  return program;
+}
+
+export async function createProgramSubject(
+  programId: string,
+  input: { name: string; maxMarks?: number },
+) {
+  await requireActiveProgram(programId);
+  const name = input.name?.trim();
+  if (!name) throw new ValidationError("Subject name is required");
+  const maxMarks = input.maxMarks ?? 100;
+  if (!(maxMarks > 0 && maxMarks <= 9999.99)) {
+    throw new ValidationError("Max marks must be greater than 0 and at most 9999.99");
+  }
+
+  const existing = await prisma.programSubject.findFirst({
+    where: { programId, name: { equals: name, mode: "insensitive" } },
+  });
+  if (existing) {
+    if (existing.isActive) {
+      throw new AppError("A subject with this name already exists in the program", 409);
+    }
+    return prisma.programSubject.update({
+      where: { id: existing.id },
+      data: { name, maxMarks, isActive: true },
+    });
+  }
+
+  try {
+    return await prisma.programSubject.create({
+      data: { programId, name, maxMarks, isActive: true },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new AppError("A subject with this name already exists in the program", 409);
+    }
+    throw error;
+  }
+}
+
+export async function updateProgramSubject(
+  programId: string,
+  subjectId: string,
+  input: { name?: string; maxMarks?: number; isActive?: boolean },
+) {
+  const existing = await prisma.programSubject.findUnique({ where: { id: subjectId } });
+  if (!existing || existing.programId !== programId) {
+    throw new NotFoundError("Program subject");
+  }
+
+  const trimmedName = input.name !== undefined ? input.name.trim() : undefined;
+  if (trimmedName !== undefined && !trimmedName) {
+    throw new ValidationError("Subject name cannot be empty");
+  }
+  if (input.maxMarks !== undefined && !(input.maxMarks > 0 && input.maxMarks <= 9999.99)) {
+    throw new ValidationError("Max marks must be greater than 0 and at most 9999.99");
+  }
+
+  if (trimmedName) {
+    const duplicate = await prisma.programSubject.findFirst({
+      where: {
+        programId,
+        id: { not: subjectId },
+        name: { equals: trimmedName, mode: "insensitive" },
+      },
+    });
+    if (duplicate) {
+      throw new AppError("A subject with this name already exists in the program", 409);
+    }
+  }
+
+  try {
+    return await prisma.programSubject.update({
+      where: { id: subjectId },
+      data: {
+        ...(trimmedName !== undefined ? { name: trimmedName } : {}),
+        ...(input.maxMarks !== undefined ? { maxMarks: input.maxMarks } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new AppError("A subject with this name already exists in the program", 409);
+    }
+    throw error;
+  }
+}
+
+export async function deleteProgramSubject(programId: string, subjectId: string) {
+  const existing = await prisma.programSubject.findUnique({ where: { id: subjectId } });
+  if (!existing || existing.programId !== programId) {
+    throw new NotFoundError("Program subject");
+  }
+
+  const linkedScores = await prisma.examScore.count({ where: { subjectId } });
+  if (linkedScores > 0) {
+    await prisma.programSubject.update({
+      where: { id: subjectId },
+      data: { isActive: false },
+    });
+    return { id: subjectId, deleted: false, deactivated: true };
+  }
+
+  await prisma.programSubject.delete({ where: { id: subjectId } });
+  return { id: subjectId, deleted: true, deactivated: false };
+}
+
+export async function createSkillDefinition(
+  programId: string,
+  input: { name: string; description?: string | null; maxLevel?: number },
+) {
+  await requireActiveProgram(programId);
+  const name = input.name?.trim();
+  if (!name) throw new ValidationError("Skill name is required");
+  const maxLevel = input.maxLevel ?? 5;
+  if (!Number.isInteger(maxLevel) || maxLevel < 1 || maxLevel > 20) {
+    throw new ValidationError("maxLevel must be an integer between 1 and 20");
+  }
+  const description = input.description?.trim() || null;
+
+  const existing = await prisma.skillDefinition.findFirst({
+    where: { programId, name: { equals: name, mode: "insensitive" } },
+  });
+  if (existing) {
+    if (existing.isActive) {
+      throw new AppError("A skill definition with this name already exists in the program", 409);
+    }
+    return prisma.skillDefinition.update({
+      where: { id: existing.id },
+      data: { name, description, maxLevel, isActive: true },
+    });
+  }
+
+  try {
+    return await prisma.skillDefinition.create({
+      data: { programId, name, description, maxLevel, isActive: true },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new AppError("A skill definition with this name already exists in the program", 409);
+    }
+    throw error;
+  }
+}
+
+export async function updateSkillDefinition(
+  programId: string,
+  skillId: string,
+  input: { name?: string; description?: string | null; maxLevel?: number; isActive?: boolean },
+) {
+  const existing = await prisma.skillDefinition.findUnique({ where: { id: skillId } });
+  if (!existing || existing.programId !== programId) {
+    throw new NotFoundError("Skill definition");
+  }
+
+  const trimmedName = input.name !== undefined ? input.name.trim() : undefined;
+  if (trimmedName !== undefined && !trimmedName) {
+    throw new ValidationError("Skill name cannot be empty");
+  }
+  if (
+    input.maxLevel !== undefined &&
+    (!Number.isInteger(input.maxLevel) || input.maxLevel < 1 || input.maxLevel > 20)
+  ) {
+    throw new ValidationError("maxLevel must be an integer between 1 and 20");
+  }
+
+  if (trimmedName) {
+    const duplicate = await prisma.skillDefinition.findFirst({
+      where: {
+        programId,
+        id: { not: skillId },
+        name: { equals: trimmedName, mode: "insensitive" },
+      },
+    });
+    if (duplicate) {
+      throw new AppError("A skill definition with this name already exists in the program", 409);
+    }
+  }
+
+  try {
+    return await prisma.skillDefinition.update({
+      where: { id: skillId },
+      data: {
+        ...(trimmedName !== undefined ? { name: trimmedName } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description?.trim() || null }
+          : {}),
+        ...(input.maxLevel !== undefined ? { maxLevel: input.maxLevel } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new AppError("A skill definition with this name already exists in the program", 409);
+    }
+    throw error;
+  }
+}
+
+export async function deleteSkillDefinition(programId: string, skillId: string) {
+  const existing = await prisma.skillDefinition.findUnique({ where: { id: skillId } });
+  if (!existing || existing.programId !== programId) {
+    throw new NotFoundError("Skill definition");
+  }
+
+  const linkedLogs = await prisma.studentSkillLog.count({ where: { skillId } });
+  if (linkedLogs > 0) {
+    await prisma.skillDefinition.update({
+      where: { id: skillId },
+      data: { isActive: false },
+    });
+    return { id: skillId, deleted: false, deactivated: true };
+  }
+
+  await prisma.skillDefinition.delete({ where: { id: skillId } });
+  return { id: skillId, deleted: true, deactivated: false };
 }
