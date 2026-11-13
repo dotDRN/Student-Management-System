@@ -13,13 +13,86 @@ export interface ProgramBreakdownItem {
   studentCount: number;
 }
 
+export interface DashboardFeeSummary {
+  totalAssigned: number;
+  totalCollected: number;
+  totalOutstanding: number;
+  collectionPct: number;
+  fullyPaidStudents: number;
+  studentsWithFees: number;
+}
+
 export interface ReportsDashboardData {
   totalStudents: number;
   totalCenters: number;
   overallAttendanceRate: number;
   newStudentsThisMonth: number;
+  pendingAttendanceToday?: number;
+  pendingTransfersCount?: number;
+  feeSummary?: DashboardFeeSummary;
+  lowestAttendanceCenters?: CenterBreakdownItem[];
   centerBreakdown: CenterBreakdownItem[];
   programBreakdown: ProgramBreakdownItem[];
+}
+
+export interface MasterWorkbookPayload {
+  generatedDateUtc: string;
+  filters: {
+    centerId: string | null;
+    programId: string | null;
+    from: string | null;
+    to: string | null;
+    academicYear: string | null;
+  };
+  kpis: {
+    totalStudents: number;
+    totalCenters: number;
+    overallAttendanceRate: number;
+    newStudentsThisMonth: number;
+    pendingAttendanceToday: number;
+    pendingTransfersCount: number;
+    feeCollectionPct: number;
+    feeTotalAssigned: number;
+    feeTotalCollected: number;
+    feeTotalOutstanding: number;
+  };
+  students: Array<{
+    id: string;
+    fullName: string;
+    rollNumber: string;
+    centerName: string;
+    programName: string;
+    enrollmentDate: string;
+    attendanceRate: number;
+    avgExamScore: number;
+    totalFees: number;
+    feesPaid: number;
+    balanceDue: number;
+    feeStatus: string;
+  }>;
+  attendanceSummary: AttendanceAnalyticsData | null;
+  examPerformance: Array<{
+    subject: string;
+    baselineAvg: number;
+    baselineMin: number;
+    baselineMax: number;
+    endlineAvg: number;
+    endlineMin: number;
+    endlineMax: number;
+    improvementDelta: number;
+  }>;
+  skillProficiency: SkillProficiencyItem[];
+  feeSummary: Array<{
+    centerName: string;
+    programName: string;
+    studentCount: number;
+    studentsWithFeePlan: number;
+    fullyPaidCount: number;
+    totalAssigned: number;
+    totalCollected: number;
+    outstanding: number;
+    collectionPct: number;
+  }>;
 }
 
 export interface AttendanceAnalyticsData {
@@ -113,3 +186,6 @@ export const exportReportsCsv = (params?: Record<string, string | undefined>) =>
       responseType: 'blob',
     })
     .then((r) => r.data);
+
+export const getReportsWorkbook = (params?: Record<string, string | undefined>) =>
+  api.get<MasterWorkbookPayload>('/reports/workbook', { params }).then((r) => r.data);

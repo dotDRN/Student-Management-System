@@ -9,7 +9,8 @@ import {
   examsController,
   skillsReportController,
   studentsFilterController,
-  exportCsvController
+  exportCsvController,
+  workbookController,
 } from '../controllers/reportController.js';
 
 const reportRoutes = Router();
@@ -23,5 +24,6 @@ reportRoutes.get("/skills", skillsReportController);
 reportRoutes.get("/exams", examsController);
 reportRoutes.get("/students", studentsFilterController);
 reportRoutes.get("/export", requirePermission(PERMISSIONS.VIEW_REPORTS), exportCsvController);
+reportRoutes.get("/workbook", requirePermission(PERMISSIONS.VIEW_REPORTS), workbookController);
 
 export default reportRoutes;

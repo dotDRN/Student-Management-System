@@ -7,6 +7,7 @@ import {
   getFilteredStudents,
   exportStudentDataCsv,
   getSkillsReport,
+  getMasterWorkbookData,
 } from '../services/reportService.js';
 
 type AuthenticatedRequest = Request & { user?: JwtPayload };
@@ -71,6 +72,16 @@ export async function exportCsvController(req: Request, res: Response, next: Nex
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", "attachment; filename=student_export.csv");
     return res.status(200).send(csvString);
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export async function workbookController(req: Request, res: Response, next: NextFunction) {
+  try {
+    const user = (req as AuthenticatedRequest).user!;
+    const data = await getMasterWorkbookData(user, req.query as Record<string, unknown>);
+    return res.status(200).json(data);
   } catch (err) {
     return next(err);
   }

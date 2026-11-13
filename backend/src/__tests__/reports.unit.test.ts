@@ -9,6 +9,7 @@ import {
   getDashboardSummary,
   getExamAnalytics,
   getFilteredStudents,
+  getMasterWorkbookData,
   getSkillsReport,
 } from "../services/reportService.js";
 import type { JwtPayload } from "../utils/jwt.js";
@@ -44,6 +45,10 @@ describe("Component 1.8: Dashboard, Reports, Analytics & CSV Export Hardening", 
     mockPrismaModel(t, "student", {
       count: async () => 12,
       groupBy: async () => [{ programId: "p1", _count: { programId: 12 } }],
+      aggregate: async () => ({ _sum: { totalFees: 10000, feesPaid: 7500 } }),
+    });
+    mockPrismaModel(t, "attendanceSession", {
+      count: async () => 1,
     });
     mockPrismaModel(t, "center", {
       findMany: async (args: { where: Record<string, unknown> }) => {
@@ -242,5 +247,154 @@ describe("Component 1.8: Dashboard, Reports, Analytics & CSV Export Hardening", 
     assert.equal(formatCsvCell("+cmd"), `"'+cmd"`);
     assert.equal(formatCsvCell("-1+1"), `"'-1+1"`);
     assert.equal(formatCsvCell("@SUM(A1)"), `"'@SUM(A1)"`);
+  });
+});
+
+describe("Component 2.6: Actionable Dashboard & Master Workbook Export", () => {
+  const teacher: JwtPayload = {
+    userId: "u-teacher",
+    tenantId: "t1",
+    email: "t@org.org",
+    role: ROLES.TEACHER,
+    centerIds: [CENTER_1],
+    isActive: true,
+  };
+
+  it("getDashboardSummary returns operational widgets: pending attendance today, transfer count, fee progress, and lowest-attendance centers", async (t) => {
+    mockPrismaModel(t, "student", {
+      count: async (args: { where: Record<string, unknown> }) => {
+        if (args.where.transferStatus === "pending_transfer") return 2;
+        if (args.where.isFullyPaid === true) return 4;
+        if (args.where.totalFees) return 6;
+        if (args.where.enrollmentDate) return 3;
+        return 10;
+      },
+      groupBy: async () => [{ programId: "p1", _count: { programId: 10 } }],
+      aggregate: async () => ({ _sum: { totalFees: 20000, feesPaid: 15000 } }),
+    });
+    mockPrismaModel(t, "center", {
+      findMany: async () => [
+        { id: CENTER_1, name: "North Center" },
+        { id: CENTER_2, name: "South Center" },
+      ],
+    });
+    mockPrismaModel(t, "program", {
+      findMany: async () => [{ id: "p1", name: "Foundation" }],
+    });
+    mockPrismaModel(t, "attendanceSession", {
+      count: async () => 3,
+    });
+    mockPrismaModel(t, "attendanceRecord", {
+      groupBy: async (args: { where: Record<string, unknown> }) => {
+        if (args.where.centerId === CENTER_2) {
+          return [
+            { status: "present", _count: { status: 1 } },
+            { status: "absent", _count: { status: 1 } },
+          ];
+        }
+        return [
+          { status: "present", _count: { status: 9 } },
+          { status: "absent", _count: { status: 1 } },
+        ];
+      },
+    });
+
+    const summary = await getDashboardSummary(teacher);
+    assert.equal(summary.pendingAttendanceToday, 3);
+    assert.equal(summary.pendingTransfersCount, 2);
+    assert.deepEqual(summary.feeSummary, {
+      totalAssigned: 20000,
+      totalCollected: 15000,
+      totalOutstanding: 5000,
+      collectionPct: 75,
+      fullyPaidStudents: 4,
+      studentsWithFees: 6,
+    });
+    assert.equal(summary.lowestAttendanceCenters.length, 2);
+    assert.equal(summary.lowestAttendanceCenters[0].centerId, CENTER_2);
+    assert.equal(summary.lowestAttendanceCenters[0].attendanceRate, 50);
+  });
+
+  it("getMasterWorkbookData blocks unauthorized centers and assembles all 6 workbook sheets with fee summaries", async (t) => {
+    await assert.rejects(
+      () => getMasterWorkbookData(teacher, { centerId: CENTER_2 }),
+      ForbiddenError,
+    );
+
+    mockPrismaModel(t, "student", {
+      count: async () => 2,
+      groupBy: async () => [{ programId: "p1", _count: { programId: 2 } }],
+      aggregate: async () => ({ _sum: { totalFees: 5000, feesPaid: 3000 } }),
+      findMany: async () => [
+        {
+          id: "st-1",
+          fullName: "Asha Rao",
+          rollNumber: "R01",
+          centerId: CENTER_1,
+          center: { id: CENTER_1, name: "Center 1" },
+          programId: "p1",
+          program: { id: "p1", name: "STEM" },
+          enrollmentDate: new Date("2026-07-01T00:00:00.000Z"),
+          totalFees: 3000,
+          feesPaid: 3000,
+          isFullyPaid: true,
+          attendanceRecords: [{ status: "present" }, { status: "late" }],
+          examScores: [{ isAbsent: false, marks: 45, subject: { maxMarks: 50 } }],
+        },
+        {
+          id: "st-2",
+          fullName: "Rohan Das",
+          rollNumber: "R02",
+          centerId: CENTER_1,
+          center: { id: CENTER_1, name: "Center 1" },
+          programId: "p1",
+          program: { id: "p1", name: "STEM" },
+          enrollmentDate: new Date("2026-07-02T00:00:00.000Z"),
+          totalFees: 2000,
+          feesPaid: 0,
+          isFullyPaid: false,
+          attendanceRecords: [{ status: "absent" }],
+          examScores: [{ isAbsent: false, marks: 0, subject: { maxMarks: 50 } }],
+        },
+      ],
+    });
+    mockPrismaModel(t, "center", {
+      findMany: async () => [{ id: CENTER_1, name: "Center 1" }],
+    });
+    mockPrismaModel(t, "program", {
+      findMany: async () => [{ id: "p1", name: "STEM" }],
+    });
+    mockPrismaModel(t, "attendanceSession", {
+      count: async () => 1,
+      findMany: async () => [],
+    });
+    mockPrismaModel(t, "attendanceRecord", {
+      groupBy: async () => [{ status: "present", _count: { status: 2 } }],
+    });
+    mockPrismaModel(t, "studentSkillLog", {
+      findMany: async () => [{ level: 4, skill: { id: "sk-1", name: "Logic", maxLevel: 5 } }],
+    });
+    mockPrismaModel(t, "examScore", { findMany: async () => [] });
+    mockPrismaModel(t, "formTemplate", { findMany: async () => [] });
+
+    const wb = await getMasterWorkbookData(teacher, {
+      centerId: CENTER_1,
+      from: "2026-11-01",
+      to: "2026-11-10",
+    });
+
+    assert.equal(wb.students.length, 2);
+    assert.equal(wb.students[0].enrollmentDate, "2026-07-01");
+    assert.equal(wb.students[0].feeStatus, "Cleared");
+    assert.equal(wb.students[0].avgExamScore, 90);
+    assert.equal(wb.students[1].feeStatus, "Pending");
+    assert.equal(wb.students[1].balanceDue, 2000);
+    assert.equal(wb.skillProficiency.length, 1);
+    assert.equal(wb.feeSummary.length, 1);
+    assert.equal(wb.feeSummary[0].totalAssigned, 5000);
+    assert.equal(wb.feeSummary[0].totalCollected, 3000);
+    assert.equal(wb.feeSummary[0].outstanding, 2000);
+    assert.equal(wb.feeSummary[0].collectionPct, 60);
+    assert.ok(wb.attendanceSummary !== null);
   });
 });

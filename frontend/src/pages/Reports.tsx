@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Download, Printer } from 'lucide-react';
+import { Download, FileSpreadsheet, Printer } from 'lucide-react';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -28,11 +28,13 @@ import {
   getReportsDashboard,
   getReportsExams,
   getReportsSkills,
+  getReportsWorkbook,
   type AttendanceAnalyticsData,
   type ExamAnalyticsData,
   type ReportsDashboardData,
   type SkillsReportData,
 } from '../services/reports.service';
+import { downloadMasterWorkbookXlsx } from '../utils/masterWorkbookExport';
 import type { CenterSummary, ProgramSummary } from '../types';
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#f59e0b'];
@@ -67,6 +69,7 @@ export const Reports: React.FC = () => {
   const [skills, setSkills] = useState<SkillsReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [exportingWorkbook, setExportingWorkbook] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -147,6 +150,31 @@ export const Reports: React.FC = () => {
     }
   };
 
+  const handleExportWorkbook = async () => {
+    try {
+      setExportingWorkbook(true);
+      const wbPayload = await getReportsWorkbook({
+        ...(centerId ? { centerId } : {}),
+        ...(programId ? { programId } : {}),
+        ...(fromDate ? { from: fromDate } : {}),
+        ...(toDate ? { to: toDate } : {}),
+        ...(academicYear.trim() ? { academicYear: academicYear.trim() } : {}),
+      });
+      downloadMasterWorkbookXlsx(wbPayload);
+      toast.success({
+        title: 'Master Excel Workbook exported',
+        description: `Downloaded 6-sheet workbook (${wbPayload.students.length} students).`,
+      });
+    } catch (err) {
+      toast.error({
+        title: 'Workbook export failed',
+        description: getApiErrorMessage(err, 'Could not export Excel workbook.'),
+      });
+    } finally {
+      setExportingWorkbook(false);
+    }
+  };
+
   const programData = (dash?.programBreakdown ?? []).map((p) => ({
     name: p.name ?? 'Program',
     value: p.studentCount ?? 0,
@@ -173,6 +201,15 @@ export const Reports: React.FC = () => {
       title="Analytics & Reports"
       actions={
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => void handleExportWorkbook()}
+            disabled={exportingWorkbook}
+          >
+            <FileSpreadsheet size={15} className="mr-1.5" />
+            {exportingWorkbook ? 'Building Workbook...' : 'Export Excel Workbook (.xlsx)'}
+          </Button>
           <Button
             variant="secondary"
             size="sm"
@@ -271,6 +308,40 @@ export const Reports: React.FC = () => {
             <p className="text-2xl font-bold text-primary mt-1">{dash.newStudentsThisMonth}</p>
           </Card>
         </div>
+      )}
+
+      {dash?.feeSummary && (
+        <Card className="mb-6 p-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+            <div>
+              <h2 className="text-sm font-semibold text-neutral-900">Fee Collection Overview</h2>
+              <p className="text-xs text-neutral-500">
+                {dash.feeSummary.fullyPaidStudents} of {dash.feeSummary.studentsWithFees} fee-enrolled students cleared
+              </p>
+            </div>
+            <div className="flex items-center gap-4 text-xs">
+              <span>
+                Collected:{' '}
+                <strong className="text-emerald-700">
+                  ₹{dash.feeSummary.totalCollected.toLocaleString()}
+                </strong>
+              </span>
+              <span>
+                Outstanding:{' '}
+                <strong className="text-amber-700">
+                  ₹{dash.feeSummary.totalOutstanding.toLocaleString()}
+                </strong>
+              </span>
+              <span className="font-bold text-neutral-900">{dash.feeSummary.collectionPct}%</span>
+            </div>
+          </div>
+          <div className="w-full bg-neutral-100 h-2 rounded-full overflow-hidden">
+            <div
+              className="bg-emerald-500 h-full rounded-full transition-all"
+              style={{ width: `${dash.feeSummary.collectionPct}%` }}
+            />
+          </div>
+        </Card>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">

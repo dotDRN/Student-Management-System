@@ -6,7 +6,20 @@ import { useAuthStore } from '../store/useAuthStore';
 import { Button } from '../components/ui/Button';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
-import { Users, BookOpen, PlusCircle, Trash2, TrendingUp, Target, Activity } from 'lucide-react';
+import {
+  Users,
+  BookOpen,
+  PlusCircle,
+  Trash2,
+  TrendingUp,
+  Target,
+  Activity,
+  Clock,
+  ArrowRightLeft,
+  IndianRupee,
+  AlertTriangle,
+  ArrowRight,
+} from 'lucide-react';
 import { getReportsDashboard, type ReportsDashboardData } from '../services/reports.service';
 import { createCenter, deleteCenter } from '../services/centers.service';
 import { getApiErrorMessage } from '../services/api';
@@ -216,6 +229,130 @@ export const Dashboard: React.FC = () => {
                 </p>
                 <span className="text-xs text-neutral-400 font-medium">Monthly acquisition rate</span>
               </div>
+            </Card>
+          </div>
+
+          {/* Operational Action Center */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+            <Card className="border border-neutral-200/80 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    Pending Attendance Today
+                  </span>
+                  <Clock size={18} className="text-amber-600" />
+                </div>
+                <p className="text-2xl font-bold text-neutral-900">
+                  {Number(data?.pendingAttendanceToday ?? 0)}
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  {Number(data?.pendingAttendanceToday ?? 0) === 0
+                    ? 'All today sheets finalized'
+                    : 'Sheets with unmarked students'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/attendance')}
+                className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800"
+              >
+                Open Attendance <ArrowRight size={13} />
+              </button>
+            </Card>
+
+            <Card className="border border-neutral-200/80 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    Transfer Requests
+                  </span>
+                  <ArrowRightLeft size={18} className="text-indigo-600" />
+                </div>
+                <p className="text-2xl font-bold text-neutral-900">
+                  {Number(data?.pendingTransfersCount ?? 0)}
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  Students awaiting center transfer
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/students')}
+                className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800"
+              >
+                Manage Students <ArrowRight size={13} />
+              </button>
+            </Card>
+
+            <Card className="border border-neutral-200/80 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    Fee Collection
+                  </span>
+                  <IndianRupee size={18} className="text-emerald-600" />
+                </div>
+                <p className="text-2xl font-bold text-neutral-900">
+                  {data?.feeSummary?.collectionPct ?? 0}%
+                </p>
+                <div className="w-full bg-neutral-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-full rounded-full"
+                    style={{ width: `${data?.feeSummary?.collectionPct ?? 0}%` }}
+                  />
+                </div>
+                <p className="text-xs text-neutral-500 mt-1.5">
+                  ₹{(data?.feeSummary?.totalCollected ?? 0).toLocaleString()} / ₹
+                  {(data?.feeSummary?.totalAssigned ?? 0).toLocaleString()}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/reports')}
+                className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800"
+              >
+                Fee &amp; Master Reports <ArrowRight size={13} />
+              </button>
+            </Card>
+
+            <Card className="border border-neutral-200/80 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    Lowest Attendance Centers
+                  </span>
+                  <AlertTriangle size={18} className="text-rose-600" />
+                </div>
+                {!data?.lowestAttendanceCenters?.length ? (
+                  <p className="text-xs text-neutral-500 mt-2">No active center data yet.</p>
+                ) : (
+                  <ul className="space-y-1.5 mt-1">
+                    {data.lowestAttendanceCenters.map((c) => (
+                      <li key={c.centerId} className="flex items-center justify-between text-xs">
+                        <span className="truncate font-medium text-neutral-700 pr-2">{c.name}</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded font-semibold ${
+                            c.attendanceRate < 75
+                              ? 'bg-red-50 text-red-700'
+                              : c.attendanceRate < 85
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          {c.attendanceRate}%
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/attendance')}
+                className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800"
+              >
+                View Register <ArrowRight size={13} />
+              </button>
             </Card>
           </div>
 
