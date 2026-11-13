@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { JwtPayload } from '../utils/jwt.js';
 import { UserRole } from "@prisma/client";
+import { hasCenterAccess, isGlobalAdmin } from '../config/rbac.js';
 import {
   createUser,
   getMyCenters,
@@ -59,20 +60,37 @@ export async function createUserController(req: Request, res: Response, next: Ne
 
     // --- HIERARCHY LOGIC ---
     if (requesterRole === "super_admin") {
-      const allowedForSuper = ["super_admin", "center_admin", "teacher", "staff", "volunteer"];
+      const allowedForSuper = ["super_admin", "tech_admin", "center_admin", "supervisor", "teacher", "staff", "volunteer"];
       if (!allowedForSuper.includes(targetRole)) {
-        return res.status(403).json({ 
-          success: false, 
-          error: "Invalid role assignment for Super Admin." 
+        return res.status(403).json({
+          success: false,
+          error: "Invalid role assignment for Super Admin."
+        });
+      }
+    } else if (requesterRole === "tech_admin") {
+      const allowedForTech = ["tech_admin", "center_admin", "supervisor", "teacher", "staff", "volunteer"];
+      if (!allowedForTech.includes(targetRole)) {
+        return res.status(403).json({
+          success: false,
+          error: "Tech Admins cannot assign Super Admin role."
         });
       }
     } else if (requesterRole === "center_admin") {
       const allowedForAdmin = ["teacher", "staff", "volunteer"];
       if (!allowedForAdmin.includes(targetRole)) {
-        return res.status(403).json({ 
-          success: false, 
-          error: "Center Admins can only create Teachers, Staff, or Volunteers." 
+        return res.status(403).json({
+          success: false,
+          error: "Center Admins can only create Teachers, Staff, or Volunteers."
         });
+      }
+      if (Array.isArray(centerIds)) {
+        const allAllowed = centerIds.every((cid) => hasCenterAccess(requester, cid));
+        if (!allAllowed) {
+          return res.status(403).json({
+            success: false,
+            error: "Center Admins can only assign users to their own centers."
+          });
+        }
       }
     } else {
       return res.status(403).json({ success: false, error: "Access Denied." });
@@ -124,21 +142,37 @@ export async function deleteUserController(req: Request, res: Response, next: Ne
     const requester = (req as AuthenticatedRequest).user!;
     const targetUser = await getUserById(req.params.userId as string);
 
-    const hierarchy = {
-      [UserRole.super_admin]: 3,
-      [UserRole.center_admin]: 2,
+    const hierarchy: Record<string, number> = {
+      [UserRole.super_admin]: 5,
+      [UserRole.tech_admin]: 4,
+      [UserRole.center_admin]: 3,
+      [UserRole.supervisor]: 2,
       [UserRole.teacher]: 1,
-      [UserRole.staff]: 0
+      [UserRole.staff]: 0,
+      [UserRole.volunteer]: 0,
     };
 
-    const requesterLevel = hierarchy[requester.role as keyof typeof hierarchy] || 0;
-    const targetLevel = hierarchy[targetUser.role as keyof typeof hierarchy] || 0;
+    const requesterLevel = hierarchy[requester.role] ?? 0;
+    const targetLevel = hierarchy[targetUser.role] ?? 0;
 
     if (requesterLevel <= targetLevel && requester.role !== UserRole.super_admin) {
-      return res.status(403).json({ 
-        success: false, 
-        error: "You do not have permission to delete this user." 
+      return res.status(403).json({
+        success: false,
+        error: "You do not have permission to delete this user."
       });
+    }
+
+    if (!isGlobalAdmin(requester.role)) {
+      const targetCenterIds = (
+        (targetUser as { centerAssignments?: Array<{ centerId: string }> }).centerAssignments || []
+      ).map((assignment) => assignment.centerId);
+      const sharesCenter = targetCenterIds.some((cid) => hasCenterAccess(requester, cid));
+      if (!sharesCenter) {
+        return res.status(403).json({
+          success: false,
+          error: "You can only delete users assigned to your centers."
+        });
+      }
     }
 
     const result = await softDeleteUser(req.params.userId as string, requester);

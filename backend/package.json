@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && tsc && tsc-alias",
     "start": "node dist/server.js",
+    "test:unit": "node --import tsx --test src/__tests__/*.unit.test.ts",
     "db:setup": "prisma generate && prisma migrate deploy",
     "db:reset": "prisma migrate reset --force",
     "db:backup": "./scripts/db-backup.sh",

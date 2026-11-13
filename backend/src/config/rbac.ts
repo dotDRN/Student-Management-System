@@ -92,3 +92,38 @@ export const ADMIN_ROLES: Role[] = [
   ROLES.TECH_ADMIN,
   ROLES.CENTER_ADMIN,
 ];
+
+/**
+ * Roles with organization-wide (all-centers within tenant) visibility.
+ * `center_admin` holds admin permissions but remains scoped to assigned `centerIds`.
+ */
+export const GLOBAL_ADMIN_ROLES: Role[] = [
+  ROLES.SUPER_ADMIN,
+  ROLES.TECH_ADMIN,
+];
+
+export function isGlobalAdmin(role?: string | null): boolean {
+  return Boolean(role && GLOBAL_ADMIN_ROLES.includes(role as Role));
+}
+
+export function isAdminRole(role?: string | null): boolean {
+  return Boolean(role && ADMIN_ROLES.includes(role as Role));
+}
+
+export function getScopedCenterIds(
+  user?: { role?: string; centerIds?: string[] } | null,
+): string[] | undefined {
+  if (isGlobalAdmin(user?.role)) {
+    return undefined;
+  }
+  return Array.isArray(user?.centerIds) ? user.centerIds : [];
+}
+
+export function hasCenterAccess(
+  user: { role?: string; centerIds?: string[] } | null | undefined,
+  centerId: string,
+): boolean {
+  if (!centerId) return false;
+  if (isGlobalAdmin(user?.role)) return true;
+  return Array.isArray(user?.centerIds) && user.centerIds.includes(centerId);
+}

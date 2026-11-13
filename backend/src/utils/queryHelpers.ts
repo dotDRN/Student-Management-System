@@ -1,5 +1,7 @@
+import { isGlobalAdmin } from "../config/rbac.js";
+
 export function centerScopeWhere(role: string, allowedCenterIds: string[]) {
-  if (role === 'super_admin') return {};
+  if (isGlobalAdmin(role)) return {};
   return { centerId: { in: allowedCenterIds } };
 }
 
