@@ -14,22 +14,67 @@ const phone10Digit = z
     "Guardian phone must be exactly 10 digits"
   );
 
+const preprocessEmptyToNull = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (v === "" ? null : v), schema.nullable().optional());
+
+const preprocessEmptyToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (v === "" || v === null ? undefined : v), schema.optional());
+
 export const createStudentSchema = z.object({
-  fullName: z.string().min(2),
+  fullName: z.string().trim().min(2),
+  rollNumber: preprocessEmptyToNull(z.string().trim().min(1)),
   centerId: uuid,
   programId: uuid,
-  dob: optionalDateString,
-  gender: z.enum(["male", "female", "other"]).optional(),
-  guardianName: z.string().optional(),
-  guardianPhone: phone10Digit,
+  academicYearId: preprocessEmptyToNull(uuid),
+  dob: preprocessEmptyToNull(optionalDateString),
+  gender: preprocessEmptyToNull(z.enum(["male", "female", "other"])),
+  guardianName: preprocessEmptyToNull(z.string().trim().min(1)),
+  guardianPhone: preprocessEmptyToNull(phone10Digit),
+  stream: preprocessEmptyToNull(z.string().trim().min(1)),
+  post12thChoice: preprocessEmptyToNull(z.string().trim().min(1)),
+  collegeName: preprocessEmptyToNull(z.string().trim().min(1)),
+  educationDiscontinued: z.boolean().optional(),
+  enrollmentDate: preprocessEmptyToUndefined(optionalDateString),
 });
 
 export const updateStudentSchema = z.object({
-  fullName: z.string().min(2).optional(),
-  dob: optionalDateString,
-  gender: z.enum(["male", "female", "other"]).optional(),
-  guardianName: z.string().optional(),
-  guardianPhone: phone10Digit,
+  fullName: z.string().trim().min(2).optional(),
+  rollNumber: preprocessEmptyToNull(z.string().trim().min(1)),
+  academicYearId: preprocessEmptyToNull(uuid),
+  dob: preprocessEmptyToNull(optionalDateString),
+  gender: preprocessEmptyToNull(z.enum(["male", "female", "other"])),
+  guardianName: preprocessEmptyToNull(z.string().trim().min(1)),
+  guardianPhone: preprocessEmptyToNull(phone10Digit),
+  stream: preprocessEmptyToNull(z.string().trim().min(1)),
+  post12thChoice: preprocessEmptyToNull(z.string().trim().min(1)),
+  collegeName: preprocessEmptyToNull(z.string().trim().min(1)),
+  educationDiscontinued: z.boolean().optional(),
+  enrollmentDate: preprocessEmptyToUndefined(optionalDateString),
+  isActive: z.boolean().optional(),
+});
+
+export const requestTransferSchema = z.object({
+  studentIds: z.array(uuid).min(1),
+  reason: preprocessEmptyToNull(z.string().trim().min(1)),
+});
+
+export const completeTransferSchema = z.object({
+  studentIds: z.array(uuid).min(1),
+  newTeacherId: uuid,
+  newCenterId: uuid,
+  reason: preprocessEmptyToNull(z.string().trim().min(1)),
+});
+
+export const addFeePaymentSchema = z.object({
+  amount: z.coerce.number().positive("Payment amount must be greater than 0"),
+  paymentDate: preprocessEmptyToNull(optionalDateString),
+  method: z.string().trim().min(1).optional(),
+  reference: preprocessEmptyToNull(z.string().trim().min(1)),
+  notes: preprocessEmptyToNull(z.string().trim().min(1)),
+});
+
+export const updateStudentFeesSchema = z.object({
+  totalFees: z.coerce.number().min(0, "Total fees cannot be negative"),
 });
 
 export const createAttendanceSessionSchema = z.object({

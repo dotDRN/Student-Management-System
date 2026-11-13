@@ -32,7 +32,16 @@ import { requirePermission } from '../middleware/permission.middleware.js';
 import { requireCenterAccess } from '../middleware/center.middleware.js';
 import { PERMISSIONS } from '../config/rbac.js';
 import { validate } from '../middleware/validate.js';
-import { createStudentSchema, updateStudentSchema, createSkillSchema, createCareerSchema } from '../validators/schemas.js';
+import {
+  addFeePaymentSchema,
+  completeTransferSchema,
+  createCareerSchema,
+  createSkillSchema,
+  createStudentSchema,
+  requestTransferSchema,
+  updateStudentFeesSchema,
+  updateStudentSchema,
+} from '../validators/schemas.js';
 
 const router = Router();
 
@@ -44,10 +53,11 @@ router.use(requireCenterAccess());
 router.get("/filter", filterStudents);
 router.get("/dashboard", getDashboardStats);
 
-// 3. Transfer Workflow (NEW FROM VANSH)
+// 3. Transfer Workflow
 router.post(
   "/transfers/request",
   requirePermission(PERMISSIONS.MANAGE_TRANSFERS),
+  validate(requestTransferSchema),
   requestTransfer
 );
 router.get(
@@ -58,6 +68,7 @@ router.get(
 router.post(
   "/transfers/complete",
   requirePermission(PERMISSIONS.MANAGE_TRANSFERS),
+  validate(completeTransferSchema),
   completeTransfer
 );
 
@@ -102,16 +113,18 @@ router.get("/:studentId/careers", getCareersByStudent);
 router.put("/careers/:id", requirePermission(PERMISSIONS.MANAGE_CAREERS), validate(createCareerSchema), updateCareer);
 router.delete("/careers/:id", requirePermission(PERMISSIONS.MANAGE_CAREERS), deleteCareer);
 
-// 8. Fee Management (NEW FROM VANSH)
+// 8. Fee Management
 router.post(
   "/:studentId/fees",
   requirePermission(PERMISSIONS.MANAGE_FEES),
+  validate(addFeePaymentSchema),
   addFeePayment
 );
 router.get("/:studentId/fees", getFeePayments);
 router.put(
   "/:studentId/fees/update",
   requirePermission(PERMISSIONS.MANAGE_FEES),
+  validate(updateStudentFeesSchema),
   updateStudentFees
 );
 

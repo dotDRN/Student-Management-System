@@ -1,59 +1,31 @@
-﻿import prisma from '../lib/prisma.js';
-import { z } from "zod";
+﻿import type { Prisma } from '@prisma/client';
+import prisma from '../lib/prisma.js';
 import type { JwtPayload as TokenPayload } from '../utils/jwt.js';
 import { ForbiddenError, NotFoundError, ValidationError } from '../lib/errors.js';
-
-const phone10Digit = z
-  .string()
-  .optional()
-  .nullable()
-  .refine(
-    (val) => !val || /^\d{10}$/.test(val),
-    "Guardian phone must be exactly 10 digits"
-  );
-
-const studentCreateSchema = z.object({
-  fullName: z.string().min(1, "Name is required"),
-  dob: z
-    .string()
-    .optional()
-    .nullable()
-    .transform((val) => (val === "" ? null : val))
-    .refine((val) => !val || !Number.isNaN(Date.parse(val)), "Invalid date format"),
-  gender: z.enum(["male", "female", "other"]).optional().nullable(),
-  guardianName: z.string().optional().nullable(),
-  guardianPhone: phone10Digit,
-  centerId: z.string().uuid("Invalid Center ID"),
-  programId: z.string().uuid("Invalid Program ID"),
-  rollNumber: z.string().optional().nullable(),
-});
-
-const studentUpdateSchema = z.object({
-  fullName: z.string().min(1).optional(),
-  rollNumber: z.string().optional().nullable(),
-  dob: z
-    .string()
-    .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid date")
-    .optional(),
-  gender: z.enum(["male", "female", "other"]).optional(),
-  guardianName: z.string().optional(),
-  guardianPhone: phone10Digit,
-});
+import { getScopedCenterIds, isAdminRole, isGlobalAdmin } from '../config/rbac.js';
+import { assertCenterAccess } from '../lib/centerScope.js';
+import { resolveAcademicYearId } from '../utils/academicYear.js';
+import { calculateAttendancePercentage, countAttendanceStatuses } from '../utils/attendanceMetrics.js';
+import { getTodayUtcDateOnly, parseOptionalUtcDateOnly, parseUtcDateOnly } from '../utils/dateOnly.js';
+import {
+  addFeePaymentSchema,
+  completeTransferSchema,
+  createStudentSchema,
+  requestTransferSchema,
+  updateStudentFeesSchema,
+  updateStudentSchema,
+} from '../validators/schemas.js';
 
 /**
  * SCOPED WHERE: The core of the data visibility logic.
  * Ensures users only see students they are authorized to see.
  */
 const scopedWhere = (user: TokenPayload, otherConditions: Record<string, unknown> = {}) => {
-  const baseFilter: any = { isActive: true };
-  const userRole = user.role;
-  const effectiveUserId = user.userId;
+  const baseFilter: Record<string, unknown> = { isActive: true };
+  const scopedCenterIds = getScopedCenterIds(user);
 
-  // super_admin & tech_admin â†’ NO restrictions, see everything globally
-  // center_admin â†’ see everything in their centers
-  // teachers â†’ see everything in their centers (can be restricted further if needed)
-  if (userRole !== 'super_admin' && userRole !== 'tech_admin') {
-     baseFilter.centerId = { in: user.centerIds || [] };
+  if (scopedCenterIds !== null) {
+    baseFilter.centerId = { in: scopedCenterIds };
   }
 
   return {
@@ -66,34 +38,58 @@ const scopedWhere = (user: TokenPayload, otherConditions: Record<string, unknown
    STUDENTS
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-export const createStudent = async (user: TokenPayload, data: any) => {
-  const parsed = studentCreateSchema.safeParse(data);
+export const createStudent = async (user: TokenPayload, data: unknown) => {
+  const parsed = createStudentSchema.safeParse(data);
   if (!parsed.success) {
     throw new ValidationError("Invalid student payload", parsed.error.flatten());
   }
 
   const payload = parsed.data;
-  const userRole = user.role;
+  assertCenterAccess(user, payload.centerId, "You are not authorized to register students for this center.");
 
-  // Authorization check for center assignment
-  if (userRole !== 'super_admin' && userRole !== 'tech_admin') {
-    const isAssigned = user.centerIds?.includes(payload.centerId);
-    if (!isAssigned) {
-      throw new ForbiddenError("You are not authorized to register students for this center.");
-    }
+  const [center, program, centerProgram] = await Promise.all([
+    prisma.center.findFirst({ where: { id: payload.centerId, isActive: true } }),
+    prisma.program.findFirst({ where: { id: payload.programId, isActive: true } }),
+    prisma.centerProgram.findFirst({
+      where: { centerId: payload.centerId, programId: payload.programId },
+    }),
+  ]);
+
+  if (!center) {
+    throw new NotFoundError("Center not found or inactive");
   }
+  if (!program) {
+    throw new NotFoundError("Program not found or inactive");
+  }
+  if (!centerProgram) {
+    throw new ValidationError("Selected program is not offered at the selected center");
+  }
+
+  const academicYearId = await resolveAcademicYearId(payload.academicYearId ?? undefined, {
+    fallbackToCurrent: true,
+    strict: Boolean(payload.academicYearId),
+  });
+  const dob = parseOptionalUtcDateOnly(payload.dob, "dob");
+  const enrollmentDate =
+    parseOptionalUtcDateOnly(payload.enrollmentDate, "enrollmentDate") ?? getTodayUtcDateOnly();
 
   return prisma.student.create({
     data: {
       fullName: payload.fullName,
       centerId: payload.centerId,
       programId: payload.programId,
+      academicYearId,
       createdById: user.userId,
-      gender: payload.gender || null,
-      guardianName: payload.guardianName || null,
-      guardianPhone: payload.guardianPhone || null,
-      dob: payload.dob ? new Date(payload.dob) : null,
-      rollNumber: payload.rollNumber || null,
+      gender: payload.gender ?? null,
+      guardianName: payload.guardianName ?? null,
+      guardianPhone: payload.guardianPhone ?? null,
+      dob,
+      rollNumber: payload.rollNumber ?? null,
+      stream: payload.stream ?? null,
+      post12thChoice: payload.post12thChoice ?? null,
+      collegeName: payload.collegeName ?? null,
+      educationDiscontinued: payload.educationDiscontinued ?? false,
+      enrollmentDate,
     },
     include: {
       center: true,
@@ -106,19 +102,28 @@ export const getAllStudents = async (user: TokenPayload, { page = 1, limit = 50,
   const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const skip = (page - 1) * safeLimit;
 
+  // Handle center filter overrides
+  if (centerId) {
+    assertCenterAccess(user, centerId, "You do not have access to this center");
+  }
+
+  const normalizedIsActive =
+    isActive === "all"
+      ? undefined
+      : isActive === false || isActive === "false"
+      ? false
+      : true;
+
   // Build the base 'where' using the scope helper
   const where = scopedWhere(user, {
-    isActive: isActive !== undefined ? isActive : true,
     ...(centerId ? { centerId } : {}),
     ...(programId ? { programId: programId.includes(',') ? { in: programId.split(',') } : programId } : {}),
     ...(search ? { fullName: { contains: search, mode: "insensitive" } } : {}),
   });
-
-  // Handle center filter overrides
-  if (centerId && user.role !== 'super_admin' && user.role !== 'tech_admin') {
-     if (!user.centerIds.includes(centerId)) {
-        throw new ForbiddenError("You do not have access to this center");
-     }
+  if (normalizedIsActive === undefined) {
+    delete where.isActive;
+  } else {
+    where.isActive = normalizedIsActive;
   }
 
   // Sorting
@@ -174,9 +179,7 @@ export const getStudentById = async (user: TokenPayload, id: string) => {
     throw new NotFoundError("Student");
   }
 
-  if (user.role !== 'super_admin' && user.role !== 'tech_admin' && !user.centerIds.includes(student.centerId)) {
-    throw new ForbiddenError("Cannot access student from another center");
-  }
+  assertCenterAccess(user, student.centerId, "Cannot access student from another center");
 
   return student;
 };
@@ -187,19 +190,50 @@ export const updateStudent = async (user: TokenPayload, id: string, data: any) =
     throw new ValidationError("centerId and programId cannot be changed after creation");
   }
 
-  const parsed = studentUpdateSchema.safeParse(data);
+  const parsed = updateStudentSchema.safeParse(data);
   if (!parsed.success) {
     throw new ValidationError("Invalid student update payload", parsed.error.flatten());
   }
 
   const payload = parsed.data;
 
+  const resolvedAcademicYearId =
+    payload.academicYearId === null
+      ? null
+      : payload.academicYearId !== undefined
+      ? (await resolveAcademicYearId(payload.academicYearId, {
+          fallbackToCurrent: false,
+          strict: true,
+        })) ?? null
+      : undefined;
+
+  const updateData: Prisma.StudentUncheckedUpdateManyInput = {
+    ...(payload.fullName !== undefined ? { fullName: payload.fullName } : {}),
+    ...(payload.rollNumber !== undefined ? { rollNumber: payload.rollNumber } : {}),
+    ...(payload.gender !== undefined ? { gender: payload.gender } : {}),
+    ...(payload.guardianName !== undefined ? { guardianName: payload.guardianName } : {}),
+    ...(payload.guardianPhone !== undefined ? { guardianPhone: payload.guardianPhone } : {}),
+    ...(payload.stream !== undefined ? { stream: payload.stream } : {}),
+    ...(payload.post12thChoice !== undefined ? { post12thChoice: payload.post12thChoice } : {}),
+    ...(payload.collegeName !== undefined ? { collegeName: payload.collegeName } : {}),
+    ...(payload.educationDiscontinued !== undefined
+      ? { educationDiscontinued: payload.educationDiscontinued }
+      : {}),
+    ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+    ...(payload.dob === null
+      ? { dob: null }
+      : payload.dob !== undefined
+      ? { dob: parseUtcDateOnly(payload.dob, "dob") }
+      : {}),
+    ...(payload.enrollmentDate
+      ? { enrollmentDate: parseUtcDateOnly(payload.enrollmentDate, "enrollmentDate") }
+      : {}),
+    ...(resolvedAcademicYearId !== undefined ? { academicYearId: resolvedAcademicYearId } : {}),
+  };
+
   const result = await prisma.student.updateMany({
     where: scopedWhere(user, { id }),
-    data: {
-      ...payload,
-      ...(payload.dob ? { dob: new Date(payload.dob) } : {}),
-    },
+    data: updateData,
   });
 
   if (result.count === 0) {
@@ -286,12 +320,12 @@ export const getStudentSummary = async (user: TokenPayload, id: string) => {
     throw new NotFoundError("Student");
   }
 
-  const totalSessions = student.attendanceRecords.length;
-  const presentCount = student.attendanceRecords.filter(
-    (record) => record.status === "present",
-  ).length;
-  const attendancePercentage =
-    totalSessions > 0 ? Number(((presentCount / totalSessions) * 100).toFixed(2)) : 0;
+  const nonHolidaySummaryRecords = student.attendanceRecords.filter((r) => !r.session?.isHoliday);
+  const summaryCounts = countAttendanceStatuses(nonHolidaySummaryRecords);
+  const totalSessions =
+    summaryCounts.present + summaryCounts.absent + summaryCounts.late;
+  const presentCount = summaryCounts.present + summaryCounts.late;
+  const attendancePercentage = calculateAttendancePercentage(summaryCounts);
 
   const examScoresByType = student.examScores.reduce((acc: Record<string, any[]>, score) => {
       const examType = score.exam?.examType || "unknown";
@@ -336,7 +370,6 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
       attendanceRecords: {
         include: { session: true },
         orderBy: { session: { sessionDate: "desc" } },
-        take: 10,
       },
       examScores: {
         include: { exam: true, subject: true },
@@ -355,11 +388,14 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
     throw new NotFoundError("Student");
   }
 
-  const records = student.attendanceRecords;
-  const totalSessions = records.length;
-  const presentCount = records.filter((r) => r.status === "present").length;
-  const attendancePct =
-    totalSessions > 0 ? Number(((presentCount / totalSessions) * 100).toFixed(1)) : 0;
+  const allRecords = student.attendanceRecords;
+  const nonHolidayRecords = allRecords.filter((r) => !r.session?.isHoliday);
+  const attendanceCounts = countAttendanceStatuses(nonHolidayRecords);
+  const totalSessions =
+    attendanceCounts.present + attendanceCounts.absent + attendanceCounts.late;
+  const presentCount = attendanceCounts.present + attendanceCounts.late;
+  const attendancePct = calculateAttendancePercentage(attendanceCounts);
+  const records = allRecords.slice(0, 15);
 
   const examScoresList = student.examScores;
   let sumPct = 0;
@@ -371,12 +407,13 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
   }
   const avgExamPct = n > 0 ? Number((sumPct / n).toFixed(1)) : null;
 
-  const groupedTrend = [...records].reverse().reduce((acc, r) => {
+  const groupedTrend = [...nonHolidayRecords.slice(0, 15)].reverse().reduce((acc, r) => {
     const d = r.session.sessionDate.toISOString().slice(0, 10);
+    const presentFlag = r.status === "present" || r.status === "late" ? 1 : 0;
     if (!acc[d]) {
-      acc[d] = { date: d, present: r.status === "present" ? 1 : 0 };
+      acc[d] = { date: d, present: presentFlag };
     } else {
-      acc[d].present = Math.max(acc[d].present, r.status === "present" ? 1 : 0);
+      acc[d].present = Math.max(acc[d].present, presentFlag);
     }
     return acc;
   }, {} as Record<string, { date: string; present: number }>);
@@ -453,6 +490,8 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
     student: studentRest,
     stats: {
       attendancePct,
+      totalSessions,
+      presentCount,
       avgExamPct,
       skillScore,
     },
@@ -482,12 +521,19 @@ export const getAttendanceByStudent = async (user: TokenPayload, studentId: stri
   });
 };
 
-export const updateAttendance = async (id: string, data: any) => {
+export const updateAttendance = async (user: TokenPayload, id: string, data: any) => {
   const record = await prisma.attendanceRecord.findUnique({ where: { id } });
   if (!record) {
     throw new NotFoundError("Attendance record");
   }
-  return prisma.attendanceRecord.update({ where: { id }, data });
+  assertCenterAccess(user, record.centerId, "You are not authorized to update attendance for this center");
+  return prisma.attendanceRecord.update({
+    where: { id },
+    data: {
+      ...(data.status !== undefined ? { status: data.status } : {}),
+      ...(data.remarks !== undefined ? { remarks: data.remarks } : {}),
+    },
+  });
 };
 
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -518,19 +564,26 @@ export const getSkillsByStudent = async (user: TokenPayload, studentId: string) 
   });
 };
 
-export const updateSkill = async (id: string, data: any) => {
+export const updateSkill = async (user: TokenPayload, id: string, data: any) => {
   const log = await prisma.studentSkillLog.findUnique({ where: { id } });
   if (!log) throw new NotFoundError("Skill log");
+  assertCenterAccess(user, log.centerId, "You are not authorized to update skill logs for this center");
+
   return prisma.studentSkillLog.update({
     where: { id },
-    data: { level: data.level, remarks: data.remarks },
+    data: {
+      ...(data.skillId !== undefined ? { skillId: data.skillId } : {}),
+      ...(data.level !== undefined ? { level: data.level } : {}),
+      ...(data.remarks !== undefined ? { remarks: data.remarks } : {}),
+    },
     include: { skill: true, assessedByUser: { select: { fullName: true } } },
   });
 };
 
-export const deleteSkill = async (id: string) => {
+export const deleteSkill = async (user: TokenPayload, id: string) => {
   const log = await prisma.studentSkillLog.findUnique({ where: { id } });
   if (!log) throw new NotFoundError("Skill log");
+  assertCenterAccess(user, log.centerId, "You are not authorized to delete skill logs for this center");
   return prisma.studentSkillLog.delete({ where: { id } });
 };
 
@@ -549,7 +602,13 @@ export const addCareer = async (user: TokenPayload, studentId: string, data: any
         formType: "system",
         targetEntity: "student",
         createdBy: user.userId,
-        schema: { fields: [] }
+        schema: {
+          fields: [
+            { name: "careerGoal", label: "Career Goal", type: "text", required: false },
+            { name: "industry", label: "Industry", type: "text", required: false },
+            { name: "notes", label: "Notes", type: "textarea", required: false },
+          ],
+        },
       }
     });
   }
@@ -580,10 +639,11 @@ export const getCareersByStudent = async (user: TokenPayload, studentId: string)
   return submissions.map(sub => ({ id: sub.id, studentId: sub.studentId, createdAt: sub.submittedAt, ...(sub.data as Record<string, unknown>) }));
 };
 
-export const updateCareer = async (id: string, data: any) => {
+export const updateCareer = async (user: TokenPayload, id: string, data: any) => {
   const submission = await prisma.formSubmission.findUnique({ where: { id } });
   if (!submission) throw new NotFoundError("Career record");
-  
+  assertCenterAccess(user, submission.centerId, "You are not authorized to modify career records for this center");
+
   const updated = await prisma.formSubmission.update({
     where: { id },
     data: { data }
@@ -592,27 +652,49 @@ export const updateCareer = async (id: string, data: any) => {
   return { id: updated.id, studentId: updated.studentId, createdAt: updated.submittedAt, ...(updated.data as Record<string, unknown>) };
 };
 
-export const deleteCareer = async (id: string) => {
+export const deleteCareer = async (user: TokenPayload, id: string) => {
   const submission = await prisma.formSubmission.findUnique({ where: { id } });
   if (!submission) throw new NotFoundError("Career record");
+  assertCenterAccess(user, submission.centerId, "You are not authorized to delete career records for this center");
   return prisma.formSubmission.delete({ where: { id } });
 };
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   TRANSFER WORKFLOW (FROM VANSH)
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─────────────────────────────────────────
+   TRANSFER WORKFLOW
+───────────────────────────────────────── */
 
-export const requestTransfer = async (user: TokenPayload, studentIds: string[]) => {
-  const effectiveUserId = user.userId;
+export const requestTransfer = async (
+  user: TokenPayload,
+  studentIds: string[],
+  reason?: string | null
+) => {
+  const parsed = requestTransferSchema.safeParse({ studentIds, reason });
+  if (!parsed.success) {
+    throw new ValidationError("Invalid transfer request payload", parsed.error.flatten());
+  }
+
+  const uniqueIds = [...new Set(parsed.data.studentIds)];
+  const eligible = await prisma.student.findMany({
+    where: scopedWhere(user, {
+      id: { in: uniqueIds },
+      transferStatus: 'active',
+    }),
+    select: { id: true },
+  });
+
+  if (eligible.length === 0) {
+    throw new NotFoundError("No active students found in your authorized centers for transfer");
+  }
+
+  if (eligible.length !== uniqueIds.length) {
+    throw new ValidationError("Some selected students are outside your center scope, inactive, or already pending transfer");
+  }
 
   const result = await prisma.student.updateMany({
-    where: {
-      id: { in: studentIds },
-      isActive: true,
+    where: scopedWhere(user, {
+      id: { in: uniqueIds },
       transferStatus: 'active',
-      // Teachers can only request for their own students if we enforce ownership
-      ...(user.role === 'teacher' ? { createdById: effectiveUserId } : {}),
-    },
+    }),
     data: {
       transferStatus: 'pending_transfer',
     },
@@ -643,17 +725,70 @@ export const completeTransfer = async (
   user: TokenPayload,
   studentIds: string[],
   newTeacherId: string,
-  newCenterId: string
+  newCenterId: string,
+  reason?: string | null
 ) => {
-  const effectiveUserId = user.userId;
+  if (!isAdminRole(user.role)) {
+    throw new ForbiddenError("Only administrators can complete student transfers");
+  }
+
+  const parsed = completeTransferSchema.safeParse({
+    studentIds,
+    newTeacherId,
+    newCenterId,
+    reason,
+  });
+  if (!parsed.success) {
+    throw new ValidationError("Invalid transfer completion payload", parsed.error.flatten());
+  }
+
+  assertCenterAccess(user, parsed.data.newCenterId, "You are not authorized to transfer students to this center");
+
+  const uniqueIds = [...new Set(parsed.data.studentIds)];
+
+  const [targetCenter, targetTeacher] = await Promise.all([
+    prisma.center.findFirst({ where: { id: parsed.data.newCenterId, isActive: true } }),
+    prisma.user.findFirst({
+      where: { id: parsed.data.newTeacherId, tenantId: user.tenantId, isActive: true },
+      include: {
+        centerAssignments: {
+          where: {
+            centerId: parsed.data.newCenterId,
+            OR: [{ validUntil: null }, { validUntil: { gte: getTodayUtcDateOnly() } }],
+          },
+          select: { id: true },
+        },
+      },
+    }),
+  ]);
+
+  if (!targetCenter) {
+    throw new NotFoundError("Target center not found or inactive");
+  }
+  if (!targetTeacher) {
+    throw new NotFoundError("Target teacher not found or inactive in this organization");
+  }
+  if (!isGlobalAdmin(targetTeacher.role) && targetTeacher.centerAssignments.length === 0) {
+    throw new ValidationError("Target teacher is not actively assigned to the destination center");
+  }
 
   const students = await prisma.student.findMany({
-    where: { id: { in: studentIds }, transferStatus: 'pending_transfer' },
+    where: scopedWhere(user, {
+      id: { in: uniqueIds },
+      transferStatus: 'pending_transfer',
+    }),
   });
 
   if (students.length === 0) {
-    throw new NotFoundError('No pending transfer students found');
+    throw new NotFoundError('No pending transfer students found in your authorized scope');
   }
+
+  if (students.length !== uniqueIds.length) {
+    throw new ValidationError('One or more selected students are not pending transfer or are outside your authorized scope');
+  }
+
+  const validIds = students.map((s) => s.id);
+  const transferReason = parsed.data.reason?.trim() || 'Transfer via admin workflow';
 
   await prisma.$transaction(async (tx) => {
     for (const s of students) {
@@ -661,19 +796,18 @@ export const completeTransfer = async (
         data: {
           studentId: s.id,
           fromCenterId: s.centerId,
-          toCenterId: newCenterId,
-          transferDate: new Date(),
-          reason: 'Transfer via admin workflow',
-          approvedBy: effectiveUserId,
+          toCenterId: parsed.data.newCenterId,
+          transferDate: getTodayUtcDateOnly(),
+          reason: transferReason,
+          approvedBy: user.userId,
         },
       });
     }
 
     await tx.student.updateMany({
-      where: { id: { in: studentIds } },
+      where: { id: { in: validIds }, transferStatus: 'pending_transfer' },
       data: {
-        centerId: newCenterId,
-        createdById: newTeacherId,
+        centerId: parsed.data.newCenterId,
         transferStatus: 'active',
       },
     });
@@ -682,9 +816,9 @@ export const completeTransfer = async (
   return { transferred: students.length };
 };
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   FEE MANAGEMENT (FROM VANSH)
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+/* ─────────────────────────────────────────
+   FEE MANAGEMENT
+───────────────────────────────────────── */
 
 export const addFeePayment = async (
   user: TokenPayload,
@@ -692,35 +826,41 @@ export const addFeePayment = async (
   amount: number,
   notes?: string
 ) => {
-  const effectiveUserId = user.userId;
+  const parsed = addFeePaymentSchema.safeParse({ amount, notes });
+  if (!parsed.success) {
+    throw new ValidationError("Invalid fee payment payload", parsed.error.flatten());
+  }
+
   const student = await getStudentById(user, studentId);
 
-  const payment = await prisma.feePayment.create({
-    data: {
-      studentId: student.id,
-      amount,
-      notes: notes || null,
-      createdBy: effectiveUserId,
-    },
+  return prisma.$transaction(async (tx) => {
+    const payment = await tx.feePayment.create({
+      data: {
+        studentId: student.id,
+        amount: parsed.data.amount,
+        notes: parsed.data.notes ?? null,
+        createdBy: user.userId,
+      },
+    });
+
+    const agg = await tx.feePayment.aggregate({
+      where: { studentId: student.id },
+      _sum: { amount: true },
+    });
+
+    const totalPaid = Number(agg._sum.amount || 0);
+    const totalFees = Number(student.totalFees || 0);
+
+    await tx.student.update({
+      where: { id: student.id },
+      data: {
+        feesPaid: totalPaid,
+        isFullyPaid: totalFees > 0 && totalPaid >= totalFees,
+      },
+    });
+
+    return payment;
   });
-
-  const agg = await prisma.feePayment.aggregate({
-    where: { studentId: student.id },
-    _sum: { amount: true },
-  });
-
-  const totalPaid = Number(agg._sum.amount || 0);
-  const totalFees = Number(student.totalFees || 0);
-
-  await prisma.student.update({
-    where: { id: student.id },
-    data: {
-      feesPaid: totalPaid,
-      isFullyPaid: totalFees > 0 && totalPaid >= totalFees,
-    },
-  });
-
-  return payment;
 };
 
 export const getFeePayments = async (user: TokenPayload, studentId: string) => {
@@ -736,36 +876,95 @@ export const updateStudentFees = async (
   studentId: string,
   data: { totalFees?: number; isFullyPaid?: boolean }
 ) => {
+  if (data.totalFees !== undefined) {
+    const parsed = updateStudentFeesSchema.safeParse({ totalFees: data.totalFees });
+    if (!parsed.success) {
+      throw new ValidationError("Invalid total fees amount", parsed.error.flatten());
+    }
+    data = { ...data, totalFees: parsed.data.totalFees };
+  }
+
   const student = await getStudentById(user, studentId);
 
-  const updateData: any = {};
-  if (data.totalFees !== undefined) updateData.totalFees = data.totalFees;
-  if (data.isFullyPaid !== undefined) updateData.isFullyPaid = data.isFullyPaid;
+  return prisma.$transaction(async (tx) => {
+    const agg = await tx.feePayment.aggregate({
+      where: { studentId: student.id },
+      _sum: { amount: true },
+    });
 
-  return prisma.student.update({
-    where: { id: student.id },
-    data: updateData,
-    include: { center: true, program: true },
+    const totalPaid = Number(agg._sum.amount || 0);
+    const effectiveTotalFees =
+      data.totalFees !== undefined ? Number(data.totalFees) : Number(student.totalFees || 0);
+
+    const computedIsFullyPaid =
+      effectiveTotalFees > 0
+        ? totalPaid >= effectiveTotalFees
+        : data.isFullyPaid ?? Boolean(student.isFullyPaid);
+
+    return tx.student.update({
+      where: { id: student.id },
+      data: {
+        ...(data.totalFees !== undefined ? { totalFees: data.totalFees } : {}),
+        isFullyPaid: computedIsFullyPaid,
+      },
+      include: { center: true, program: true },
+    });
   });
 };
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ─────────────────────────────────────────
    DASHBOARD SUMMARY
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+───────────────────────────────────────── */
 
-export const getDashboardStats = async () => {
-  const [totalStudents, totalAttendance, presentCount] = await Promise.all([
-    prisma.student.count(),
-    prisma.attendanceRecord.count(),
-    prisma.attendanceRecord.count({ where: { status: "present" } }),
+export const getDashboardStats = async (user: TokenPayload) => {
+  const scopedCenterIds = getScopedCenterIds(user);
+  const centerFilter = scopedCenterIds !== null ? { centerId: { in: scopedCenterIds } } : {};
+
+  const [totalStudents, attendanceRecords, skillLogs] = await Promise.all([
+    prisma.student.count({ where: { isActive: true, ...centerFilter } }),
+    prisma.attendanceRecord.findMany({
+      where: {
+        ...centerFilter,
+        session: { isHoliday: false },
+      },
+      select: { status: true },
+    }),
+    prisma.studentSkillLog.findMany({
+      where: centerFilter,
+      include: { skill: { select: { name: true } } },
+    }),
   ]);
 
-  const attendanceRate = totalAttendance > 0 ? Number(((presentCount / totalAttendance) * 100).toFixed(1)) : 0;
+  const counts = countAttendanceStatuses(attendanceRecords);
+  const attendanceRate = calculateAttendancePercentage(counts);
+  const totalSessions = counts.present + counts.absent + counts.late;
+
+  const skillBuckets = new Map<string, { total: number; count: number }>();
+  for (const log of skillLogs) {
+    const name = log.skill?.name || "Other";
+    const entry = skillBuckets.get(name) ?? { total: 0, count: 0 };
+    entry.total += Number(log.level || 0);
+    entry.count += 1;
+    skillBuckets.set(name, entry);
+  }
+
+  const avgSkillsByName: Record<string, number> = {};
+  for (const [name, bucket] of skillBuckets.entries()) {
+    avgSkillsByName[name] = bucket.count > 0 ? Number((bucket.total / bucket.count).toFixed(1)) : 0;
+  }
 
   return {
     totalStudents,
-    totalSessions: totalAttendance,
+    totalSessions,
     attendanceRate: `${attendanceRate}%`,
-    avgSkills: { communication: 0, confidence: 0, computerSkill: 0, problemSolving: 0, languageSkill: 0 },
+    attendanceRateValue: attendanceRate,
+    avgSkills: {
+      communication: avgSkillsByName["Communication"] ?? 0,
+      confidence: avgSkillsByName["Confidence"] ?? 0,
+      computerSkill: avgSkillsByName["Computer Skill"] ?? avgSkillsByName["Computer Skills"] ?? 0,
+      problemSolving: avgSkillsByName["Problem Solving"] ?? 0,
+      languageSkill: avgSkillsByName["Language Skill"] ?? avgSkillsByName["Language"] ?? 0,
+      bySkill: avgSkillsByName,
+    },
   };
 };

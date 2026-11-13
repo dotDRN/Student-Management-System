@@ -196,6 +196,7 @@ export const updateAttendance = async (
 ): Promise<Response | void> => {
   try {
     const record = await studentService.updateAttendance(
+      req.user!,
       (req.params.id as string),
       req.body
     );
@@ -252,6 +253,7 @@ export const updateSkill = async (
 ): Promise<Response | void> => {
   try {
     const record = await studentService.updateSkill(
+      req.user!,
       (req.params.id as string),
       req.body
     );
@@ -268,7 +270,7 @@ export const deleteSkill = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const record = await studentService.deleteSkill(req.params.id as string);
+    const record = await studentService.deleteSkill(req.user!, req.params.id as string);
     return res.status(200).json({ success: true, data: record });
   } catch (err) {
     console.error("Delete Skill Error:", err);
@@ -322,6 +324,7 @@ export const updateCareer = async (
 ): Promise<Response | void> => {
   try {
     const record = await studentService.updateCareer(
+      req.user!,
       (req.params.id as string),
       req.body
     );
@@ -338,7 +341,7 @@ export const deleteCareer = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const record = await studentService.deleteCareer(req.params.id as string);
+    const record = await studentService.deleteCareer(req.user!, req.params.id as string);
     return res.status(200).json({ success: true, data: record });
   } catch (err) {
     console.error("Delete Career Error:", err);
@@ -351,12 +354,12 @@ export const deleteCareer = async (
 ───────────────────────────────────────── */
 
 export const getDashboardStats = async (
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const stats = await studentService.getDashboardStats();
+    const stats = await studentService.getDashboardStats(req.user!);
     return res.status(200).json({ success: true, data: stats });
   } catch (err) {
     console.error("Dashboard Stats Error:", err);
@@ -374,8 +377,8 @@ export const requestTransfer = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const { studentIds } = req.body;
-    const result = await studentService.requestTransfer(req.user, studentIds);
+    const { studentIds, reason } = req.body;
+    const result = await studentService.requestTransfer(req.user, studentIds, reason);
     return res.status(200).json({ success: true, ...result });
   } catch (err) {
     console.error("Request Transfer Error:", err);
@@ -403,12 +406,13 @@ export const completeTransfer = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const { studentIds, newTeacherId, newCenterId } = req.body;
+    const { studentIds, newTeacherId, newCenterId, reason } = req.body;
     const result = await studentService.completeTransfer(
       req.user,
       studentIds,
       newTeacherId,
-      newCenterId
+      newCenterId,
+      reason
     );
     return res.status(200).json({ success: true, ...result });
   } catch (err) {

@@ -29,13 +29,18 @@ export interface Student {
   id: string;
   centerId: string;
   programId: string;
+  academicYearId?: string | null;
   createdById?: string;
   fullName: string;
   rollNumber?: string | null;
-  dob?: string | Date;
-  gender?: Gender;
-  guardianName?: string;
-  guardianPhone?: string;
+  dob?: string | Date | null;
+  gender?: Gender | null;
+  guardianName?: string | null;
+  guardianPhone?: string | null;
+  stream?: string | null;
+  post12thChoice?: string | null;
+  collegeName?: string | null;
+  educationDiscontinued?: boolean;
   enrollmentDate: string | Date;
   isActive: boolean;
   transferStatus?: TransferStatus;
@@ -182,7 +187,14 @@ export interface SkillRecord {
 export interface CareerRecord {
   id: string;
   studentId: string;
-  careerInterest: string;
+  careerInterest?: string;
+  careerGoal?: string;
+  industry?: string;
+  milestones?: string[];
+  stage?: string;
+  title?: string;
+  description?: string;
+  date?: string | Date;
   counselingNotes?: string;
   notes?: string;
   createdAt?: string | Date;
@@ -190,12 +202,24 @@ export interface CareerRecord {
 
 export interface StudentProfilePayload {
   student: Student;
-  stats?: Record<string, any>;
-  attendanceTrend?: any[];
-  examComparison?: any[];
-  formSubmissions?: any[];
-  parents?: any[];
-  skillRadar?: any[];
+  stats?: {
+    attendancePct?: number;
+    totalSessions?: number;
+    presentCount?: number;
+    avgExamPct?: number | null;
+    skillScore?: number | null;
+    careerEntriesCount?: number;
+  };
+  attendanceTrend?: { date: string; present: number }[];
+  examComparison?: { subject: string; baseline: number | null; endline: number | null }[];
+  formSubmissions?: {
+    id: string;
+    templateId?: string;
+    createdAt?: string;
+    template?: { id?: string; name?: string; formType?: string };
+  }[];
+  parents?: { parent?: { fullName?: string; email?: string; phone?: string } }[];
+  skillRadar?: { skill: string; score: number }[];
   skills?: SkillRecord[];
   careerRecords?: CareerRecord[];
   attendance?: AttendanceRecord[];
@@ -206,20 +230,20 @@ export interface StudentCreatePayload {
   centerId: string;
   programId: string;
   fullName: string;
-  rollNumber?: string;
-  dob?: string | Date;
-  gender?: Gender;
-  guardianName?: string;
-  guardianPhone?: string;
+  rollNumber?: string | null;
+  dob?: string | Date | null;
+  gender?: Gender | null;
+  guardianName?: string | null;
+  guardianPhone?: string | null;
   enrollmentDate?: string | Date;
   isActive?: boolean;
-  stream?: string;
-  post12thChoice?: string;
-  collegeName?: string;
+  stream?: string | null;
+  post12thChoice?: string | null;
+  collegeName?: string | null;
   educationDiscontinued?: boolean;
 }
 
-export interface StudentUpdatePayload extends Partial<StudentCreatePayload> { }
+export type StudentUpdatePayload = Partial<StudentCreatePayload>;
 
 export interface StudentsListResult {
   students: Student[];

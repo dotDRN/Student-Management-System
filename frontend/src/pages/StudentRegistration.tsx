@@ -9,6 +9,7 @@ import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { ArrowLeft, Save } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { createStudent, getStudentById, updateStudent } from '../services/students.service';
+import { getApiErrorMessage } from '../services/api';
 import { listCenters, listPrograms } from '../services/centers.service';
 import type { CenterSummary, ProgramSummary, Gender } from '../types';
 
@@ -56,24 +57,24 @@ export const StudentRegistration: React.FC = () => {
       // For teachers, filter to only their assigned centers
       let filteredCenters = c;
       if (isTeacher && currentUser?.centerIds?.length) {
-        filteredCenters = c.filter((center: any) =>
+        filteredCenters = c.filter((center) =>
           currentUser.centerIds.includes(center.id)
         );
       }
 
       setCenters(filteredCenters);
       setPrograms(p);
-      
+
       // Auto-select if there's only one center available
-      if (filteredCenters.length === 1 && !formData.centerId) {
-        setFormData(prev => ({ ...prev, centerId: filteredCenters[0].id }));
+      if (filteredCenters.length === 1) {
+        setFormData((prev) => (prev.centerId ? prev : { ...prev, centerId: filteredCenters[0].id }));
       }
     } catch (err) {
-      if (alive) setError('Could not load centers or programs.');
+      if (alive) setError(getApiErrorMessage(err, 'Could not load centers or programs.'));
     }
   })();
   return () => { alive = false; };
-}, [currentUser?.centerIds]);
+}, [currentUser?.centerIds, currentUser?.role]);
 
   useEffect(() => {
     if (!isEditMode || !id) return;
@@ -94,10 +95,10 @@ export const StudentRegistration: React.FC = () => {
           centerId: s.centerId,
           programId: s.programId,
           enrollmentDate: s.enrollmentDate ? String(s.enrollmentDate).slice(0, 10) : new Date().toISOString().split('T')[0],
-          stream: (s as any).stream || '',
-          post12thChoice: (s as any).post12thChoice || '',
-          collegeName: (s as any).collegeName || '',
-          educationDiscontinued: (s as any).educationDiscontinued || false,
+          stream: s.stream || '',
+          post12thChoice: s.post12thChoice || '',
+          collegeName: s.collegeName || '',
+          educationDiscontinued: Boolean(s.educationDiscontinued),
         });
       } catch {
         if (alive) setError('Student not found.');
@@ -143,14 +144,15 @@ export const StudentRegistration: React.FC = () => {
       if (isEditMode && id) {
         await updateStudent(id, {
           fullName: formData.fullName,
-          rollNumber: formData.rollNumber || undefined,
-          dob: formData.dob || undefined,
-          gender: formData.gender || undefined,
-          guardianName: formData.guardianName || undefined,
-          guardianPhone: formData.guardianPhone || undefined,
-          stream: formData.stream || undefined,
-          post12thChoice: formData.post12thChoice || undefined,
-          collegeName: formData.collegeName || undefined,
+          rollNumber: formData.rollNumber || null,
+          dob: formData.dob || null,
+          gender: formData.gender || null,
+          guardianName: formData.guardianName || null,
+          guardianPhone: formData.guardianPhone || null,
+          enrollmentDate: formData.enrollmentDate || undefined,
+          stream: formData.stream || null,
+          post12thChoice: formData.post12thChoice || null,
+          collegeName: formData.collegeName || null,
           educationDiscontinued: formData.educationDiscontinued,
         });
         navigate(`/students/${id}`);
@@ -164,6 +166,7 @@ export const StudentRegistration: React.FC = () => {
           gender: formData.gender || undefined,
           guardianName: formData.guardianName || undefined,
           guardianPhone: formData.guardianPhone || undefined,
+          enrollmentDate: formData.enrollmentDate || undefined,
           stream: formData.stream || undefined,
           post12thChoice: formData.post12thChoice || undefined,
           collegeName: formData.collegeName || undefined,
@@ -171,8 +174,8 @@ export const StudentRegistration: React.FC = () => {
         });
         navigate('/students');
       }
-    } catch {
-      setError('Save failed. Check required fields and try again.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Save failed. Check required fields and try again.'));
     } finally {
       setSaving(false);
     }

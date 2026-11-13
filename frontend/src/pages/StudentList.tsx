@@ -12,7 +12,8 @@ import { DataTable, type DataTableColumn } from '../components/ui/DataTable';
 import { Search, Download, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuthStore } from '../store/useAuthStore';
-import { deleteStudent, getStudents, requestTransfer, getTransferRequests, completeTransfer, type StudentListQuery } from '../services/students.service';
+import { deleteStudent, getStudents, requestTransfer, getTransferRequests, completeTransfer } from '../services/students.service';
+import { getApiErrorMessage } from '../services/api';
 import { listCenters, listPrograms } from '../services/centers.service';
 import { listUsers, type UserAdminItem } from '../services/users.service';
 import type { Student, CenterSummary, ProgramSummary } from '../types';
@@ -33,6 +34,7 @@ export const StudentList: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCenterId, setFilterCenterId] = useState('');
   const [filterProgramId, setFilterProgramId] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [sortOrder, setSortOrder] = useState<'name_asc' | 'name_desc' | 'roll_asc' | 'roll_desc' | 'class_asc' | 'class_desc' | ''>('');
   
   const [centers, setCenters] = useState<CenterSummary[]>([]);
@@ -75,10 +77,22 @@ export const StudentList: React.FC = () => {
       })
       .catch(console.error);
     
-    // Admin: load teachers list for transfer completion
+    // Admin: load teachers list and pending transfer count on mount
     if (isAdmin) {
-      listUsers({ role: 'teacher' as any, limit: 200 })
+      listUsers({ role: 'teacher', limit: 200 })
         .then((res) => setTeachers(res.users))
+        .catch(console.error);
+      getTransferRequests()
+        .then((students) => {
+          setTransferRequests(
+            (students || []).map((s: Student) => ({
+              ...s,
+              _programName: s.program?.name ?? s.programId,
+              _centerName: s.center?.name ?? s.centerId,
+              _addedBy: s.createdByUser?.fullName ?? '—',
+            }))
+          );
+        })
         .catch(console.error);
     }
   }, [isTeacher, isAdmin, currentUser?.centerIds]);
@@ -93,6 +107,11 @@ export const StudentList: React.FC = () => {
         ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
         ...(filterProgramId ? { programId: filterProgramId } : {}),
         ...(sortOrder ? { sortOrder } : {}),
+        ...(statusFilter === 'active'
+          ? { isActive: true }
+          : statusFilter === 'inactive'
+          ? { isActive: false }
+          : { isActive: 'all' }),
       };
 
       // Center filtering logic:
@@ -119,13 +138,13 @@ export const StudentList: React.FC = () => {
           _addedBy: s.createdByUser?.fullName ?? '—',
         })),
       );
-    } catch {
-      setError('Failed to load students.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load students.'));
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, isAdmin, selectedCenterId, filterCenterId, filterProgramId, sortOrder]);
+  }, [page, searchQuery, isAdmin, selectedCenterId, filterCenterId, filterProgramId, statusFilter, sortOrder]);
 
   useEffect(() => {
     if (!showTransferTab) {
@@ -606,9 +625,19 @@ export const StudentList: React.FC = () => {
                   ))}
                 </select>
 
-              <div className="hidden">
-                {/* Program dropdown hidden as requested in favor of quick filters */}
-              </div>
+                <select
+                  aria-label="Filter by student status"
+                  className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:border-brand-500 focus:outline-none"
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value as 'active' | 'inactive' | 'all');
+                    setPage(1);
+                  }}
+                >
+                  <option value="active">Active Students</option>
+                  <option value="inactive">Inactive Students</option>
+                  <option value="all">All Statuses</option>
+                </select>
             </div>
             <div className="flex gap-2">
               {/* Transfer mode toggle for teachers */}
@@ -628,51 +657,34 @@ export const StudentList: React.FC = () => {
               )}
             </div>
           </div>
-          
+
           <div className="flex flex-wrap gap-2 mb-4 px-1">
-            <span className="text-xs font-semibold text-neutral-500 uppercase flex items-center mr-2">Quick Filters:</span>
-            <Button 
-              variant={filterProgramId === '' ? 'primary' : 'secondary'} 
-              size="sm" 
+            <span className="text-xs font-semibold text-neutral-500 uppercase flex items-center mr-2">Programs:</span>
+            <Button
+              variant={filterProgramId === '' ? 'primary' : 'secondary'}
+              size="sm"
               className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(''); setPage(1); void load(); }}
-            >All Classes</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('shiksha'))?.id || 'shiksha') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('shiksha'))?.id || 'shiksha'); setPage(1); void load(); }}
-            >Shiksha (jr, sr)</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('sanskar 1') || p.name.toLowerCase().includes('sanskar1'))?.id || 'sanskar1') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('sanskar 1') || p.name.toLowerCase().includes('sanskar1'))?.id || 'sanskar1'); setPage(1); void load(); }}
-            >Sanskar 1 (1-4)</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('sanskar 2') || p.name.toLowerCase().includes('sanskar2'))?.id || 'sanskar2') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('sanskar 2') || p.name.toLowerCase().includes('sanskar2'))?.id || 'sanskar2'); setPage(1); void load(); }}
-            >Sanskar 2 (4-6)</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('swayam 1') || p.name.toLowerCase().includes('swayam1') || p.name.toLowerCase().includes('swayam youth'))?.id || 'swayam1') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('swayam 1') || p.name.toLowerCase().includes('swayam1') || p.name.toLowerCase().includes('swayam youth'))?.id || 'swayam1'); setPage(1); void load(); }}
-            >Swayam 1 (7-10)</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('swayam 2') || p.name.toLowerCase().includes('swayam2'))?.id || 'swayam2') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('swayam 2') || p.name.toLowerCase().includes('swayam2'))?.id || 'swayam2'); setPage(1); void load(); }}
-            >Swayam 2 (10-12)</Button>
-            <Button 
-              variant={filterProgramId === ([programs.find(p => p.name.toLowerCase().includes('kusum'))?.id, programs.find(p => p.name.toLowerCase().includes('uday'))?.id].filter(Boolean).join(',') || 'kusum,uday') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId([programs.find(p => p.name.toLowerCase().includes('kusum'))?.id, programs.find(p => p.name.toLowerCase().includes('uday'))?.id].filter(Boolean).join(',') || 'kusum,uday'); setPage(1); void load(); }}
-            >Kusum & Uday</Button>
+              onClick={() => {
+                setFilterProgramId('');
+                setPage(1);
+              }}
+            >
+              All Programs
+            </Button>
+            {programs.map((program) => (
+              <Button
+                key={program.id}
+                variant={filterProgramId === program.id ? 'primary' : 'secondary'}
+                size="sm"
+                className="text-xs rounded-full"
+                onClick={() => {
+                  setFilterProgramId(program.id);
+                  setPage(1);
+                }}
+              >
+                {program.name}
+              </Button>
+            ))}
           </div>
 
           {/* Transfer request banner */}
