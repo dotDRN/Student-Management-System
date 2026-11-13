@@ -9,6 +9,7 @@ import {
   listExams,
   upsertExamScores,
 } from "../services/examService.js";
+import { getStudentProfile } from "../services/student.service.js";
 import type { JwtPayload } from "../utils/jwt.js";
 import { mockPrismaModel, mockPrismaTransaction } from "./helpers/mockPrisma.js";
 
@@ -260,5 +261,141 @@ describe("Component 1.6: Exams, Subjects, Score Upserts & Comparison", () => {
     assert.equal(comp.perSubject[0].baselineAvg, 60);
     assert.equal(comp.perSubject[0].endlineAvg, 90);
     assert.equal(comp.perSubject[0].growth, 50);
+  });
+});
+
+describe("Component 2.5: Cohort Subject Analysis & Multi-Term Report Card", () => {
+  const teacher: JwtPayload = {
+    userId: "u-teach",
+    tenantId: "t1",
+    email: "teach@org.org",
+    role: ROLES.TEACHER,
+    centerIds: [CENTER_1],
+    isActive: true,
+  };
+
+  it("computes cohort percentages from dynamic maxMarks, keeps non-absent 0 marks, and ranks top/bottom subjects per term", async (t) => {
+    mockPrismaModel(t, "exam", {
+      findMany: async () => [
+        {
+          id: "ex-b",
+          examType: "baseline",
+          scores: [
+            // Math maxMarks 50 -> 40/50 = 80% (pass), 10/50 = 20% (fail) -> avg 50%, passRate 50%
+            { isAbsent: false, marks: 40, subject: { name: "Math", maxMarks: 50 } },
+            { isAbsent: false, marks: 10, subject: { name: "Math", maxMarks: 50 } },
+            // Absent score excluded
+            { isAbsent: true, marks: 0, subject: { name: "Math", maxMarks: 50 } },
+            // English maxMarks 100 -> genuine 0 included (0% fail), 80 (80% pass) -> avg 40%, passRate 50%
+            { isAbsent: false, marks: 0, subject: { name: "English", maxMarks: 100 } },
+            { isAbsent: false, marks: 80, subject: { name: "English", maxMarks: 100 } },
+          ],
+        },
+        {
+          id: "ex-m",
+          examType: "midline",
+          scores: [
+            { isAbsent: false, marks: 45, subject: { name: "Math", maxMarks: 50 } }, // 90%
+            { isAbsent: false, marks: 30, subject: { name: "English", maxMarks: 100 } }, // 30%
+          ],
+        },
+        {
+          id: "ex-e",
+          examType: "endline",
+          scores: [
+            { isAbsent: false, marks: 50, subject: { name: "Math", maxMarks: 50 } }, // 100%
+            { isAbsent: false, marks: 70, subject: { name: "English", maxMarks: 100 } }, // 70%
+          ],
+        },
+      ],
+    });
+
+    const comp = await getExamComparison(teacher, { centerId: CENTER_1 });
+    assert.equal(comp.passThresholdPct, 40);
+
+    const math = comp.perSubject.find((s) => s.subject === "math");
+    const english = comp.perSubject.find((s) => s.subject === "english");
+    assert.ok(math && english);
+
+    assert.equal(math.maxMarks, 50);
+    assert.equal(math.baselineAvg, 50);
+    assert.equal(math.baselineCount, 2);
+    assert.equal(math.baselinePassRate, 50);
+    assert.equal(math.midlineAvg, 90);
+    assert.equal(math.endlineAvg, 100);
+    assert.equal(math.growth, 100);
+    assert.equal(math.midlineGrowth, 80);
+
+    assert.equal(english.baselineAvg, 40);
+    assert.equal(english.baselineCount, 2);
+    assert.equal(english.baselinePassRate, 50);
+
+    assert.equal(comp.byTerm.midline.gradedCount, 2);
+    assert.equal(comp.byTerm.midline.avgPct, 60);
+    assert.equal(comp.byTerm.midline.passRatePct, 50);
+    assert.equal(comp.byTerm.midline.topSubject?.subject, "math");
+    assert.equal(comp.byTerm.midline.bottomSubject?.subject, "english");
+    assert.equal(comp.byTerm.endline.passRatePct, 100);
+  });
+
+  it("includes baseline, midline, endline, academicYearLabel, and skill maxLevel in getStudentProfile", async (t) => {
+    mockPrismaModel(t, "student", {
+      findFirst: async () => ({
+        id: STUDENT_1,
+        fullName: "Asha Rao",
+        centerId: CENTER_1,
+        programId: PROGRAM_UUID,
+        center: { id: CENTER_1, name: "Center One" },
+        program: { id: PROGRAM_UUID, name: "Foundation" },
+        attendanceRecords: [],
+        examScores: [
+          {
+            marks: 40,
+            isAbsent: false,
+            exam: { examType: "baseline", academicYear: { id: YEAR_UUID, label: "2026-27" } },
+            subject: { name: "Math", maxMarks: 50 },
+          },
+          {
+            marks: 0,
+            isAbsent: false,
+            exam: { examType: "midline", academicYear: { id: YEAR_UUID, label: "2026-27" } },
+            subject: { name: "Math", maxMarks: 50 },
+          },
+          {
+            marks: 45,
+            isAbsent: false,
+            exam: { examType: "endline", academicYear: { id: YEAR_UUID, label: "2026-27" } },
+            subject: { name: "Math", maxMarks: 50 },
+          },
+          {
+            marks: null,
+            isAbsent: true,
+            exam: { examType: "endline", academicYear: { id: YEAR_UUID, label: "2026-27" } },
+            subject: { name: "Science", maxMarks: 100 },
+          },
+        ],
+        formSubmissions: [],
+      }),
+    });
+    mockPrismaModel(t, "studentSkillLog", {
+      findMany: async () => [
+        { level: 8, skill: { name: "Coding", maxLevel: 10 } },
+      ],
+    });
+    mockPrismaModel(t, "formTemplate", { findFirst: async () => null });
+    mockPrismaModel(t, "parentStudent", { findMany: async () => [] });
+
+    const profile = await getStudentProfile(teacher, STUDENT_1);
+    assert.equal(profile.academicYearLabel, "2026-27");
+    // (80 + 0 + 90) / 3 = 56.7% (absent Science excluded, non-absent 0 Math midline retained)
+    assert.equal(profile.stats.avgExamPct, 56.7);
+    const mathRow = profile.examComparison.find((r) => r.subject === "Math");
+    assert.ok(mathRow);
+    assert.equal(mathRow.baseline, 80);
+    assert.equal(mathRow.baselineMarks, 40);
+    assert.equal(mathRow.midline, 0);
+    assert.equal(mathRow.midlineMarks, 0);
+    assert.equal(mathRow.endline, 90);
+    assert.equal(profile.skillRadar[0].maxLevel, 10);
   });
 });

@@ -52,13 +52,44 @@ export interface ExamSheetPayload {
 
 export interface ExamComparisonSubject {
   subject: string;
+  maxMarks?: number;
   baselineAvg: number;
+  baselineCount?: number;
+  baselinePassRate?: number;
+  midlineAvg?: number;
+  midlineCount?: number;
+  midlinePassRate?: number;
   endlineAvg: number;
+  endlineCount?: number;
+  endlinePassRate?: number;
   growth: number;
+  midlineGrowth?: number;
+}
+
+export interface TermSubjectSummary {
+  subject: string;
+  avgPct: number;
+  passRatePct: number;
+  gradedCount: number;
+}
+
+export interface TermCohortSummary {
+  gradedCount: number;
+  avgPct: number;
+  passRatePct: number;
+  topSubject: TermSubjectSummary | null;
+  bottomSubject: TermSubjectSummary | null;
+  subjects: TermSubjectSummary[];
 }
 
 export interface ExamComparisonPayload {
   perSubject: ExamComparisonSubject[];
+  passThresholdPct?: number;
+  byTerm?: {
+    baseline: TermCohortSummary;
+    midline: TermCohortSummary;
+    endline: TermCohortSummary;
+  };
 }
 
 export const createExam = (body: Record<string, unknown>) =>

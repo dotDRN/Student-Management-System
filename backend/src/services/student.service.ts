@@ -385,7 +385,10 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
         orderBy: { session: { sessionDate: "desc" } },
       },
       examScores: {
-        include: { exam: true, subject: true },
+        include: {
+          exam: { include: { academicYear: { select: { id: true, label: true } } } },
+          subject: true,
+        },
       },
       formSubmissions: {
         include: {
@@ -414,8 +417,10 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
   let sumPct = 0;
   let n = 0;
   for (const es of examScoresList) {
-    if (es.marks == null || !es.subject?.maxMarks) continue;
-    sumPct += (Number(es.marks) / Number(es.subject.maxMarks)) * 100;
+    if (es.isAbsent || es.marks == null || !es.subject?.maxMarks) continue;
+    const maxM = Number(es.subject.maxMarks);
+    if (!Number.isFinite(maxM) || maxM <= 0) continue;
+    sumPct += (Number(es.marks) / maxM) * 100;
     n++;
   }
   const avgExamPct = n > 0 ? Number((sumPct / n).toFixed(1)) : null;
@@ -433,27 +438,63 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
 
   const attendanceTrend = Object.values(groupedTrend);
 
-  const bySubject: Record<string, any> = {};
+  const bySubject: Record<
+    string,
+    {
+      maxMarks: number;
+      baseline?: number | null;
+      baselineMarks?: number | null;
+      baselineAbsent?: boolean;
+      midline?: number | null;
+      midlineMarks?: number | null;
+      midlineAbsent?: boolean;
+      endline?: number | null;
+      endlineMarks?: number | null;
+      endlineAbsent?: boolean;
+    }
+  > = {};
+  let academicYearLabel: string | null = null;
   for (const es of examScoresList) {
+    if (!academicYearLabel && (es.exam as { academicYear?: { label?: string } } | null)?.academicYear?.label) {
+      academicYearLabel = (es.exam as { academicYear?: { label?: string } }).academicYear!.label!;
+    }
     if (!es.subject) continue;
     const subj = es.subject.name;
+    const maxMarks = Number(es.subject.maxMarks) > 0 ? Number(es.subject.maxMarks) : 100;
     if (!bySubject[subj]) {
-      bySubject[subj] = {};
+      bySubject[subj] = { maxMarks };
+    } else {
+      bySubject[subj].maxMarks = maxMarks;
     }
-    const pct =
-      (es.marks == null || !es.subject.maxMarks) ? null : (Number(es.marks) / Number(es.subject.maxMarks)) * 100;
-    const type = es.exam?.examType;
+    const rawMarks = es.isAbsent || es.marks == null ? null : Number(es.marks);
+    const pct = rawMarks == null ? null : Number(((rawMarks / maxMarks) * 100).toFixed(1));
+    const type = es.exam?.examType?.trim().toLowerCase();
     if (type === "baseline") {
       bySubject[subj].baseline = pct;
-    }
-    if (type === "endline") {
+      bySubject[subj].baselineMarks = rawMarks;
+      bySubject[subj].baselineAbsent = Boolean(es.isAbsent);
+    } else if (type === "midline") {
+      bySubject[subj].midline = pct;
+      bySubject[subj].midlineMarks = rawMarks;
+      bySubject[subj].midlineAbsent = Boolean(es.isAbsent);
+    } else if (type === "endline") {
       bySubject[subj].endline = pct;
+      bySubject[subj].endlineMarks = rawMarks;
+      bySubject[subj].endlineAbsent = Boolean(es.isAbsent);
     }
   }
   const examComparison = Object.entries(bySubject).map(([subject, v]) => ({
     subject,
+    maxMarks: v.maxMarks,
     baseline: v.baseline ?? null,
+    baselineMarks: v.baselineMarks ?? null,
+    baselineAbsent: v.baselineAbsent ?? false,
+    midline: v.midline ?? null,
+    midlineMarks: v.midlineMarks ?? null,
+    midlineAbsent: v.midlineAbsent ?? false,
     endline: v.endline ?? null,
+    endlineMarks: v.endlineMarks ?? null,
+    endlineAbsent: v.endlineAbsent ?? false,
   }));
 
   // Fetch skill logs for this student
@@ -464,13 +505,17 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
   });
 
   // Build skill radar from latest skill logs
-  const skillRadar: { skill: string; score: number }[] = [];
+  const skillRadar: { skill: string; score: number; maxLevel: number }[] = [];
   const seenSkills = new Set<string>();
   for (const log of skillLogs) {
     const skillName = log.skill?.name || 'Unknown';
     if (!seenSkills.has(skillName)) {
       seenSkills.add(skillName);
-      skillRadar.push({ skill: skillName, score: log.level ?? 0 });
+      skillRadar.push({
+        skill: skillName,
+        score: log.level ?? 0,
+        maxLevel: log.skill?.maxLevel && log.skill.maxLevel > 0 ? log.skill.maxLevel : 5,
+      });
     }
   }
   const skillScore = skillRadar.length > 0
@@ -511,6 +556,7 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
     attendanceTrend,
     examComparison,
     skillRadar,
+    academicYearLabel,
     formSubmissions: student.formSubmissions,
     parents,
     careers: careerEntries.map(sub => ({ id: sub.id, studentId: sub.studentId, createdAt: sub.submittedAt, ...(sub.data as Record<string, unknown>) })),

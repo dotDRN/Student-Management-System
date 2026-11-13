@@ -83,6 +83,7 @@ export const Exams: React.FC = () => {
   const [availableExams, setAvailableExams] = useState<ExamListItem[]>([]);
 
   const [comparison, setComparison] = useState<ExamComparisonPayload | null>(null);
+  const [analysisTerm, setAnalysisTerm] = useState<'all' | 'baseline' | 'midline' | 'endline'>('all');
   const [listLoading, setListLoading] = useState(true);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -529,6 +530,7 @@ export const Exams: React.FC = () => {
             />
             <datalist id="exam-types">
               <option value="baseline" />
+              <option value="midline" />
               <option value="endline" />
             </datalist>
           </div>
@@ -768,53 +770,184 @@ export const Exams: React.FC = () => {
         </Card>
       )}
 
-      {/* Comparison */}
+      {/* Comparison & Cohort Subject Analysis */}
       <Card>
-        <h2 className="text-lg font-semibold mb-4">Baseline vs Endline Comparison</h2>
-        {comparisonRows.length === 0 ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-neutral-900">
+              Cohort Subject Analysis &amp; Term Comparison
+            </h2>
+            <p className="text-xs text-neutral-500">
+              Normalized across dynamic subject max marks &bull; Pass benchmark &ge;{' '}
+              {comparison?.passThresholdPct ?? 40}%
+            </p>
+          </div>
+          <div className="inline-flex rounded-lg border border-neutral-200 bg-neutral-50 p-1">
+            {(['all', 'baseline', 'midline', 'endline'] as const).map((term) => (
+              <button
+                key={term}
+                type="button"
+                onClick={() => setAnalysisTerm(term)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors ${
+                  analysisTerm === term
+                    ? 'bg-brand-600 text-white'
+                    : 'text-neutral-600 hover:bg-neutral-200/70'
+                }`}
+              >
+                {term === 'all' ? 'All Terms' : term}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {analysisTerm !== 'all' ? (
+          (() => {
+            const termStats = comparison?.byTerm?.[analysisTerm];
+            if (!termStats || termStats.gradedCount === 0) {
+              return (
+                <div className="p-8 text-center border border-dashed border-neutral-200 rounded-xl bg-neutral-50">
+                  <p className="text-neutral-500 font-medium capitalize">
+                    No graded {analysisTerm} scores recorded for these filters.
+                  </p>
+                </div>
+              );
+            }
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                  <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                    <p className="text-xs text-neutral-500">Cohort Avg Score</p>
+                    <p className="text-xl font-bold text-neutral-900 mt-0.5">
+                      {termStats.avgPct.toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                    <p className="text-xs text-neutral-500">Cohort Pass Rate</p>
+                    <p className="text-xl font-bold text-emerald-700 mt-0.5">
+                      {termStats.passRatePct.toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                    <p className="text-xs text-neutral-500">Graded Entries</p>
+                    <p className="text-xl font-bold text-neutral-900 mt-0.5">
+                      {termStats.gradedCount}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+                    <p className="text-xs text-emerald-700">Top Subject</p>
+                    <p className="text-sm font-bold text-neutral-900 capitalize mt-0.5">
+                      {termStats.topSubject ? `${termStats.topSubject.subject} (${termStats.topSubject.avgPct.toFixed(1)}%)` : '—'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+                    <p className="text-xs text-amber-800">Needs Focus</p>
+                    <p className="text-sm font-bold text-neutral-900 capitalize mt-0.5">
+                      {termStats.bottomSubject ? `${termStats.bottomSubject.subject} (${termStats.bottomSubject.avgPct.toFixed(1)}%)` : '—'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto border border-neutral-200 rounded-xl">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-neutral-50 text-xs uppercase text-neutral-600 border-b border-neutral-200">
+                      <tr>
+                        <th className="py-2.5 px-4">Rank</th>
+                        <th className="py-2.5 px-4">Subject</th>
+                        <th className="py-2.5 px-4 text-right">Avg %</th>
+                        <th className="py-2.5 px-4 text-right">Pass Rate %</th>
+                        <th className="py-2.5 px-4 text-right">Graded Students</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {termStats.subjects.map((sub, idx) => (
+                        <tr key={sub.subject} className="hover:bg-neutral-50">
+                          <td className="py-2.5 px-4 text-neutral-500">#{idx + 1}</td>
+                          <td className="py-2.5 px-4 font-medium text-neutral-900 capitalize">
+                            {sub.subject}
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-semibold">
+                            {sub.avgPct.toFixed(1)}%
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-medium text-emerald-700">
+                            {sub.passRatePct.toFixed(1)}%
+                          </td>
+                          <td className="py-2.5 px-4 text-right text-neutral-600">
+                            {sub.gradedCount}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()
+        ) : comparisonRows.length === 0 ? (
           <div className="p-8 text-center border border-dashed border-neutral-200 rounded-xl bg-neutral-50">
             <p className="text-neutral-500 font-medium">No comparison data available.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {comparisonRows.map((sub) => (
-              <div
-                key={sub.subject}
-                className="bg-white p-4 rounded-xl border border-neutral-100 shadow-sm relative overflow-hidden"
-              >
+            {comparisonRows.map((sub) => {
+              const hasBaseline = (sub.baselineCount ?? 0) > 0 || sub.baselineAvg > 0;
+              const hasMidline = (sub.midlineCount ?? 0) > 0 || (sub.midlineAvg ?? 0) > 0;
+              const hasEndline = (sub.endlineCount ?? 0) > 0 || sub.endlineAvg > 0;
+              return (
                 <div
-                  className={`absolute top-0 right-0 w-2 h-full ${sub.growth > 0 ? 'bg-success-400' : sub.growth < 0 ? 'bg-danger-400' : 'bg-neutral-300'}`}
-                />
-                <p className="capitalize font-semibold text-neutral-900 mb-3">{sub.subject}</p>
-                <div className="flex justify-between text-sm bg-neutral-50 p-2 rounded mb-1">
-                  <span className="text-neutral-600">Baseline Avg:</span>
-                  <span className="font-medium">
-                    {sub.baselineAvg ? sub.baselineAvg.toFixed(1) : '-'}
-                  </span>
+                  key={sub.subject}
+                  className="bg-white p-4 rounded-xl border border-neutral-200 shadow-sm relative overflow-hidden"
+                >
+                  <div
+                    className={`absolute top-0 right-0 w-2 h-full ${sub.growth > 0 ? 'bg-success-400' : sub.growth < 0 ? 'bg-danger-400' : 'bg-neutral-300'}`}
+                  />
+                  <div className="flex items-center justify-between mb-3 pr-2">
+                    <p className="capitalize font-semibold text-neutral-900">{sub.subject}</p>
+                    {sub.maxMarks && (
+                      <span className="text-xs text-neutral-400">/{sub.maxMarks} marks</span>
+                    )}
+                  </div>
+                  <div className="flex justify-between text-xs bg-neutral-50 p-2 rounded mb-1">
+                    <span className="text-neutral-600">Baseline Avg (Pass):</span>
+                    <span className="font-medium text-neutral-900">
+                      {hasBaseline
+                        ? `${sub.baselineAvg.toFixed(1)}% (${(sub.baselinePassRate ?? 0).toFixed(0)}%)`
+                        : '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs bg-neutral-50 p-2 rounded mb-1">
+                    <span className="text-neutral-600">Midline Avg (Pass):</span>
+                    <span className="font-medium text-neutral-900">
+                      {hasMidline
+                        ? `${(sub.midlineAvg ?? 0).toFixed(1)}% (${(sub.midlinePassRate ?? 0).toFixed(0)}%)`
+                        : '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs bg-neutral-50 p-2 rounded mb-1">
+                    <span className="text-neutral-600">Endline Avg (Pass):</span>
+                    <span className="font-medium text-neutral-900">
+                      {hasEndline
+                        ? `${sub.endlineAvg.toFixed(1)}% (${(sub.endlinePassRate ?? 0).toFixed(0)}%)`
+                        : '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm font-semibold mt-3 pt-2 border-t border-neutral-100 pr-2">
+                    <span>Baseline &rarr; Endline:</span>
+                    <span
+                      className={
+                        sub.growth > 0
+                          ? 'text-success-600'
+                          : sub.growth < 0
+                            ? 'text-danger-600'
+                            : 'text-neutral-600'
+                      }
+                    >
+                      {sub.growth > 0 ? '+' : ''}
+                      {sub.growth.toFixed(1)}%
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-sm bg-neutral-50 p-2 rounded mb-1">
-                  <span className="text-neutral-600">Endline Avg:</span>
-                  <span className="font-medium">
-                    {sub.endlineAvg ? sub.endlineAvg.toFixed(1) : '-'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm font-semibold mt-3 pt-2 border-t border-neutral-100">
-                  <span>Growth:</span>
-                  <span
-                    className={
-                      sub.growth > 0
-                        ? 'text-success-600'
-                        : sub.growth < 0
-                          ? 'text-danger-600'
-                          : 'text-neutral-600'
-                    }
-                  >
-                    {sub.growth > 0 ? '+' : ''}
-                    {sub.growth.toFixed(1)}%
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>

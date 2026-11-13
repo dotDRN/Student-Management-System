@@ -48,6 +48,7 @@ import {
 import { listUsers, type UserAdminItem } from '../services/users.service';
 import { getSkillsByStudent } from '../services/skills.service';
 import { SkillProgressionChart } from '../components/skills/SkillProgressionChart';
+import { StudentReportCard } from '../components/students/StudentReportCard';
 import { getCareersByStudent } from '../services/career.service';
 import { getApiErrorMessage } from '../services/api';
 import { usePermission } from '../hooks/usePermission';
@@ -313,7 +314,7 @@ export const StudentDetails: React.FC = () => {
         </div>
       }
     >
-      <div className={selectedReceipt ? 'no-print' : undefined}>
+      <div className="no-print">
       <Card className="mb-6">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -567,9 +568,9 @@ export const StudentDetails: React.FC = () => {
         </Card>
 
         <Card>
-          <h2 className="text-lg font-semibold text-neutral-900 mb-4">Exam scores (baseline vs endline)</h2>
+          <h2 className="text-lg font-semibold text-neutral-900 mb-4">Exam scores (Baseline · Midline · Endline)</h2>
           {!examComparison?.length ? (
-            <EmptyState title="No exam data" description="Scores show when baseline and endline exams are recorded." />
+            <EmptyState title="No exam data" description="Scores show when baseline, midline, or endline exams are recorded." />
           ) : (
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -579,6 +580,7 @@ export const StudentDetails: React.FC = () => {
                   <Tooltip formatter={(v) => (v == null ? '—' : `${Number(v).toFixed(0)}%`)} />
                   <Legend />
                   <Bar dataKey="baseline" fill={CHART_RED_SOFT} name="Baseline" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="midline" fill="#d97706" name="Midline" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="endline" fill={CHART_RED} name="Endline" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -813,108 +815,31 @@ export const StudentDetails: React.FC = () => {
         )}
       </Card>
 
-      <Modal
-        isOpen={showReportModal}
-        onClose={() => setShowReportModal(false)}
-        title={`${student.fullName} — Detailed Progress Report`}
-        maxWidth="lg"
-      >
-        <div className="space-y-4 text-sm text-neutral-700">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-neutral-50 p-3 rounded-lg border border-neutral-200">
-            <div>
-              <p className="text-xs text-neutral-500">Center</p>
-              <p className="font-medium text-neutral-900">{student.center?.name ?? student.centerId}</p>
-            </div>
-            <div>
-              <p className="text-xs text-neutral-500">Program</p>
-              <p className="font-medium text-neutral-900">{student.program?.name ?? student.programId}</p>
-            </div>
-            <div>
-              <p className="text-xs text-neutral-500">Roll Number</p>
-              <p className="font-medium text-neutral-900">{student.rollNumber || '—'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-neutral-500">Attendance Rate</p>
-              <p className="font-semibold text-neutral-900">{stats?.attendancePct ?? 0}%</p>
-            </div>
-            <div>
-              <p className="text-xs text-neutral-500">Average Exam Score</p>
-              <p className="font-semibold text-neutral-900">
-                {stats?.avgExamPct != null ? `${stats.avgExamPct}%` : '—'}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-neutral-500">Fee Status</p>
-              <p className="font-semibold text-neutral-900">
-                {student.isFullyPaid
-                  ? 'Cleared'
-                  : `Paid ₹${Number(student.feesPaid || 0).toLocaleString()} / ₹${Number(student.totalFees || 0).toLocaleString()}`}
-              </p>
-            </div>
-          </div>
-
-          {examComparison && examComparison.length > 0 && (
-            <div>
-              <h3 className="font-semibold text-neutral-900 mb-2">Exam Performance</h3>
-              <table className="w-full text-left border border-neutral-200 rounded-lg overflow-hidden">
-                <thead className="bg-neutral-50 text-xs uppercase text-neutral-500">
-                  <tr>
-                    <th className="py-2 px-3">Subject</th>
-                    <th className="py-2 px-3">Baseline</th>
-                    <th className="py-2 px-3">Endline</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {examComparison.map((row) => (
-                    <tr key={row.subject} className="border-t border-neutral-100">
-                      <td className="py-2 px-3 font-medium text-neutral-900">{row.subject}</td>
-                      <td className="py-2 px-3">{row.baseline != null ? `${Number(row.baseline).toFixed(1)}%` : '—'}</td>
-                      <td className="py-2 px-3">{row.endline != null ? `${Number(row.endline).toFixed(1)}%` : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {radarData.length > 0 && (
-            <div>
-              <h3 className="font-semibold text-neutral-900 mb-2">Assessed Skills</h3>
-              <div className="flex flex-wrap gap-2">
-                {radarData.map((s) => (
-                  <span key={s.skill} className="px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-800 text-xs font-medium">
-                    {s.skill}: {s.score}/5
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {careers && careers.length > 0 && (
-            <div>
-              <h3 className="font-semibold text-neutral-900 mb-2">Career Goals</h3>
-              <ul className="space-y-1.5">
-                {careers.slice(0, 5).map((c, idx) => (
-                  <li key={idx} className="text-neutral-700">
-                    • <span className="font-medium text-neutral-900">{c.careerGoal || c.careerInterest || 'Career Note'}</span>
-                    {c.industry ? ` (${c.industry})` : ''}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2 pt-3 border-t border-neutral-200 no-print">
+      <div className="no-print">
+        <Modal
+          isOpen={showReportModal}
+          onClose={() => setShowReportModal(false)}
+          title={`${student.fullName} — Formal Progress Report Card`}
+          maxWidth="lg"
+        >
+          <StudentReportCard profile={profile} radarData={radarData} careers={careers ?? []} />
+          <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-neutral-200 no-print">
             <Button variant="secondary" size="sm" onClick={() => window.print()}>
-              <Printer size={14} className="mr-1.5" /> Print Report
+              <Printer size={14} className="mr-1.5" /> Print Report Card
             </Button>
             <Button variant="primary" size="sm" onClick={() => setShowReportModal(false)}>
               Close
             </Button>
           </div>
-        </div>
-      </Modal>
+        </Modal>
       </div>
+      </div>
+
+      {!selectedReceipt && (
+        <div className="hidden print:block p-6 border border-neutral-300 rounded-xl bg-white">
+          <StudentReportCard profile={profile} radarData={radarData} careers={careers ?? []} />
+        </div>
+      )}
 
       {selectedReceipt && (() => {
         const receiptNode = (

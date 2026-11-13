@@ -461,6 +461,31 @@ export async function getPendingExamScores(user: JwtPayload, examId: string) {
 
 // ================= EXAM COMPARISON =================
 
+const PASS_THRESHOLD_PCT = 40;
+type CohortTerm = "baseline" | "midline" | "endline";
+const COHORT_TERMS: CohortTerm[] = ["baseline", "midline", "endline"];
+
+interface TermAccumulator {
+  totalPct: number;
+  count: number;
+  passCount: number;
+}
+
+function emptyTermAccumulator(): TermAccumulator {
+  return { totalPct: 0, count: 0, passCount: 0 };
+}
+
+function computeAvgAndPass(acc: TermAccumulator) {
+  if (acc.count === 0) {
+    return { avgPct: 0, count: 0, passRate: 0 };
+  }
+  return {
+    avgPct: Number((acc.totalPct / acc.count).toFixed(2)),
+    count: acc.count,
+    passRate: Number(((acc.passCount / acc.count) * 100).toFixed(1)),
+  };
+}
+
 export async function getExamComparison(
   user: JwtPayload,
   query: ListExamQuery,
@@ -472,7 +497,15 @@ export async function getExamComparison(
   if (query.academicYearId) {
     const academicYearId = await resolveAcademicYearId(query.academicYearId);
     if (!academicYearId) {
-      return { perSubject: [] };
+      return {
+        perSubject: [],
+        passThresholdPct: PASS_THRESHOLD_PCT,
+        byTerm: {
+          baseline: { gradedCount: 0, avgPct: 0, passRatePct: 0, topSubject: null, bottomSubject: null, subjects: [] },
+          midline: { gradedCount: 0, avgPct: 0, passRatePct: 0, topSubject: null, bottomSubject: null, subjects: [] },
+          endline: { gradedCount: 0, avgPct: 0, passRatePct: 0, topSubject: null, bottomSubject: null, subjects: [] },
+        },
+      };
     }
     where.academicYearId = academicYearId;
   }
@@ -491,67 +524,136 @@ export async function getExamComparison(
   const subjectMap: Record<
     string,
     {
-      baselineTotal: number;
-      baselineCount: number;
-      endlineTotal: number;
-      endlineCount: number;
+      maxMarks: number;
+      terms: Record<CohortTerm, TermAccumulator>;
     }
   > = {};
 
   for (const exam of exams) {
-    const kind = exam.examType.toLowerCase();
-    if (kind !== "baseline" && kind !== "endline") continue;
+    const kind = exam.examType.trim().toLowerCase();
+    if (kind !== "baseline" && kind !== "midline" && kind !== "endline") continue;
 
     for (const score of exam.scores) {
-      // Absent or ungraded rows must not dilute averages as 0
+      // Absent or ungraded rows must not dilute averages as 0, while genuine 0 marks remain included.
       if (score.isAbsent || score.marks === null || score.marks === undefined) {
         continue;
-      }
-
-      const subjectName = score.subject.name.trim().toLowerCase();
-      if (!subjectMap[subjectName]) {
-        subjectMap[subjectName] = {
-          baselineTotal: 0,
-          baselineCount: 0,
-          endlineTotal: 0,
-          endlineCount: 0,
-        };
       }
 
       const val = Number(score.marks);
       if (!Number.isFinite(val)) continue;
 
-      if (kind === "baseline") {
-        subjectMap[subjectName].baselineTotal += val;
-        subjectMap[subjectName].baselineCount++;
+      const rawMaxMarks = Number(score.subject?.maxMarks);
+      const maxMarks = Number.isFinite(rawMaxMarks) && rawMaxMarks > 0 ? rawMaxMarks : 100;
+      const scorePct = (val / maxMarks) * 100;
+
+      const subjectName = score.subject.name.trim().toLowerCase();
+      if (!subjectMap[subjectName]) {
+        subjectMap[subjectName] = {
+          maxMarks,
+          terms: {
+            baseline: emptyTermAccumulator(),
+            midline: emptyTermAccumulator(),
+            endline: emptyTermAccumulator(),
+          },
+        };
       } else {
-        subjectMap[subjectName].endlineTotal += val;
-        subjectMap[subjectName].endlineCount++;
+        subjectMap[subjectName].maxMarks = maxMarks;
+      }
+
+      const acc = subjectMap[subjectName].terms[kind];
+      acc.totalPct += scorePct;
+      acc.count += 1;
+      if (scorePct >= PASS_THRESHOLD_PCT) {
+        acc.passCount += 1;
       }
     }
   }
 
   const perSubject = Object.entries(subjectMap).map(([subject, data]) => {
-    const bAvg =
-      data.baselineCount > 0
-        ? Number((data.baselineTotal / data.baselineCount).toFixed(2))
-        : 0;
-    const eAvg =
-      data.endlineCount > 0
-        ? Number((data.endlineTotal / data.endlineCount).toFixed(2))
-        : 0;
+    const base = computeAvgAndPass(data.terms.baseline);
+    const mid = computeAvgAndPass(data.terms.midline);
+    const end = computeAvgAndPass(data.terms.endline);
+
     const growth =
-      bAvg > 0 ? Number((((eAvg - bAvg) / bAvg) * 100).toFixed(1)) : 0;
+      base.avgPct > 0
+        ? Number((((end.avgPct - base.avgPct) / base.avgPct) * 100).toFixed(1))
+        : 0;
+    const midlineGrowth =
+      base.avgPct > 0 && mid.count > 0
+        ? Number((((mid.avgPct - base.avgPct) / base.avgPct) * 100).toFixed(1))
+        : 0;
 
     return {
       subject,
-      baselineAvg: bAvg,
-      endlineAvg: eAvg,
+      maxMarks: data.maxMarks,
+      baselineAvg: base.avgPct,
+      baselineCount: base.count,
+      baselinePassRate: base.passRate,
+      midlineAvg: mid.avgPct,
+      midlineCount: mid.count,
+      midlinePassRate: mid.passRate,
+      endlineAvg: end.avgPct,
+      endlineCount: end.count,
+      endlinePassRate: end.passRate,
       growth,
+      midlineGrowth,
     };
   });
 
-  return { perSubject };
+  const byTerm = Object.fromEntries(
+    COHORT_TERMS.map((term) => {
+      let totalPct = 0;
+      let totalCount = 0;
+      let totalPass = 0;
+      const subjectSummaries: Array<{
+        subject: string;
+        avgPct: number;
+        passRatePct: number;
+        gradedCount: number;
+      }> = [];
+
+      for (const [subject, data] of Object.entries(subjectMap)) {
+        const acc = data.terms[term];
+        if (acc.count === 0) continue;
+        totalPct += acc.totalPct;
+        totalCount += acc.count;
+        totalPass += acc.passCount;
+        const stats = computeAvgAndPass(acc);
+        subjectSummaries.push({
+          subject,
+          avgPct: stats.avgPct,
+          passRatePct: stats.passRate,
+          gradedCount: stats.count,
+        });
+      }
+
+      subjectSummaries.sort((a, b) => b.avgPct - a.avgPct || a.subject.localeCompare(b.subject));
+      return [
+        term,
+        {
+          gradedCount: totalCount,
+          avgPct: totalCount > 0 ? Number((totalPct / totalCount).toFixed(2)) : 0,
+          passRatePct: totalCount > 0 ? Number(((totalPass / totalCount) * 100).toFixed(1)) : 0,
+          topSubject: subjectSummaries[0] ?? null,
+          bottomSubject:
+            subjectSummaries.length > 0 ? subjectSummaries[subjectSummaries.length - 1] : null,
+          subjects: subjectSummaries,
+        },
+      ];
+    }),
+  ) as Record<
+    CohortTerm,
+    {
+      gradedCount: number;
+      avgPct: number;
+      passRatePct: number;
+      topSubject: { subject: string; avgPct: number; passRatePct: number; gradedCount: number } | null;
+      bottomSubject: { subject: string; avgPct: number; passRatePct: number; gradedCount: number } | null;
+      subjects: Array<{ subject: string; avgPct: number; passRatePct: number; gradedCount: number }>;
+    }
+  >;
+
+  return { perSubject, passThresholdPct: PASS_THRESHOLD_PCT, byTerm };
 }
 
 // ================= STUDENT SCORES =================

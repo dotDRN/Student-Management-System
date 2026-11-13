@@ -228,7 +228,20 @@ export interface StudentProfilePayload {
     careerEntriesCount?: number;
   };
   attendanceTrend?: { date: string; present: number }[];
-  examComparison?: { subject: string; baseline: number | null; endline: number | null }[];
+  examComparison?: {
+    subject: string;
+    maxMarks?: number;
+    baseline: number | null;
+    baselineMarks?: number | null;
+    baselineAbsent?: boolean;
+    midline?: number | null;
+    midlineMarks?: number | null;
+    midlineAbsent?: boolean;
+    endline: number | null;
+    endlineMarks?: number | null;
+    endlineAbsent?: boolean;
+  }[];
+  academicYearLabel?: string | null;
   formSubmissions?: {
     id: string;
     templateId?: string;
@@ -240,7 +253,7 @@ export interface StudentProfilePayload {
     parentUserId?: string;
     parent?: { id?: string; fullName?: string; email?: string; phone?: string | null };
   }[];
-  skillRadar?: { skill: string; score: number }[];
+  skillRadar?: { skill: string; score: number; maxLevel?: number }[];
   skills?: SkillRecord[];
   careerRecords?: CareerRecord[];
   attendance?: AttendanceRecord[];
