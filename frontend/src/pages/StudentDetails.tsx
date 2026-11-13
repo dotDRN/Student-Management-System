@@ -21,13 +21,37 @@ import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
-import { ArrowLeft, Edit2, Phone, MapPin, Calendar, Map, FileText, IndianRupee, Plus, CheckCircle2, Printer } from 'lucide-react';
-import { getStudentProfile, getFeePayments, addFeePayment, updateStudentFees } from '../services/students.service';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
+import {
+  ArrowLeft,
+  Edit2,
+  Phone,
+  MapPin,
+  Calendar,
+  Map as MapIcon,
+  FileText,
+  IndianRupee,
+  Plus,
+  CheckCircle2,
+  Printer,
+  UserPlus,
+  Trash2,
+} from 'lucide-react';
+import {
+  getStudentProfile,
+  getFeePayments,
+  addFeePayment,
+  updateStudentFees,
+  linkGuardian,
+  unlinkGuardian,
+} from '../services/students.service';
+import { listUsers, type UserAdminItem } from '../services/users.service';
 import { getSkillsByStudent } from '../services/skills.service';
 import { getCareersByStudent } from '../services/career.service';
 import { getApiErrorMessage } from '../services/api';
 import { usePermission } from '../hooks/usePermission';
 import { useToast } from '../hooks/useToast';
+import { formatDate } from '../utils/date';
 import type { StudentProfilePayload, FeePayment } from '../types';
 import type { SkillRecord, CareerRecord } from '../types';
 
@@ -59,8 +83,9 @@ export const StudentDetails: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { can } = usePermission();
-  const { toast } = useToast();
+  const toast = useToast();
   const canManageFees = can('manage', 'fees');
+  const canManageStudents = can('manage', 'students');
 
   const [profile, setProfile] = useState<StudentProfilePayload | null>(null);
   const [skillsRows, setSkillsRows] = useState<SkillRecord[] | null>(null);
@@ -76,6 +101,14 @@ export const StudentDetails: React.FC = () => {
   const [feeSaving, setFeeSaving] = useState(false);
   const [totalFeesInput, setTotalFeesInput] = useState('');
   const [totalFeesEditing, setTotalFeesEditing] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<FeePayment | null>(null);
+
+  // Guardian link state
+  const [parentUsers, setParentUsers] = useState<UserAdminItem[]>([]);
+  const [selectedParentUserId, setSelectedParentUserId] = useState('');
+  const [guardianEmailInput, setGuardianEmailInput] = useState('');
+  const [linkingGuardian, setLinkingGuardian] = useState(false);
+  const [guardianToUnlink, setGuardianToUnlink] = useState<{ parentUserId: string; name: string } | null>(null);
 
   const loadFees = useCallback(async (studentId: string) => {
     try {
@@ -88,6 +121,12 @@ export const StudentDetails: React.FC = () => {
       });
     }
   }, [toast]);
+
+  const refreshProfile = useCallback(async (studentId: string) => {
+    const p = await getStudentProfile(studentId);
+    setProfile(p);
+    return p;
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -117,6 +156,13 @@ export const StudentDetails: React.FC = () => {
       alive = false;
     };
   }, [id, loadFees]);
+
+  useEffect(() => {
+    if (!canManageStudents) return;
+    listUsers({ role: 'parent', limit: 200, isActive: true })
+      .then((res) => setParentUsers(Array.isArray(res.users) ? res.users : []))
+      .catch(() => {});
+  }, [canManageStudents]);
 
   const handleAddPayment = async () => {
     if (!id) return;
@@ -182,6 +228,49 @@ export const StudentDetails: React.FC = () => {
     }
   };
 
+  const handleLinkGuardian = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id) return;
+    if (!selectedParentUserId && !guardianEmailInput.trim()) {
+      toast.error({ title: 'Select a parent user or enter a parent email.' });
+      return;
+    }
+    setLinkingGuardian(true);
+    try {
+      await linkGuardian(id, {
+        ...(selectedParentUserId ? { parentUserId: selectedParentUserId } : {}),
+        ...(guardianEmailInput.trim() ? { email: guardianEmailInput.trim() } : {}),
+      });
+      setSelectedParentUserId('');
+      setGuardianEmailInput('');
+      await refreshProfile(id);
+      toast.success({ title: 'Guardian linked to student' });
+    } catch (err) {
+      toast.error({
+        title: 'Could not link guardian',
+        description: getApiErrorMessage(err, 'Verify the user exists and has the Parent role.'),
+      });
+    } finally {
+      setLinkingGuardian(false);
+    }
+  };
+
+  const handleConfirmUnlinkGuardian = async () => {
+    if (!id || !guardianToUnlink) return;
+    const target = guardianToUnlink;
+    setGuardianToUnlink(null);
+    try {
+      await unlinkGuardian(id, target.parentUserId);
+      await refreshProfile(id);
+      toast.success({ title: 'Guardian unlinked', description: `${target.name} removed.` });
+    } catch (err) {
+      toast.error({
+        title: 'Could not unlink guardian',
+        description: getApiErrorMessage(err, 'Please try again.'),
+      });
+    }
+  };
+
   const radarData = useMemo(() => {
     if (!profile) return [];
     if (profile.skillRadar?.length) return profile.skillRadar;
@@ -213,7 +302,7 @@ export const StudentDetails: React.FC = () => {
     <PageWrapper
       title="Student Profile"
       actions={
-        <div className="flex gap-2">
+        <div className="flex gap-2 no-print">
           <Button variant="ghost" onClick={() => navigate('/students')} className="bg-white">
             <ArrowLeft size={16} className="mr-2" /> Back
           </Button>
@@ -223,6 +312,7 @@ export const StudentDetails: React.FC = () => {
         </div>
       }
     >
+      <div className={selectedReceipt ? 'no-print' : undefined}>
       <Card className="mb-6">
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -242,12 +332,12 @@ export const StudentDetails: React.FC = () => {
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm text-neutral-600">
             {student.center && (
               <div className="flex items-center gap-2">
-                <Map size={16} /> {student.center.name}
+                <MapIcon size={16} /> {student.center.name}
               </div>
             )}
             <div className="flex items-center gap-2">
               <Calendar size={16} /> Enrolled{' '}
-              {student.enrollmentDate ? String(student.enrollmentDate).slice(0, 10) : '—'}
+              {student.enrollmentDate ? formatDate(String(student.enrollmentDate), 'MMM d, yyyy') : '—'}
             </div>
             {student.guardianPhone && (
               <div className="flex items-center gap-2">
@@ -264,7 +354,7 @@ export const StudentDetails: React.FC = () => {
         <div className="mt-6 pt-6 border-t border-neutral-100 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           <div>
             <p className="text-neutral-500">DOB</p>
-            <p>{student.dob ? String(student.dob).slice(0, 10) : '—'}</p>
+            <p>{student.dob ? formatDate(String(student.dob), 'MMM d, yyyy') : '—'}</p>
           </div>
           <div>
             <p className="text-neutral-500">Gender</p>
@@ -393,6 +483,7 @@ export const StudentDetails: React.FC = () => {
                   <th className="py-2 pr-3 font-medium">Date & Time</th>
                   <th className="py-2 pr-3 font-medium">Amount</th>
                   <th className="py-2 pr-3 font-medium">Notes</th>
+                  <th className="py-2 text-right font-medium no-print">Receipt</th>
                 </tr>
               </thead>
               <tbody>
@@ -403,6 +494,15 @@ export const StudentDetails: React.FC = () => {
                     </td>
                     <td className="py-2 pr-3 font-medium text-neutral-900">₹{Number(p.amount).toLocaleString()}</td>
                     <td className="py-2 pr-3 text-neutral-600">{p.notes || '—'}</td>
+                    <td className="py-2 text-right no-print">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedReceipt(p)}
+                      >
+                        <Printer size={14} className="mr-1" /> Receipt
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -555,16 +655,103 @@ export const StudentDetails: React.FC = () => {
         </Card>
       </div>
 
-      {(parents?.length ?? 0) > 0 && (
+      {(canManageStudents || (parents?.length ?? 0) > 0) && (
         <Card className="mb-6">
-          <h2 className="text-lg font-semibold text-neutral-900 mb-3">Linked parents</h2>
-          <ul className="text-sm text-neutral-700 space-y-2">
-            {parents!.map((ps: { parent?: { fullName?: string; email?: string; phone?: string } }, i: number) => (
-              <li key={i}>
-                {ps.parent?.fullName ?? 'Parent'} — {ps.parent?.email ?? ps.parent?.phone ?? '—'}
-              </li>
-            ))}
-          </ul>
+          <h2 className="text-lg font-semibold text-neutral-900 mb-3 border-b border-neutral-100 pb-2">
+            Linked Parents & Guardians
+          </h2>
+          {(parents?.length ?? 0) > 0 ? (
+            <ul className="space-y-2 mb-4">
+              {parents!.map((ps, i: number) => {
+                const pid = ps.parentUserId ?? ps.parent?.id ?? '';
+                const pname = ps.parent?.fullName ?? 'Parent';
+                return (
+                  <li
+                    key={ps.id ?? pid ?? i}
+                    className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-neutral-50 rounded-lg border border-neutral-100 text-sm"
+                  >
+                    <div>
+                      <span className="font-medium text-neutral-900">{pname}</span>
+                      <span className="text-neutral-500 ml-2">
+                        {ps.parent?.email ?? '—'}{ps.parent?.phone ? ` · ${ps.parent.phone}` : ''}
+                      </span>
+                    </div>
+                    {canManageStudents && pid && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-danger hover:bg-danger/10"
+                        onClick={() => setGuardianToUnlink({ parentUserId: pid, name: pname })}
+                      >
+                        <Trash2 size={14} className="mr-1" /> Unlink
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-neutral-500 mb-4">No parent accounts linked to this student yet.</p>
+          )}
+
+          {canManageStudents && (
+            <form
+              onSubmit={(e) => void handleLinkGuardian(e)}
+              className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end pt-3 border-t border-neutral-100 no-print"
+            >
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">
+                  Select Parent User
+                </label>
+                <select
+                  value={selectedParentUserId}
+                  onChange={(e) => {
+                    setSelectedParentUserId(e.target.value);
+                    if (e.target.value) setGuardianEmailInput('');
+                  }}
+                  className="w-full h-10 rounded-lg border border-neutral-300 px-3 text-sm bg-white"
+                >
+                  <option value="">Choose parent account...</option>
+                  {parentUsers
+                    .filter(
+                      (pu) =>
+                        !(parents ?? []).some(
+                          (linked: { parentUserId?: string; parent?: { id?: string } }) =>
+                            (linked.parentUserId ?? linked.parent?.id) === pu.id,
+                        ),
+                    )
+                    .map((pu) => (
+                      <option key={pu.id} value={pu.id}>
+                        {pu.fullName} ({pu.email})
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">
+                  Or Parent Email
+                </label>
+                <input
+                  type="email"
+                  value={guardianEmailInput}
+                  onChange={(e) => {
+                    setGuardianEmailInput(e.target.value);
+                    if (e.target.value) setSelectedParentUserId('');
+                  }}
+                  placeholder="parent@example.org"
+                  className="w-full h-10 rounded-lg border border-neutral-300 px-3 text-sm"
+                />
+              </div>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!selectedParentUserId && !guardianEmailInput.trim()}
+                isLoading={linkingGuardian}
+              >
+                <UserPlus size={15} className="mr-1.5" /> Link Parent
+              </Button>
+            </form>
+          )}
         </Card>
       )}
 
@@ -713,7 +900,7 @@ export const StudentDetails: React.FC = () => {
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-3 border-t border-neutral-200">
+          <div className="flex justify-end gap-2 pt-3 border-t border-neutral-200 no-print">
             <Button variant="secondary" size="sm" onClick={() => window.print()}>
               <Printer size={14} className="mr-1.5" /> Print Report
             </Button>
@@ -723,6 +910,111 @@ export const StudentDetails: React.FC = () => {
           </div>
         </div>
       </Modal>
+      </div>
+
+      {selectedReceipt && (() => {
+        const receiptNode = (
+          <div className="space-y-4 text-sm text-neutral-700">
+            <div className="flex items-start justify-between border-b border-neutral-200 pb-3">
+              <div>
+                <p className="text-xs uppercase tracking-wider text-neutral-500 font-semibold">Official Fee Receipt</p>
+                <h3 className="text-lg font-bold text-neutral-900 mt-0.5">
+                  Receipt #{selectedReceipt.id.slice(0, 8).toUpperCase()}
+                </h3>
+              </div>
+              <div className="text-right text-xs text-neutral-500">
+                <p>Paid On</p>
+                <p className="font-medium text-neutral-800">{new Date(selectedReceipt.paidAt).toLocaleString()}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-neutral-50 p-3 rounded-lg border border-neutral-200">
+              <div>
+                <p className="text-xs text-neutral-500">Student Name</p>
+                <p className="font-semibold text-neutral-900">{student.fullName}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500">Roll Number</p>
+                <p className="font-medium text-neutral-900">{student.rollNumber || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500">Center</p>
+                <p className="font-medium text-neutral-900">{student.center?.name ?? student.centerId}</p>
+              </div>
+              <div>
+                <p className="text-xs text-neutral-500">Program</p>
+                <p className="font-medium text-neutral-900">{student.program?.name ?? student.programId}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-neutral-200 p-4 space-y-2">
+              <div className="flex justify-between items-center text-base">
+                <span className="font-medium text-neutral-700">Amount Paid (This Receipt)</span>
+                <span className="text-xl font-bold text-emerald-700">
+                  ₹{Number(selectedReceipt.amount).toLocaleString()}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs text-neutral-500 pt-2 border-t border-neutral-100">
+                <span>Total Program Fees</span>
+                <span>₹{student.totalFees != null ? Number(student.totalFees).toLocaleString() : '—'}</span>
+              </div>
+              <div className="flex justify-between text-xs text-neutral-500">
+                <span>Cumulative Fees Paid</span>
+                <span>₹{Number(student.feesPaid || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-xs font-medium text-neutral-700">
+                <span>Balance Remaining</span>
+                <span>
+                  {student.isFullyPaid
+                    ? '₹0 (Cleared)'
+                    : `₹${Math.max(0, Number(student.totalFees || 0) - Number(student.feesPaid || 0)).toLocaleString()}`}
+                </span>
+              </div>
+              {selectedReceipt.notes && (
+                <p className="text-xs text-neutral-600 pt-2 border-t border-neutral-100">
+                  <strong>Notes:</strong> {selectedReceipt.notes}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+
+        return (
+          <>
+            <div className="no-print">
+              <Modal
+                isOpen={true}
+                onClose={() => setSelectedReceipt(null)}
+                title={`Fee Receipt — ${student.fullName}`}
+                maxWidth="md"
+              >
+                {receiptNode}
+                <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-neutral-200">
+                  <Button variant="secondary" size="sm" onClick={() => window.print()}>
+                    <Printer size={14} className="mr-1.5" /> Print Receipt
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={() => setSelectedReceipt(null)}>
+                    Close
+                  </Button>
+                </div>
+              </Modal>
+            </div>
+            <div className="hidden print:block p-6 border border-neutral-300 rounded-xl bg-white">
+              {receiptNode}
+            </div>
+          </>
+        );
+      })()}
+
+      <ConfirmModal
+        open={Boolean(guardianToUnlink)}
+        title="Unlink Parent / Guardian"
+        message={`Remove ${guardianToUnlink?.name ?? 'this guardian'}'s parent link from ${student.fullName}?`}
+        confirmLabel="Unlink Guardian"
+        variant="danger"
+        onConfirm={() => void handleConfirmUnlinkGuardian()}
+        onCancel={() => setGuardianToUnlink(null)}
+      />
     </PageWrapper>
   );
 };

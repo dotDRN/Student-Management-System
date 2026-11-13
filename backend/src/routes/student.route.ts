@@ -26,6 +26,9 @@ import {
   addFeePayment,
   getFeePayments,
   updateStudentFees,
+  bulkImportStudents,
+  linkGuardian,
+  unlinkGuardian,
 } from '../controllers/student.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
@@ -34,10 +37,12 @@ import { PERMISSIONS } from '../config/rbac.js';
 import { validate } from '../middleware/validate.js';
 import {
   addFeePaymentSchema,
+  bulkImportStudentsSchema,
   completeTransferSchema,
   createCareerSchema,
   createSkillSchema,
   createStudentSchema,
+  linkGuardianSchema,
   requestTransferSchema,
   updateSkillSchema,
   updateStudentFeesSchema,
@@ -53,6 +58,12 @@ router.use(requireCenterAccess());
 // 2. Dashboards & Filters (Admins/CEO can view these)
 router.get("/filter", filterStudents);
 router.get("/dashboard", getDashboardStats);
+router.post(
+  "/bulk-import",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  validate(bulkImportStudentsSchema),
+  bulkImportStudents
+);
 
 // 3. Transfer Workflow
 router.post(
@@ -127,6 +138,19 @@ router.put(
   requirePermission(PERMISSIONS.MANAGE_FEES),
   validate(updateStudentFeesSchema),
   updateStudentFees
+);
+
+// 9. Parent / Guardian Linking
+router.post(
+  "/:studentId/guardians",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  validate(linkGuardianSchema),
+  linkGuardian
+);
+router.delete(
+  "/:studentId/guardians/:parentUserId",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  unlinkGuardian
 );
 
 export default router;

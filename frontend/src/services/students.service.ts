@@ -92,3 +92,52 @@ export const getFeePayments = (studentId: string) =>
 export const updateStudentFees = (studentId: string, data: { totalFees?: number; isFullyPaid?: boolean }) =>
   api.put<ApiEnvelope<Student>>(`/students/${studentId}/fees/update`, data).then((r) => r.data.data);
 
+// ─────────────── Bulk Import & Guardians ───────────────
+
+export interface BulkImportStudentRowInput {
+  fullName: string;
+  rollNumber?: string;
+  dob?: string;
+  gender?: 'male' | 'female' | 'other';
+  guardianName?: string;
+  guardianPhone?: string;
+  address?: string;
+  stream?: string;
+  post12thChoice?: string;
+  collegeName?: string;
+  educationDiscontinued?: boolean;
+  enrollmentDate?: string;
+  totalFees?: number;
+}
+
+export interface BulkImportStudentsResponse {
+  success: boolean;
+  createdCount: number;
+  students: Student[];
+}
+
+export interface GuardianLinkItem {
+  id: string;
+  parentUserId: string;
+  studentId: string;
+  parent: {
+    id: string;
+    fullName: string;
+    email: string;
+    phone?: string | null;
+  };
+}
+
+export const bulkImportStudents = (payload: {
+  centerId: string;
+  programId: string;
+  academicYearId?: string | null;
+  students: BulkImportStudentRowInput[];
+}) => api.post<BulkImportStudentsResponse>('/students/bulk-import', payload).then((r) => r.data);
+
+export const linkGuardian = (studentId: string, payload: { parentUserId?: string; email?: string }) =>
+  api.post<ApiEnvelope<GuardianLinkItem>>(`/students/${studentId}/guardians`, payload).then((r) => r.data.data);
+
+export const unlinkGuardian = (studentId: string, parentUserId: string) =>
+  api.delete<{ success: boolean; deleted: boolean }>(`/students/${studentId}/guardians/${parentUserId}`).then((r) => r.data);
+

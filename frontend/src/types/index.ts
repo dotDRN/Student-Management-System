@@ -235,7 +235,11 @@ export interface StudentProfilePayload {
     createdAt?: string;
     template?: { id?: string; name?: string; formType?: string };
   }[];
-  parents?: { parent?: { fullName?: string; email?: string; phone?: string } }[];
+  parents?: {
+    id?: string;
+    parentUserId?: string;
+    parent?: { id?: string; fullName?: string; email?: string; phone?: string | null };
+  }[];
   skillRadar?: { skill: string; score: number }[];
   skills?: SkillRecord[];
   careerRecords?: CareerRecord[];

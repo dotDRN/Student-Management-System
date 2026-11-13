@@ -1,15 +1,18 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ROLES } from "../config/rbac.js";
-import { ForbiddenError, ValidationError } from "../lib/errors.js";
-import { createStudentSchema, updateStudentSchema } from "../validators/schemas.js";
+import { AppError, ForbiddenError, NotFoundError, ValidationError } from "../lib/errors.js";
+import { bulkImportStudentsSchema, createStudentSchema, linkGuardianSchema, updateStudentSchema } from "../validators/schemas.js";
 import {
   addFeePayment,
+  bulkImportStudents,
   completeTransfer,
   deleteCareer,
   getAllStudents,
   getStudentProfile,
+  linkGuardian,
   requestTransfer,
+  unlinkGuardian,
   updateCareer,
   updateStudentFees,
 } from "../services/student.service.js";
@@ -263,5 +266,151 @@ describe("Component 1.3: Students, Profiles, Careers, Transfers & Fees", () => {
 
     assert.equal(wheres[0].isActive, false);
     assert.equal("isActive" in wheres[1], false);
+  });
+
+  it("validates and atomically imports students in bulkImportStudents", async (t) => {
+    assert.equal(
+      bulkImportStudentsSchema.safeParse({ centerId: center1Id, programId: program1Id, students: [] }).success,
+      false,
+    );
+
+    await assert.rejects(
+      () =>
+        bulkImportStudents(teacherC1, {
+          centerId: center2Id,
+          programId: program1Id,
+          students: [{ fullName: "Unauthorized Student" }],
+        }),
+      ForbiddenError,
+    );
+
+    mockPrismaModel(t, "center", {
+      findFirst: async () => ({ id: center1Id, isActive: true }),
+    });
+    mockPrismaModel(t, "program", {
+      findFirst: async () => ({ id: program1Id, isActive: true }),
+    });
+    mockPrismaModel(t, "centerProgram", {
+      findFirst: async () => ({ id: "cp1", isActive: true }),
+    });
+    mockPrismaModel(t, "academicYear", {
+      findFirst: async () => ({ id: year1Id }),
+    });
+
+    await assert.rejects(
+      () =>
+        bulkImportStudents(teacherC1, {
+          centerId: center1Id,
+          programId: program1Id,
+          students: [
+            { fullName: "Student A", rollNumber: "R-1" },
+            { fullName: "Student B", rollNumber: "r-1" },
+          ],
+        }),
+      ValidationError,
+    );
+
+    const createdRows: Array<Record<string, unknown>> = [];
+    mockPrismaTransaction(t, () => ({
+      student: {
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          createdRows.push(data);
+          return { id: `stu-${createdRows.length}`, ...data };
+        },
+      },
+    }));
+
+    const imported = await bulkImportStudents(teacherC1, {
+      centerId: center1Id,
+      programId: program1Id,
+      students: [
+        {
+          fullName: "Riya Verma",
+          rollNumber: "R-101",
+          dob: "2012-03-14",
+          gender: "female",
+          guardianName: "Suresh Verma",
+          guardianPhone: "9876543210",
+          address: "Andheri East",
+          totalFees: 1500,
+        },
+        {
+          fullName: "Kabir Khan",
+          rollNumber: "R-102",
+          enrollmentDate: "2026-07-01",
+        },
+      ],
+    });
+
+    assert.equal(imported.createdCount, 2);
+    assert.equal(createdRows[0].createdById, teacherC1.userId);
+    assert.equal(createdRows[0].academicYearId, year1Id);
+    assert.equal((createdRows[0].dob as Date).toISOString(), "2012-03-14T00:00:00.000Z");
+    assert.equal(createdRows[0].address, "Andheri East");
+    assert.equal(createdRows[0].totalFees, 1500);
+    assert.equal((createdRows[1].enrollmentDate as Date).toISOString(), "2026-07-01T00:00:00.000Z");
+  });
+
+  it("links and unlinks ParentStudent guardians with role, center scope, and duplicate checks", async (t) => {
+    const parentId = "00000000-0000-4000-8000-000000000801";
+    assert.equal(linkGuardianSchema.safeParse({}).success, false);
+
+    mockPrismaModel(t, "student", {
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        where.id === student1Id ? { id: student1Id, centerId: center1Id, isActive: true } : null,
+    });
+
+    await assert.rejects(
+      () => linkGuardian(teacherC2, student1Id, { parentUserId: parentId }),
+      ForbiddenError,
+    );
+
+    let mockUser = {
+      id: parentId,
+      fullName: "Meena Sharma",
+      email: "meena@parent.org",
+      phone: "9999988888",
+      role: ROLES.TEACHER as string,
+      isActive: true,
+    };
+    mockPrismaModel(t, "user", {
+      findFirst: async () => mockUser,
+    });
+
+    await assert.rejects(
+      () => linkGuardian(teacherC1, student1Id, { parentUserId: parentId }),
+      ValidationError,
+    );
+
+    mockUser = { ...mockUser, role: ROLES.PARENT };
+    let existingLink: { id: string } | null = { id: "ps-1" };
+    let deletedId = "";
+    mockPrismaModel(t, "parentStudent", {
+      findFirst: async () => existingLink,
+      create: async ({ data }: { data: { parentUserId: string; studentId: string } }) => ({
+        id: "ps-new",
+        ...data,
+        parent: { id: parentId, fullName: mockUser.fullName, email: mockUser.email, phone: mockUser.phone },
+      }),
+      delete: async ({ where }: { where: { id: string } }) => {
+        deletedId = where.id;
+        return { id: where.id };
+      },
+    });
+
+    await assert.rejects(
+      () => linkGuardian(teacherC1, student1Id, { parentUserId: parentId }),
+      (err: unknown) => err instanceof AppError && err.statusCode === 409,
+    );
+
+    existingLink = null;
+    const linked = await linkGuardian(teacherC1, student1Id, { email: "MEENA@PARENT.ORG" });
+    assert.equal(linked.parentUserId, parentId);
+    assert.equal(linked.parent.fullName, "Meena Sharma");
+
+    existingLink = { id: "ps-new" };
+    const unlinked = await unlinkGuardian(teacherC1, student1Id, parentId);
+    assert.equal(deletedId, "ps-new");
+    assert.deepEqual(unlinked, { deleted: true, studentId: student1Id, parentUserId: parentId });
   });
 });

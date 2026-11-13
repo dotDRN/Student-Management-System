@@ -9,10 +9,12 @@ import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { DataTable, type DataTableColumn } from '../components/ui/DataTable';
-import { Search, Download, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square } from 'lucide-react';
+import { Search, Download, Upload, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToast } from '../hooks/useToast';
+import { usePermission } from '../hooks/usePermission';
+import { StudentBulkImportModal } from '../components/students/StudentBulkImportModal';
 import { deleteStudent, getStudents, requestTransfer, getTransferRequests, completeTransfer, type StudentListQuery } from '../services/students.service';
 import { getApiErrorMessage } from '../services/api';
 import { listCenters, listPrograms } from '../services/centers.service';
@@ -26,6 +28,8 @@ type Row = Student & { _programName: string; _centerName: string; _addedBy: stri
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { can } = usePermission();
+  const canManageStudents = can('manage', 'students');
   const currentUser = useAuthStore((s) => s.currentUser);
   const selectedCenterId = useAuthStore((s) => s.selectedCenterId);
 
@@ -35,6 +39,7 @@ export const StudentList: React.FC = () => {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCenterId, setFilterCenterId] = useState('');
@@ -451,6 +456,11 @@ export const StudentList: React.FC = () => {
           <Button variant="secondary" onClick={() => void handleExport()} disabled={exporting || loading}>
             <Download size={16} className="mr-2" /> {exporting ? 'Exporting...' : 'Export XLS'}
           </Button>
+          {canManageStudents && (
+            <Button variant="secondary" onClick={() => setShowBulkImport(true)}>
+              <Upload size={16} className="mr-2" /> Import Excel
+            </Button>
+          )}
           <Button variant="primary" onClick={() => navigate('/students/new')}>
             <Plus size={16} className="mr-2" /> Add Student
           </Button>
@@ -808,6 +818,18 @@ export const StudentList: React.FC = () => {
           )}
         </Card>
       )}
+
+      <StudentBulkImportModal
+        isOpen={showBulkImport}
+        onClose={() => setShowBulkImport(false)}
+        centers={centers}
+        programs={programs}
+        defaultCenterId={filterCenterId || selectedCenterId || ''}
+        onImported={() => {
+          setPage(1);
+          void load();
+        }}
+      />
     </PageWrapper>
   );
 };

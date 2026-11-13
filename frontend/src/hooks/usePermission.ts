@@ -1,5 +1,5 @@
 import { useAuthStore } from '../store/useAuthStore';
-import { ADMIN_ROLES } from '../utils/rbac';
+import { ADMIN_ROLES, hasAdminRole } from '../utils/rbac';
 
 const STUDENT_OPS_ROLES = [...ADMIN_ROLES, 'supervisor', 'teacher', 'staff'];
 const EDUCATIONAL_ROLES = [...ADMIN_ROLES, 'supervisor', 'teacher'];
@@ -43,5 +43,6 @@ export function usePermission() {
       const allowedRoles = PERMISSIONS[`${action}:${resource}`];
       return allowedRoles?.includes(role) ?? false;
     },
+    isAdminRole: hasAdminRole(role),
   };
 }

@@ -297,3 +297,39 @@ export const updateSkillDefinitionSchema = z.object({
   maxLevel: z.coerce.number().int().min(1).max(20).optional(),
   isActive: z.boolean().optional(),
 });
+
+export const bulkImportStudentRowSchema = z.object({
+  fullName: z.string().trim().min(2, "Full name must be at least 2 characters"),
+  rollNumber: preprocessEmptyToNull(z.string().trim().min(1)),
+  dob: preprocessEmptyToNull(optionalDateString),
+  gender: preprocessEmptyToNull(z.enum(["male", "female", "other"])),
+  guardianName: preprocessEmptyToNull(z.string().trim().min(1)),
+  guardianPhone: preprocessEmptyToNull(phone10Digit),
+  address: preprocessEmptyToNull(z.string().trim().min(1)),
+  stream: preprocessEmptyToNull(z.string().trim().min(1)),
+  post12thChoice: preprocessEmptyToNull(z.string().trim().min(1)),
+  collegeName: preprocessEmptyToNull(z.string().trim().min(1)),
+  educationDiscontinued: z.boolean().optional(),
+  enrollmentDate: preprocessEmptyToUndefined(optionalDateString),
+  totalFees: preprocessEmptyToUndefined(z.coerce.number().nonnegative().max(10000000)),
+});
+
+export const bulkImportStudentsSchema = z.object({
+  centerId: uuid,
+  programId: uuid,
+  academicYearId: preprocessEmptyToNull(uuid),
+  students: z
+    .array(bulkImportStudentRowSchema)
+    .min(1, "At least one student row is required")
+    .max(200, "Maximum 200 students can be imported in one batch"),
+});
+
+export const linkGuardianSchema = z
+  .object({
+    parentUserId: preprocessEmptyToUndefined(uuid),
+    email: preprocessEmptyToUndefined(z.string().trim().email("Valid parent email is required")),
+  })
+  .refine(
+    (d) => Boolean(d.parentUserId || d.email),
+    "Either parentUserId or parent email is required",
+  );

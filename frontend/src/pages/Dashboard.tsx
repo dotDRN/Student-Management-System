@@ -7,7 +7,7 @@ import { Button } from '../components/ui/Button';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { Users, BookOpen, PlusCircle, Trash2, TrendingUp, Target, Activity } from 'lucide-react';
-import { getReportsDashboard } from '../services/reports.service';
+import { getReportsDashboard, type ReportsDashboardData } from '../services/reports.service';
 import { createCenter, deleteCenter } from '../services/centers.service';
 import { getApiErrorMessage } from '../services/api';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
@@ -22,7 +22,7 @@ export const Dashboard: React.FC = () => {
   const toast = useToast();
   const navigate = useNavigate();
 
-  const [data, setData] = useState<Record<string, unknown> | null>(null);
+  const [data, setData] = useState<ReportsDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -227,13 +227,13 @@ export const Dashboard: React.FC = () => {
                   Center Breakdown
                 </h3>
                 <ul className="space-y-4">
-                  {((data?.centerBreakdown as Array<Record<string, unknown>>) ?? []).map((c) => (
-                    <li key={String(c.centerId)} className="group">
+                  {(data?.centerBreakdown ?? []).map((c) => (
+                    <li key={c.centerId} className="group">
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-bold text-neutral-700">{String(c.name)}</span>
+                        <span className="text-sm font-bold text-neutral-700">{c.name}</span>
                         <div className="flex items-center gap-3">
                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-tighter">
-                            {String(c.studentCount)} Students
+                            {c.studentCount} Students
                           </span>
                           {canManageCenters && (
                             <button
@@ -242,8 +242,8 @@ export const Dashboard: React.FC = () => {
                               className="text-neutral-300 hover:text-danger transition-colors p-1 opacity-0 group-hover:opacity-100"
                               onClick={() =>
                                 setCenterToDeactivate({
-                                  id: String(c.centerId),
-                                  name: String(c.name),
+                                  id: c.centerId,
+                                  name: c.name,
                                 })
                               }
                             >
@@ -258,7 +258,7 @@ export const Dashboard: React.FC = () => {
                           style={{ width: `${Number(c.attendanceRate)}%` }}
                         />
                       </div>
-                      <p className="text-[10px] text-right mt-1 font-bold text-neutral-500">{String(c.attendanceRate)}% Attendance</p>
+                      <p className="text-[10px] text-right mt-1 font-bold text-neutral-500">{c.attendanceRate}% Attendance</p>
                     </li>
                   ))}
                 </ul>
@@ -270,11 +270,11 @@ export const Dashboard: React.FC = () => {
                   Program Distribution
                 </h3>
                 <div className="space-y-4">
-                  {((data?.programBreakdown as Array<Record<string, unknown>>) ?? []).map((p) => (
-                    <div key={String(p.programId)} className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl border border-neutral-100 hover:border-primary/20 transition-colors">
-                      <span className="text-sm font-bold text-neutral-700">{String(p.name)}</span>
+                  {(data?.programBreakdown ?? []).map((p) => (
+                    <div key={p.programId} className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl border border-neutral-100 hover:border-primary/20 transition-colors">
+                      <span className="text-sm font-bold text-neutral-700">{p.name}</span>
                       <span className="px-3 py-1 bg-white rounded-full border border-neutral-200 text-xs font-black text-primary">
-                        {String(p.studentCount)}
+                        {p.studentCount}
                       </span>
                     </div>
                   ))}

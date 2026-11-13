@@ -479,3 +479,53 @@ export const updateStudentFees = async (
     next(err);
   }
 };
+
+export const bulkImportStudents = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.bulkImportStudents(req.user, req.body);
+    return res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    console.error("Bulk Import Students Error:", err);
+    next(err);
+  }
+};
+
+export const linkGuardian = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const link = await studentService.linkGuardian(
+      req.user,
+      req.params.studentId as string,
+      req.body
+    );
+    return res.status(201).json({ success: true, data: link });
+  } catch (err) {
+    console.error("Link Guardian Error:", err);
+    next(err);
+  }
+};
+
+export const unlinkGuardian = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.unlinkGuardian(
+      req.user,
+      req.params.studentId as string,
+      req.params.parentUserId as string
+    );
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    console.error("Unlink Guardian Error:", err);
+    next(err);
+  }
+};

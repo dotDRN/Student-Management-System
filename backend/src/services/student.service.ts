@@ -1,7 +1,7 @@
 ﻿import type { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import type { JwtPayload as TokenPayload } from '../utils/jwt.js';
-import { ForbiddenError, NotFoundError, ValidationError } from '../lib/errors.js';
+import { AppError, ForbiddenError, NotFoundError, ValidationError } from '../lib/errors.js';
 import { getScopedCenterIds, isAdminRole, isGlobalAdmin } from '../config/rbac.js';
 import { assertCenterAccess } from '../lib/centerScope.js';
 import { resolveAcademicYearId } from '../utils/academicYear.js';
@@ -9,8 +9,10 @@ import { calculateAttendancePercentage, countAttendanceStatuses } from '../utils
 import { getTodayUtcDateOnly, parseOptionalUtcDateOnly, parseUtcDateOnly } from '../utils/dateOnly.js';
 import {
   addFeePaymentSchema,
+  bulkImportStudentsSchema,
   completeTransferSchema,
   createStudentSchema,
+  linkGuardianSchema,
   requestTransferSchema,
   updateStudentFeesSchema,
   updateStudentSchema,
@@ -40,24 +42,12 @@ const scopedWhere = (user: TokenPayload, otherConditions: Record<string, unknown
   };
 };
 
-/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   STUDENTS
-â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-
-export const createStudent = async (user: TokenPayload, data: unknown) => {
-  const parsed = createStudentSchema.safeParse(data);
-  if (!parsed.success) {
-    throw new ValidationError("Invalid student payload", parsed.error.flatten());
-  }
-
-  const payload = parsed.data;
-  assertCenterAccess(user, payload.centerId, "You are not authorized to register students for this center.");
-
+async function validateEnrollmentTarget(centerId: string, programId: string) {
   const [center, program, centerProgram] = await Promise.all([
-    prisma.center.findFirst({ where: { id: payload.centerId, isActive: true } }),
-    prisma.program.findFirst({ where: { id: payload.programId, isActive: true } }),
+    prisma.center.findFirst({ where: { id: centerId, isActive: true } }),
+    prisma.program.findFirst({ where: { id: programId, isActive: true } }),
     prisma.centerProgram.findFirst({
-      where: { centerId: payload.centerId, programId: payload.programId },
+      where: { centerId, programId, isActive: true },
     }),
   ]);
 
@@ -70,6 +60,21 @@ export const createStudent = async (user: TokenPayload, data: unknown) => {
   if (!centerProgram) {
     throw new ValidationError("Selected program is not offered at the selected center");
   }
+}
+
+/* ─────────────────────────────────────────
+   STUDENTS
+───────────────────────────────────────── */
+
+export const createStudent = async (user: TokenPayload, data: unknown) => {
+  const parsed = createStudentSchema.safeParse(data);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid student payload", parsed.error.flatten());
+  }
+
+  const payload = parsed.data;
+  assertCenterAccess(user, payload.centerId, "You are not authorized to register students for this center.");
+  await validateEnrollmentTarget(payload.centerId, payload.programId);
 
   const academicYearId = await resolveAcademicYearId(payload.academicYearId ?? undefined, {
     fallbackToCurrent: true,
@@ -938,4 +943,160 @@ export const getDashboardStats = async (user: TokenPayload) => {
       bySkill: avgSkillsByName,
     },
   };
+};
+
+/* ─────────────────────────────────────────
+   BULK STUDENT IMPORT
+───────────────────────────────────────── */
+
+export const bulkImportStudents = async (user: TokenPayload, data: unknown) => {
+  const parsed = bulkImportStudentsSchema.safeParse(data);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid bulk import payload", parsed.error.flatten());
+  }
+
+  const payload = parsed.data;
+  assertCenterAccess(user, payload.centerId, "You are not authorized to import students for this center.");
+  await validateEnrollmentTarget(payload.centerId, payload.programId);
+
+  const academicYearId = await resolveAcademicYearId(payload.academicYearId ?? undefined, {
+    fallbackToCurrent: true,
+    strict: Boolean(payload.academicYearId),
+  });
+
+  const seenRollNumbers = new Set<string>();
+  const preparedRows = payload.students.map((row, idx) => {
+    const rowNum = idx + 1;
+    if (row.rollNumber) {
+      const normalizedRoll = row.rollNumber.trim().toLowerCase();
+      if (seenRollNumbers.has(normalizedRoll)) {
+        throw new ValidationError(`Row ${rowNum}: duplicate rollNumber "${row.rollNumber}" within the import sheet`);
+      }
+      seenRollNumbers.add(normalizedRoll);
+    }
+
+    const dob = parseOptionalUtcDateOnly(row.dob, `Row ${rowNum} dob`);
+    const enrollmentDate =
+      parseOptionalUtcDateOnly(row.enrollmentDate, `Row ${rowNum} enrollmentDate`) ?? getTodayUtcDateOnly();
+
+    return {
+      fullName: row.fullName,
+      centerId: payload.centerId,
+      programId: payload.programId,
+      academicYearId,
+      createdById: user.userId,
+      rollNumber: row.rollNumber ?? null,
+      dob: dob ?? null,
+      gender: row.gender ?? null,
+      guardianName: row.guardianName ?? null,
+      guardianPhone: row.guardianPhone ?? null,
+      address: row.address ?? null,
+      stream: row.stream ?? null,
+      post12thChoice: row.post12thChoice ?? null,
+      collegeName: row.collegeName ?? null,
+      educationDiscontinued: row.educationDiscontinued ?? false,
+      enrollmentDate,
+      ...(row.totalFees !== undefined ? { totalFees: row.totalFees } : {}),
+    };
+  });
+
+  const created = await prisma.$transaction(async (tx) => {
+    const results = [];
+    for (const entry of preparedRows) {
+      results.push(
+        await tx.student.create({
+          data: entry,
+          include: {
+            center: { select: { id: true, name: true } },
+            program: { select: { id: true, name: true, code: true } },
+          },
+        }),
+      );
+    }
+    return results;
+  });
+
+  return {
+    createdCount: created.length,
+    students: created,
+  };
+};
+
+/* ─────────────────────────────────────────
+   PARENT / GUARDIAN LINKING
+───────────────────────────────────────── */
+
+export const linkGuardian = async (
+  user: TokenPayload,
+  studentId: string,
+  input: unknown,
+) => {
+  const parsed = linkGuardianSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid guardian link payload", parsed.error.flatten());
+  }
+
+  await getStudentById(user, studentId);
+
+  const parentUser = await prisma.user.findFirst({
+    where: parsed.data.parentUserId
+      ? {
+          id: parsed.data.parentUserId,
+          ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+        }
+      : {
+          email: { equals: parsed.data.email!, mode: "insensitive" },
+          ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+        },
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      phone: true,
+      role: true,
+      isActive: true,
+    },
+  });
+
+  if (!parentUser || !parentUser.isActive) {
+    throw new NotFoundError("Parent user not found or inactive");
+  }
+  if (parentUser.role !== "parent") {
+    throw new ValidationError("Selected user does not have the parent role");
+  }
+
+  const existing = await prisma.parentStudent.findFirst({
+    where: { parentUserId: parentUser.id, studentId },
+  });
+  if (existing) {
+    throw new AppError("Guardian is already linked to this student", 409);
+  }
+
+  return prisma.parentStudent.create({
+    data: {
+      parentUserId: parentUser.id,
+      studentId,
+    },
+    include: {
+      parent: { select: { id: true, fullName: true, email: true, phone: true } },
+    },
+  });
+};
+
+export const unlinkGuardian = async (
+  user: TokenPayload,
+  studentId: string,
+  parentUserId: string,
+) => {
+  await getStudentById(user, studentId);
+
+  const existing = await prisma.parentStudent.findFirst({
+    where: { studentId, parentUserId },
+  });
+  if (!existing) {
+    throw new NotFoundError("Guardian link");
+  }
+
+  await prisma.parentStudent.delete({ where: { id: existing.id } });
+  return { deleted: true, studentId, parentUserId };
 };
