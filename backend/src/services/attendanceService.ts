@@ -1,13 +1,21 @@
 ﻿import { AttendanceStatus } from "@prisma/client";
 import type { JwtPayload } from '../utils/jwt.js';
-import { ForbiddenError, NotFoundError, ValidationError, AppError } from '../lib/errors.js';
+import { NotFoundError, ValidationError, AppError } from '../lib/errors.js';
 import prisma from '../lib/prisma.js';
+import { getScopedCenterIds } from "../config/rbac.js";
+import { assertCenterAccess } from "../lib/centerScope.js";
+import { resolveAcademicYearId } from "../utils/academicYear.js";
+import { calculateAttendancePercentage, countAttendanceStatuses } from "../utils/attendanceMetrics.js";
+import { getTodayUtcDateOnly, parseOptionalUtcDateOnly } from "../utils/dateOnly.js";
+
+const VALID_ATTENDANCE_STATUSES = new Set(["pending", "present", "absent", "late", "excused"]);
 
 type SessionCreateInput = {
   centerId: string;
   programId: string;
   sessionDate: string;
   activityId?: string;
+  academicYearId?: string;
 };
 
 type RecordUpdateInput = {
@@ -17,13 +25,12 @@ type RecordUpdateInput = {
 };
 
 function ensureCenterAccess(user: JwtPayload, centerId: string): void {
-  if (user.role !== "super_admin" && !user.centerIds.includes(centerId)) {
-    throw new ForbiddenError("No access to the requested center");
-  }
+  assertCenterAccess(user, centerId, "No access to the requested center");
 }
 
 function applyCenterScopeToWhere(user: JwtPayload, where: Record<string, unknown>, centerId?: string) {
-  if (user.role === "super_admin") {
+  const scopedCenterIds = getScopedCenterIds(user);
+  if (scopedCenterIds === undefined) {
     if (centerId) {
       where.centerId = centerId;
     }
@@ -31,31 +38,22 @@ function applyCenterScopeToWhere(user: JwtPayload, where: Record<string, unknown
   }
 
   if (centerId) {
-    where.centerId = user.centerIds.includes(centerId) ? centerId : { in: [] };
+    where.centerId = scopedCenterIds.includes(centerId) ? centerId : { in: [] };
     return;
   }
 
-  where.centerId = { in: user.centerIds };
+  where.centerId = { in: scopedCenterIds };
 }
 
 function parseDate(value: string | undefined, fieldName: string): Date | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    throw new ValidationError(`${fieldName} must be a valid date`);
-  }
-
-  return date;
+  return parseOptionalUtcDateOnly(value, fieldName) ?? undefined;
 }
 
-function getCompletionPercentage(records: Array<{ status: AttendanceStatus | null }>): number {
+function getCompletionPercentage(records: Array<{ status: AttendanceStatus | string | null }>): number {
   if (records.length === 0) {
     return 0;
   }
-  const completed = records.filter((record) => record.status !== null).length;
+  const completed = records.filter((record) => record.status !== null && record.status !== "pending").length;
   return Number(((completed / records.length) * 100).toFixed(2));
 }
 
@@ -90,11 +88,17 @@ export async function createSession(
     return { created: false, session: existing };
   }
 
+  const academicYearId = await resolveAcademicYearId(input.academicYearId, {
+    fallbackToCurrent: true,
+    strict: Boolean(input.academicYearId),
+  });
+
   const created = await prisma.$transaction(async (tx) => {
     const session = await tx.attendanceSession.create({
       data: {
         centerId: input.centerId,
         programId: input.programId,
+        academicYearId,
         sessionDate,
         activityId: input.activityId ?? null,
         createdBy: user.userId,
@@ -157,60 +161,66 @@ export async function createSession(
 export async function getTodayFreshSheet(user: JwtPayload, centerId: string, programId: string) {
   ensureCenterAccess(user, centerId);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = getTodayUtcDateOnly();
+  const todayStr = today.toISOString().slice(0, 10);
 
-  // 1. Find or Create the session
+  // 1. Find or create the session
   let session = await prisma.attendanceSession.findFirst({
     where: { centerId, programId, sessionDate: today },
   });
 
   if (!session) {
-    await createSession(user, {
+    const created = await createSession(user, {
       centerId,
       programId,
-      sessionDate: today.toISOString(),
+      sessionDate: todayStr,
     });
+    session = created.session as typeof session;
   }
 
-  // 2. Sync missing students (Crucial for students added later in the day)
-  // Fetch all active students for this center/program
+  if (!session) {
+    throw new NotFoundError("Attendance session");
+  }
+
+  // 2. Sync missing active students added after initial session creation
   const activeStudents = await prisma.student.findMany({
     where: { centerId, programId, isActive: true },
-    select: { id: true }
+    select: { id: true },
   });
 
-  // Fetch students already in today's session
   const existingRecords = await prisma.attendanceRecord.findMany({
-    where: { sessionId: session?.id || (await prisma.attendanceSession.findFirst({ where: { centerId, programId, sessionDate: today } }))?.id },
-    select: { studentId: true }
+    where: { sessionId: session.id },
+    select: { studentId: true },
   });
 
-  const existingStudentIds = new Set(existingRecords.map(r => r.studentId));
-  const missingStudents = activeStudents.filter(s => !existingStudentIds.has(s.id));
+  const existingStudentIds = new Set(existingRecords.map((r) => r.studentId));
+  const missingStudents = activeStudents.filter((s) => !existingStudentIds.has(s.id));
 
-  // 3. Create records for missing students
-  if (missingStudents.length > 0 && session) {
+  // 3. Create pending records for newly added students
+  if (missingStudents.length > 0) {
     await prisma.attendanceRecord.createMany({
-      data: missingStudents.map(s => ({
+      data: missingStudents.map((s) => ({
         sessionId: session!.id,
         studentId: s.id,
-        centerId: centerId,
-        status: "pending" as AttendanceStatus
-      }))
+        centerId,
+        status: "pending" as AttendanceStatus,
+      })),
     });
   }
 
-  // 4. Return the fully updated session with all students
+  // 4. Return the updated session with students sorted consistently
   return prisma.attendanceSession.findFirst({
-    where: { centerId, programId, sessionDate: today },
+    where: { id: session.id },
     include: {
+      center: true,
+      program: true,
       records: {
         include: {
-          student: { select: { id: true, fullName: true, rollNumber: true } }
-        }
-      }
-    }
+          student: { select: { id: true, fullName: true, rollNumber: true } },
+        },
+        orderBy: { student: { fullName: "asc" } },
+      },
+    },
   });
 }
 
@@ -250,7 +260,7 @@ export async function listSessions(
   }
   if (query.hasIncomplete) {
     where.records = {
-      some: { status: null as unknown as AttendanceStatus },
+      some: { status: "pending" as AttendanceStatus },
     };
   }
 
@@ -272,7 +282,7 @@ export async function listSessions(
   return {
     sessions: sessions.map((session) => ({
       ...session,
-      incompleteCount: session.records.filter((record) => record.status === null).length,
+      incompleteCount: session.records.filter((record) => record.status === "pending").length,
     })),
   };
 }
@@ -310,11 +320,13 @@ export async function getSessionById(
   ensureCenterAccess(user, session.centerId);
 
   return {
+    isHoliday: session.isHoliday,
     session: {
       id: session.id,
       centerId: session.centerId,
       programId: session.programId,
       sessionDate: session.sessionDate,
+      isHoliday: session.isHoliday,
       activity: session.activity,
       center: session.center,
       program: session.program,
@@ -337,6 +349,11 @@ export async function bulkUpdateSessionRecords(
 ): Promise<Record<string, unknown>> {
   if (!Array.isArray(records) || records.length === 0) {
     throw new ValidationError("records array is required");
+  }
+
+  const invalidStatus = records.find((r) => !VALID_ATTENDANCE_STATUSES.has(String(r.status)));
+  if (invalidStatus) {
+    throw new ValidationError(`Invalid attendance status: ${String(invalidStatus.status)}`);
   }
 
   const session = await prisma.attendanceSession.findUnique({
@@ -394,10 +411,11 @@ export async function getStudentAttendanceHistory(
   studentId: string,
   query: { from?: string; to?: string; programId?: string },
 ): Promise<Record<string, unknown>> {
+  const scopedCenterIds = getScopedCenterIds(user);
   const student = await prisma.student.findFirst({
     where: ({
       id: studentId,
-      ...(user.role === "super_admin" ? {} : { centerId: { in: user.centerIds } }),
+      ...(scopedCenterIds !== undefined ? { centerId: { in: scopedCenterIds } } : {}),
     } as never),
     select: {
       id: true,
@@ -415,7 +433,7 @@ export async function getStudentAttendanceHistory(
   const records = await prisma.attendanceRecord.findMany({
     where: ({
       studentId,
-      ...(user.role === "super_admin" ? {} : { centerId: { in: user.centerIds } }),
+      ...(scopedCenterIds !== undefined ? { centerId: { in: scopedCenterIds } } : {}),
       session: {
         ...(query.programId ? { programId: query.programId } : {}),
         ...((from || to)
@@ -439,13 +457,19 @@ export async function getStudentAttendanceHistory(
     },
   });
 
-  const presentCount = records.filter((record) => record.status === "present").length;
-  const absentCount = records.filter((record) => record.status === "absent").length;
-  const lateCount = records.filter((record) => record.status === "late").length;
-  const markedCount = presentCount + absentCount + lateCount;
-  const attendanceRate = markedCount === 0 ? 0 : Number(((presentCount / markedCount) * 100).toFixed(2));
+  const nonHolidayRecords = records.filter((record) => !record.session?.isHoliday);
+  const counts = countAttendanceStatuses(nonHolidayRecords);
+  const attendanceRate = calculateAttendancePercentage(counts);
 
-  return { records, attendanceRate, presentCount, absentCount, lateCount };
+  return {
+    records,
+    attendanceRate,
+    presentCount: counts.present,
+    absentCount: counts.absent,
+    lateCount: counts.late,
+    excusedCount: counts.excused,
+    pendingCount: counts.pending,
+  };
 }
 
 export async function getAttendanceSummary(
@@ -479,20 +503,20 @@ export async function getAttendanceSummary(
   });
 
   const sessionStats = sessions.map((session) => {
-    const present = session.records.filter((record) => record.status === "present").length;
-    const absent = session.records.filter((record) => record.status === "absent").length;
-    const late = session.records.filter((record) => record.status === "late").length;
-    const marked = present + absent + late;
-    const rate = marked === 0 ? 0 : Number(((present / marked) * 100).toFixed(2));
+    const counts = countAttendanceStatuses(session.records);
+    const rate = session.isHoliday ? 0 : calculateAttendancePercentage(counts);
 
     return {
       sessionId: session.id,
       sessionDate: session.sessionDate,
+      isHoliday: session.isHoliday,
       center: session.center,
       program: session.program,
-      present,
-      absent,
-      late,
+      present: counts.present,
+      absent: counts.absent,
+      late: counts.late,
+      excused: counts.excused,
+      pending: counts.pending,
       total: session.records.length,
       attendanceRate: rate,
     };
@@ -500,6 +524,7 @@ export async function getAttendanceSummary(
 
   const totals = sessionStats.reduce(
     (acc, item) => {
+      if (item.isHoliday) return acc;
       acc.present += item.present;
       acc.absent += item.absent;
       acc.late += item.late;
@@ -509,9 +534,7 @@ export async function getAttendanceSummary(
     { present: 0, absent: 0, late: 0, total: 0 },
   );
 
-  const markedTotal = totals.present + totals.absent + totals.late;
-  const overallAttendanceRate =
-    markedTotal === 0 ? 0 : Number(((totals.present / markedTotal) * 100).toFixed(2));
+  const overallAttendanceRate = calculateAttendancePercentage(totals);
 
   return {
     sessions: sessionStats,
@@ -520,29 +543,16 @@ export async function getAttendanceSummary(
   };
 }
 
-export async function getPendingSessions(userId: string): Promise<Array<Record<string, unknown>>> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      role: true,
-      centerAssignments: {
-        select: { centerId: true },
-      },
-    },
-  });
-
-  if (!user) {
-    throw new NotFoundError("User");
-  }
-
-  const centerIds = user.centerAssignments.map((assignment) => assignment.centerId);
+export async function getPendingSessions(user: JwtPayload): Promise<Array<Record<string, unknown>>> {
+  const scopedCenterIds = getScopedCenterIds(user);
 
   const sessions = await prisma.attendanceSession.findMany({
     where: {
-      ...(user.role === "super_admin" ? {} : { centerId: { in: centerIds } }),
+      isHoliday: false,
+      ...(scopedCenterIds !== undefined ? { centerId: { in: scopedCenterIds } } : {}),
       records: {
         some: {
-          status: null as unknown as AttendanceStatus,
+          status: "pending" as AttendanceStatus,
         },
       },
     },
@@ -561,7 +571,7 @@ export async function getPendingSessions(userId: string): Promise<Array<Record<s
   return sessions
     .map((session) => ({
       ...session,
-      incompleteCount: session.records.filter((record) => record.status === null).length,
+      incompleteCount: session.records.filter((record) => record.status === "pending").length,
     }))
     .filter((session) => session.incompleteCount > 0);
 }
@@ -581,30 +591,30 @@ export function parseHasIncomplete(value: unknown): boolean {
 
 export async function getRecentAbsentees(
   user: JwtPayload,
-  days: number = 7
+  days: number = 7,
+  requestedCenterId?: string,
 ) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  cutoff.setHours(0, 0, 0, 0);
+  const safeDays = Math.min(Math.max(Number.isFinite(days) ? days : 7, 1), 90);
+  const cutoff = getTodayUtcDateOnly();
+  cutoff.setUTCDate(cutoff.getUTCDate() - safeDays);
 
-  const centerIds = user.role === "super_admin" ? undefined : user.centerIds;
+  const sessionWhere: Record<string, unknown> = {
+    isHoliday: false,
+    sessionDate: { gte: cutoff },
+  };
+  applyCenterScopeToWhere(user, sessionWhere, requestedCenterId);
 
-  const records = await prisma.attendanceRecord.findMany({
+  return prisma.attendanceRecord.findMany({
     where: {
       status: "absent",
-      session: {
-        sessionDate: { gte: cutoff },
-        ...(centerIds ? { centerId: { in: centerIds } } : {})
-      }
+      session: sessionWhere as never,
     },
     include: {
       student: { select: { id: true, fullName: true, rollNumber: true, guardianPhone: true } },
-      session: { select: { sessionDate: true, center: { select: { name: true } }, program: { select: { name: true } } } }
+      session: { select: { sessionDate: true, center: { select: { name: true } }, program: { select: { name: true } } } },
     },
     orderBy: {
-      session: { sessionDate: 'desc' }
-    }
+      session: { sessionDate: "desc" },
+    },
   });
-
-  return records;
 }

@@ -24,7 +24,7 @@ const scopedWhere = (user: TokenPayload, otherConditions: Record<string, unknown
   const baseFilter: Record<string, unknown> = { isActive: true };
   const scopedCenterIds = getScopedCenterIds(user);
 
-  if (scopedCenterIds !== null) {
+  if (scopedCenterIds !== undefined) {
     baseFilter.centerId = { in: scopedCenterIds };
   }
 
@@ -918,7 +918,7 @@ export const updateStudentFees = async (
 
 export const getDashboardStats = async (user: TokenPayload) => {
   const scopedCenterIds = getScopedCenterIds(user);
-  const centerFilter = scopedCenterIds !== null ? { centerId: { in: scopedCenterIds } } : {};
+  const centerFilter = scopedCenterIds !== undefined ? { centerId: { in: scopedCenterIds } } : {};
 
   const [totalStudents, attendanceRecords, skillLogs] = await Promise.all([
     prisma.student.count({ where: { isActive: true, ...centerFilter } }),

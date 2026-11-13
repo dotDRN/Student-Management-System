@@ -44,5 +44,25 @@ export const getTodayFreshSheet = (centerId: string, programId: string) =>
 export const markHoliday = (sessionId: string, isHoliday: boolean) =>
   api.put<Record<string, unknown>>(`/attendance/sessions/${sessionId}/holiday`, { isHoliday }).then((r) => r.data);
 
-export const getRecentAbsentees = (days: number = 7) =>
-  api.get<any[]>('/attendance/absentees', { params: { days } }).then((r) => r.data);
+export type RecentAbsenteeRecord = {
+  id: string;
+  status: string;
+  student?: {
+    id: string;
+    fullName: string;
+    rollNumber?: string | null;
+    guardianPhone?: string | null;
+  };
+  session?: {
+    sessionDate: string;
+    center?: { name: string };
+    program?: { name: string };
+  };
+};
+
+export const getRecentAbsentees = (days: number = 7, centerId?: string) =>
+  api
+    .get<RecentAbsenteeRecord[]>('/attendance/absentees', {
+      params: { days, ...(centerId ? { centerId } : {}) },
+    })
+    .then((r) => r.data);

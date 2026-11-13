@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { PageWrapper } from "../components/layout/PageWrapper";
 import { Card } from "../components/ui/Card";
 import { Input } from "../components/ui/Input";
@@ -6,6 +6,9 @@ import { Button } from "../components/ui/Button";
 import { LoadingSpinner } from "../components/ui/LoadingSpinner";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { useAuthStore } from "../store/useAuthStore";
+import { usePermission } from "../hooks/usePermission";
+import { getApiErrorMessage } from "../services/api";
+import { formatDate } from "../utils/date";
 import { listCenters, listPrograms } from "../services/centers.service";
 import {
   createAttendanceSession,
@@ -14,6 +17,7 @@ import {
   getTodayFreshSheet,
   markHoliday,
   getRecentAbsentees,
+  type RecentAbsenteeRecord,
 } from "../services/attendance.service";
 import type { CenterSummary, ProgramSummary } from "../types";
 
@@ -95,7 +99,9 @@ export function SegmentedSlider({
 
 export const Attendance: React.FC = () => {
   const selectedCenterId = useAuthStore((s) => s.selectedCenterId);
-  const isAdmin = useAuthStore((s) => ['super_admin', 'center_admin', 'tech_admin'].includes(s.currentUser?.role || ''));
+  const { can, isAdminRole } = usePermission();
+  const isAdmin = isAdminRole;
+  const canManageAttendance = can("manage", "attendance");
 
   const [centers, setCenters] = useState<CenterSummary[]>([]);
   const [programs, setPrograms] = useState<ProgramSummary[]>([]);
@@ -118,8 +124,16 @@ export const Attendance: React.FC = () => {
   const [isHoliday, setIsHoliday] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"mark" | "absentees">("mark");
-  const [absentees, setAbsentees] = useState<any[]>([]);
+  const [absentees, setAbsentees] = useState<RecentAbsenteeRecord[]>([]);
   const [loadingAbsentees, setLoadingAbsentees] = useState(false);
+
+  const clearLoadedSession = () => {
+    setSessionId(null);
+    setRows([]);
+    setSuccess(false);
+    setIsHoliday(false);
+    setIsEditing(true);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -134,8 +148,8 @@ export const Attendance: React.FC = () => {
           : (selectedCenterId ?? c[0]?.id ?? "");
         setCenterId(defaultCenter);
         setProgramId(p[0]?.id ?? "");
-      } catch {
-        if (alive) setError("Could not load centers or programs.");
+      } catch (err) {
+        if (alive) setError(getApiErrorMessage(err, "Could not load centers or programs."));
       } finally {
         if (alive) setBoot(false);
       }
@@ -145,22 +159,44 @@ export const Attendance: React.FC = () => {
     };
   }, [isAdmin, selectedCenterId]);
 
+  const loadAbsentees = useCallback(async () => {
+    setLoadingAbsentees(true);
+    setError(null);
+    try {
+      const data = await getRecentAbsentees(7, !isAdmin && centerId ? centerId : undefined);
+      setAbsentees(data);
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Could not load absentees."));
+    } finally {
+      setLoadingAbsentees(false);
+    }
+  }, [isAdmin, centerId]);
+
   useEffect(() => {
     if (activeTab === "absentees") {
       void loadAbsentees();
     }
-  }, [activeTab]);
+  }, [activeTab, loadAbsentees]);
 
-  const loadAbsentees = async () => {
-    setLoadingAbsentees(true);
-    try {
-      const data = await getRecentAbsentees(7);
-      setAbsentees(data);
-    } catch {
-      setError("Could not load absentees.");
-    } finally {
-      setLoadingAbsentees(false);
-    }
+  const refreshRows = async (sid: string) => {
+    const full = (await getAttendanceSessionById(sid)) as {
+      isHoliday?: boolean;
+      session?: { isHoliday?: boolean };
+      records?: Array<{
+        student?: { id: string; fullName: string; rollNumber?: string };
+        record?: { id: string; status: string | null };
+      }>;
+    };
+    setIsHoliday(Boolean(full.isHoliday ?? full.session?.isHoliday));
+    setRows(
+      (full.records ?? []).map((r) => ({
+        recordId: r.record?.id ?? "",
+        studentId: r.student?.id ?? "",
+        name: r.student?.fullName ?? "Student",
+        rollNumber: r.student?.rollNumber ?? "",
+        status: (r.record?.status as Row["status"]) ?? "pending",
+      })),
+    );
   };
 
   const loadSession = async () => {
@@ -178,7 +214,7 @@ export const Attendance: React.FC = () => {
       setSessionId(sid);
       setIsEditing(true);
       setSuccess(false);
-      setIsHoliday(res.session?.isHoliday || false);
+      setIsHoliday(Boolean(res.session?.isHoliday));
       await refreshRows(sid);
     } catch (e: unknown) {
       const ax = e as {
@@ -187,11 +223,10 @@ export const Attendance: React.FC = () => {
       if (ax.response?.status === 409 && ax.response.data?.session?.id) {
         const sid = ax.response.data.session.id;
         setSessionId(sid);
-        setIsHoliday(ax.response.data.session.isHoliday || false);
+        setIsHoliday(Boolean(ax.response.data.session.isHoliday));
         await refreshRows(sid);
       } else {
-        const msg = (e as any)?.response?.data?.message;
-        setError(msg || "Could not create or load session for this date.");
+        setError(getApiErrorMessage(e, "Could not create or load session for this date."));
       }
     } finally {
       setLoading(false);
@@ -203,16 +238,24 @@ export const Attendance: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const full = await getTodayFreshSheet(centerId, programId) as any;
+      const full = (await getTodayFreshSheet(centerId, programId)) as {
+        id?: string;
+        isHoliday?: boolean;
+        records?: Array<{
+          id?: string;
+          status?: Row["status"] | null;
+          student?: { id?: string; fullName?: string; rollNumber?: string | null };
+        }>;
+      };
       if (!full || !full.id) throw new Error("No session returned");
       setSessionId(full.id);
       setIsEditing(true);
       setSuccess(false);
-      setIsHoliday(full.isHoliday || false);
+      setIsHoliday(Boolean(full.isHoliday));
       setDate(getLocalDateStr());
-      
+
       setRows(
-        (full.records ?? []).map((r: any) => ({
+        (full.records ?? []).map((r) => ({
           recordId: r.id ?? "",
           studentId: r.student?.id ?? "",
           name: r.student?.fullName ?? "Student",
@@ -220,38 +263,16 @@ export const Attendance: React.FC = () => {
           status: r.status ?? "pending",
         })),
       );
-    } catch (e: any) {
-      setError(e?.response?.data?.message || "Could not load fresh sheet.");
+    } catch (e: unknown) {
+      setError(getApiErrorMessage(e, "Could not load fresh sheet."));
     } finally {
       setLoading(false);
     }
   };
 
-  const refreshRows = async (sid: string) => {
-    const full = (await getAttendanceSessionById(sid)) as {
-      isHoliday?: boolean;
-      records?: Array<{
-        student?: { id: string; fullName: string; rollNumber?: string };
-        record?: { id: string; status: string | null };
-      }>;
-    };
-    setIsHoliday(full.isHoliday || false);
-    setRows(
-      (full.records ?? []).map((r) => ({
-        recordId: r.record?.id ?? "",
-        studentId: r.student?.id ?? "",
-        name: r.student?.fullName ?? "Student",
-        rollNumber: r.student?.rollNumber ?? "",
-        status: (r.record?.status as Row["status"]) ?? "pending",
-      })),
-    );
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!sessionId) return;
-
-    if (!isEditing) return; // 🔒 prevents accidental submits
+  const handleSave = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!sessionId || !isEditing || !canManageAttendance) return;
 
     setLoading(true);
     setError(null);
@@ -267,23 +288,24 @@ export const Attendance: React.FC = () => {
 
       await updateAttendanceSessionRecords(sessionId, { records });
 
-      setIsEditing(false); // 🔒 lock after submit
-      setSuccess(true); // ✅ show success
-    } catch {
-      setError("Failed to save attendance.");
+      setIsEditing(false);
+      setSuccess(true);
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Failed to save attendance."));
     } finally {
       setLoading(false);
     }
   };
 
   const handleToggleHoliday = async () => {
-    if (!sessionId) return;
+    if (!sessionId || !canManageAttendance) return;
     setLoading(true);
+    setError(null);
     try {
       await markHoliday(sessionId, !isHoliday);
       setIsHoliday(!isHoliday);
-    } catch {
-      setError("Failed to mark holiday.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Failed to mark holiday."));
     } finally {
       setLoading(false);
     }
@@ -332,7 +354,10 @@ export const Attendance: React.FC = () => {
                 <select
                   className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
                   value={centerId}
-                  onChange={(e) => setCenterId(e.target.value)}
+                  onChange={(e) => {
+                    setCenterId(e.target.value);
+                    clearLoadedSession();
+                  }}
                   disabled={centers.length <= 1}
                 >
                   {centers.map((c) => (
@@ -349,7 +374,10 @@ export const Attendance: React.FC = () => {
                 <select
                   className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
                   value={programId}
-                  onChange={(e) => setProgramId(e.target.value)}
+                  onChange={(e) => {
+                    setProgramId(e.target.value);
+                    clearLoadedSession();
+                  }}
                 >
                   {programs.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -363,7 +391,10 @@ export const Attendance: React.FC = () => {
               <Input
                 type="date"
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  clearLoadedSession();
+                }}
                 className="max-w-xs"
               />
               <Button
@@ -371,6 +402,7 @@ export const Attendance: React.FC = () => {
                 variant="secondary"
                 onClick={() => void loadSession()}
                 isLoading={loading}
+                disabled={!canManageAttendance}
               >
                 Load Session
               </Button>
@@ -379,6 +411,7 @@ export const Attendance: React.FC = () => {
                 variant="primary"
                 onClick={() => void loadFreshSheet()}
                 isLoading={loading}
+                disabled={!canManageAttendance}
               >
                 Load Today's Sheet
               </Button>
@@ -393,8 +426,8 @@ export const Attendance: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={isHoliday}
-                    onChange={handleToggleHoliday}
-                    disabled={loading}
+                    onChange={() => void handleToggleHoliday()}
+                    disabled={loading || !canManageAttendance}
                     className="rounded border-neutral-300 text-primary focus:ring-primary"
                   />
                   Mark as Holiday
@@ -449,9 +482,9 @@ export const Attendance: React.FC = () => {
                       <Button
                         type="button"
                         variant="primary"
-                        onClick={handleSave} // Explicitly call handleSave
+                        onClick={() => void handleSave()}
                         isLoading={loading}
-                        disabled={!rows.length}
+                        disabled={!rows.length || !canManageAttendance}
                       >
                         Submit Attendance
                       </Button>
@@ -459,9 +492,10 @@ export const Attendance: React.FC = () => {
                       <Button
                         type="button"
                         variant="secondary"
+                        disabled={!canManageAttendance}
                         onClick={async () => {
                           setLoading(true);
-                          await refreshRows(sessionId!); // Reload fresh data from server
+                          await refreshRows(sessionId!);
                           setIsEditing(true);
                           setSuccess(false);
                           setLoading(false);
@@ -514,7 +548,7 @@ export const Attendance: React.FC = () => {
                       Absent
                     </span>
                     <p className="text-xs text-neutral-500 mt-1">
-                      {new Date(record.session?.sessionDate).toLocaleDateString()}
+                      {record.session?.sessionDate ? formatDate(record.session.sessionDate) : '—'}
                     </p>
                   </div>
                 </div>

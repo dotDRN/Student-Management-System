@@ -183,7 +183,7 @@ export async function getPendingSessionsController(
 ) {
   try {
     const result = await getPendingSessions(
-      (req as AuthenticatedRequest).user!.userId,
+      (req as AuthenticatedRequest).user!,
     );
     return res.status(200).json({ sessions: result });
   } catch (error) {
@@ -237,9 +237,11 @@ export async function getRecentAbsenteesController(
 ) {
   try {
     const days = req.query.days ? parseInt(req.query.days as string, 10) : 7;
+    const centerId = req.query.centerId as string | undefined;
     const result = await getRecentAbsentees(
       (req as AuthenticatedRequest).user!,
       days,
+      centerId,
     );
     return res.status(200).json(result);
   } catch (error) {
