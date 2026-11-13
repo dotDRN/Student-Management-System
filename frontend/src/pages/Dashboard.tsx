@@ -8,10 +8,18 @@ import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { Users, BookOpen, PlusCircle, Trash2, TrendingUp, Target, Activity } from 'lucide-react';
 import { getReportsDashboard } from '../services/reports.service';
+import { createCenter, deleteCenter } from '../services/centers.service';
+import { getApiErrorMessage } from '../services/api';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { useToast } from '../hooks/useToast';
+import { usePermission } from '../hooks/usePermission';
 
 export const Dashboard: React.FC = () => {
   const currentUser = useAuthStore((s) => s.currentUser);
   const isAdmin = ['super_admin', 'center_admin', 'tech_admin'].includes(currentUser?.role || '');
+  const { can } = usePermission();
+  const canManageCenters = can('manage', 'centers');
+  const toast = useToast();
   const navigate = useNavigate();
 
   const [data, setData] = useState<Record<string, unknown> | null>(null);
@@ -24,14 +32,17 @@ export const Dashboard: React.FC = () => {
   const [centerLocation, setCenterLocation] = useState('');
   const [addingCenter, setAddingCenter] = useState(false);
 
+  // Deactivate Center Confirmation State
+  const [centerToDeactivate, setCenterToDeactivate] = useState<{ id: string; name: string } | null>(null);
+
   const fetchDashboardData = async () => {
     setLoading(true);
     setError(null);
     try {
       const d = await getReportsDashboard();
       setData(d);
-    } catch {
-      setError('Failed to load dashboard.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load dashboard.'));
     } finally {
       setLoading(false);
     }
@@ -45,17 +56,35 @@ export const Dashboard: React.FC = () => {
     e.preventDefault();
     setAddingCenter(true);
     try {
-      const m = await import('../services/centers.service');
-      await m.createCenter({ name: centerName, location: centerLocation });
+      await createCenter({ name: centerName.trim(), location: centerLocation.trim() || undefined });
       setShowCenterModal(false);
       setCenterName('');
       setCenterLocation('');
+      toast.success({ title: 'Center created' });
       void fetchDashboardData();
-    } catch (error: unknown) {
-      const message = (error as { response?: { data?: { message?: string }}})?.response?.data?.message || 'Failed to add center. Please check your permissions.';
-      alert(message);
+    } catch (err: unknown) {
+      toast.error({
+        title: 'Failed to add center',
+        description: getApiErrorMessage(err, 'Please check your permissions.'),
+      });
     } finally {
       setAddingCenter(false);
+    }
+  };
+
+  const handleConfirmDeactivateCenter = async () => {
+    if (!centerToDeactivate) return;
+    const target = centerToDeactivate;
+    setCenterToDeactivate(null);
+    try {
+      await deleteCenter(target.id);
+      toast.success({ title: 'Center deactivated', description: `${target.name} has been archived.` });
+      void fetchDashboardData();
+    } catch (err: unknown) {
+      toast.error({
+        title: 'Failed to deactivate center',
+        description: getApiErrorMessage(err, 'Cannot deactivate center.'),
+      });
     }
   };
 
@@ -64,7 +93,7 @@ export const Dashboard: React.FC = () => {
       title="Dashboard Overview"
       actions={
         <div className="flex gap-2">
-          {isAdmin && (
+          {canManageCenters && (
             <Button variant="secondary" size="sm" className="hidden sm:flex" onClick={() => setShowCenterModal(true)}>
               <PlusCircle size={16} className="mr-2" />
               Add Center
@@ -206,24 +235,21 @@ export const Dashboard: React.FC = () => {
                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-tighter">
                             {String(c.studentCount)} Students
                           </span>
-                          <button
-                            title="Remove Center"
-                            className="text-neutral-300 hover:text-danger transition-colors p-1 opacity-0 group-hover:opacity-100"
-                            onClick={async () => {
-                              if (confirm(`Are you sure you want to delete ${String(c.name)}?`)) {
-                                try {
-                                  const m = await import('../services/centers.service');
-                                  await m.deleteCenter(String(c.centerId));
-                                  void fetchDashboardData();
-                                } catch (error: unknown) {
-                                  const message = (error as { response?: { data?: { message?: string }}})?.response?.data?.message || 'Failed to delete center.';
-                                  alert(message);
-                                }
+                          {canManageCenters && (
+                            <button
+                              type="button"
+                              title="Deactivate Center"
+                              className="text-neutral-300 hover:text-danger transition-colors p-1 opacity-0 group-hover:opacity-100"
+                              onClick={() =>
+                                setCenterToDeactivate({
+                                  id: String(c.centerId),
+                                  name: String(c.name),
+                                })
                               }
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div className="w-full bg-neutral-100 h-1.5 rounded-full overflow-hidden">
@@ -258,6 +284,15 @@ export const Dashboard: React.FC = () => {
           )}
         </>
       )}
+      <ConfirmModal
+        open={Boolean(centerToDeactivate)}
+        title="Deactivate Center"
+        message={`Are you sure you want to deactivate ${centerToDeactivate?.name ?? 'this center'}? Historical records remain preserved, and centers with active students cannot be deactivated.`}
+        confirmLabel="Deactivate"
+        variant="danger"
+        onConfirm={() => void handleConfirmDeactivateCenter()}
+        onCancel={() => setCenterToDeactivate(null)}
+      />
     </PageWrapper>
   );
 };

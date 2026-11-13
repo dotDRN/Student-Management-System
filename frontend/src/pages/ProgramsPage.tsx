@@ -8,6 +8,8 @@ import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { Input } from '../components/ui/Input';
 import { BookOpen, Plus, ArrowLeft, GraduationCap, Building2, Users } from 'lucide-react';
 import { listPrograms, getProgramDetails, createProgram } from '../services/centers.service';
+import { getApiErrorMessage } from '../services/api';
+import { usePermission } from '../hooks/usePermission';
 import type { ProgramSummary } from '../types';
 
 interface ProgramDetail {
@@ -24,6 +26,8 @@ interface ProgramDetail {
 
 export const ProgramsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { can } = usePermission();
+  const canManageCenters = can('manage', 'centers');
   const [programs, setPrograms] = useState<ProgramSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,8 +48,8 @@ export const ProgramsPage: React.FC = () => {
     try {
       const data = await listPrograms();
       setPrograms(Array.isArray(data) ? data : []);
-    } catch {
-      setError('Failed to load programs.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load programs.'));
     } finally {
       setLoading(false);
     }
@@ -58,28 +62,35 @@ export const ProgramsPage: React.FC = () => {
     try {
       const detail = await getProgramDetails(programId);
       setSelectedProgram(detail);
-    } catch {
-      setError('Failed to load program details.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load program details.'));
     }
   };
 
   const handleCreateProgram = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formCode.trim() || !formName.trim()) return;
+    const minAge = formAgeMin !== '' ? Number(formAgeMin) : undefined;
+    const maxAge = formAgeMax !== '' ? Number(formAgeMax) : undefined;
+    if (minAge !== undefined && maxAge !== undefined && minAge > maxAge) {
+      setError('Minimum age cannot exceed maximum age.');
+      return;
+    }
     setFormSaving(true);
+    setError(null);
     try {
       await createProgram({
         code: formCode.trim(),
         name: formName.trim(),
         description: formDesc.trim() || undefined,
-        ageMin: formAgeMin ? Number(formAgeMin) : undefined,
-        ageMax: formAgeMax ? Number(formAgeMax) : undefined,
+        ageMin: minAge,
+        ageMax: maxAge,
       });
       setFormCode(''); setFormName(''); setFormDesc(''); setFormAgeMin(''); setFormAgeMax('');
       setShowForm(false);
       await load();
-    } catch {
-      setError('Failed to create program.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to create program.'));
     } finally {
       setFormSaving(false);
     }
@@ -178,9 +189,11 @@ export const ProgramsPage: React.FC = () => {
     <PageWrapper
       title="Program Management"
       actions={
-        <Button variant="primary" onClick={() => setShowForm(true)}>
-          <Plus size={16} className="mr-2" /> Add Program
-        </Button>
+        canManageCenters ? (
+          <Button variant="primary" onClick={() => setShowForm(true)}>
+            <Plus size={16} className="mr-2" /> Add Program
+          </Button>
+        ) : undefined
       }
     >
       {error && <div className="mb-4"><ErrorMessage message={error} /></div>}

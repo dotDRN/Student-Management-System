@@ -1,7 +1,8 @@
 ﻿import { Prisma } from "@prisma/client";
 import type { JwtPayload } from '../utils/jwt.js';
 import prisma from '../lib/prisma.js';
-import { AppError, NotFoundError } from '../lib/errors.js';
+import { AppError, NotFoundError, ValidationError } from '../lib/errors.js';
+import { getScopedCenterIds, isGlobalAdmin } from '../config/rbac.js';
 
 function activeAssignmentWhere(userId?: string) {
   return {
@@ -11,9 +12,12 @@ function activeAssignmentWhere(userId?: string) {
 }
 
 export async function listCenters(user: JwtPayload) {
-  // Temporary: Just fetch all active centers to see if they show up
-  const centers = await prisma.center.findMany({
-    where: { isActive: true },
+  const scopedIds = getScopedCenterIds(user);
+  return prisma.center.findMany({
+    where: {
+      isActive: true,
+      ...(scopedIds !== undefined ? { id: { in: scopedIds } } : {}),
+    },
     orderBy: { name: "asc" },
     include: {
       centerPrograms: {
@@ -22,16 +26,14 @@ export async function listCenters(user: JwtPayload) {
       },
     },
   });
-
-  console.log("Total centers found in DB:", centers.length);
-  return centers ; // This matches your frontend mapping
 }
 
 export async function getCenterDetails(user: JwtPayload, centerId: string) {
-  const requesterId = user.userId || (user as any).id;
+  const requesterId = user.userId;
 
-  // 1. Permission Check â€” Admins see all centers
-  if (user.role !== "super_admin" && user.role !== "center_admin") {
+  // Center-scoped users (including center_admin, supervisor, teacher, staff)
+  // must have an active assignment to the requested center.
+  if (!isGlobalAdmin(user.role)) {
     const isAssigned = await prisma.userCenterAssignment.findFirst({
       where: {
         centerId,
@@ -41,7 +43,7 @@ export async function getCenterDetails(user: JwtPayload, centerId: string) {
     });
 
     if (!isAssigned) {
-      throw new NotFoundError("Center"); // Or ForbiddenError
+      throw new NotFoundError("Center");
     }
   }
 
@@ -71,7 +73,7 @@ export async function getCenterDetails(user: JwtPayload, centerId: string) {
     },
   });
   const teachers = assignments
-    .filter((a) => ['teacher', 'staff'].includes(a.user.role))
+    .filter((a) => a.user.isActive && ['teacher', 'staff', 'supervisor'].includes(a.user.role))
     .map((a) => a.user);
 
   // 4. Fetch students enrolled in this center
@@ -95,25 +97,60 @@ export async function getCenterDetails(user: JwtPayload, centerId: string) {
   };
 }
 
-export async function createCenter(input: { name: string; location?: string }) {
-  return prisma.center.create({
-    data: {
-      name: input.name,
-      location: input.location ?? null,
-    },
+export async function createCenter(
+  input: { name: string; location?: string },
+  user?: JwtPayload,
+) {
+  const name = input.name?.trim();
+  if (!name) {
+    throw new ValidationError("Center name is required");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const center = await tx.center.create({
+      data: {
+        name,
+        location: input.location?.trim() || null,
+      },
+    });
+
+    if (user && !isGlobalAdmin(user.role)) {
+      await tx.userCenterAssignment.create({
+        data: {
+          userId: user.userId,
+          centerId: center.id,
+          createdBy: user.userId,
+          validFrom: new Date(),
+        },
+      });
+    }
+
+    return center;
   });
 }
 
 export async function deleteCenter(centerId: string) {
+  const center = await prisma.center.findUnique({ where: { id: centerId } });
+  if (!center) throw new NotFoundError("Center");
+
   const activeStudents = await prisma.student.count({
     where: { centerId, isActive: true },
   });
   if (activeStudents > 0) {
-    throw new AppError("Cannot delete center with active students", 409);
+    throw new AppError("Cannot deactivate center with active students", 409);
   }
 
-  return prisma.center.delete({
-    where: { id: centerId },
+  // Soft-deactivate center so historical attendance, exams, and audit logs remain intact
+  return prisma.$transaction(async (tx) => {
+    await tx.centerProgram.updateMany({
+      where: { centerId, isActive: true },
+      data: { isActive: false },
+    });
+
+    return tx.center.update({
+      where: { id: centerId },
+      data: { isActive: false },
+    });
   });
 }
 
@@ -121,20 +158,30 @@ export async function updateCenter(
   centerId: string,
   input: { name?: string; location?: string; isActive?: boolean },
 ) {
-  await prisma.center.findUniqueOrThrow({ where: { id: centerId } });
+  const existing = await prisma.center.findUnique({ where: { id: centerId } });
+  if (!existing) throw new NotFoundError("Center");
+
+  if (input.name !== undefined && !input.name.trim()) {
+    throw new ValidationError("Center name cannot be empty");
+  }
+
   return prisma.center.update({
     where: { id: centerId },
     data: {
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.location !== undefined ? { location: input.location } : {}),
+      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+      ...(input.location !== undefined ? { location: input.location.trim() || null } : {}),
       ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
     },
   });
 }
 
 export async function assignProgramToCenter(centerId: string, programId: string) {
-  await prisma.center.findUniqueOrThrow({ where: { id: centerId } });
-  await prisma.program.findUniqueOrThrow({ where: { id: programId } });
+  const [center, program] = await Promise.all([
+    prisma.center.findUnique({ where: { id: centerId }, select: { id: true } }),
+    prisma.program.findUnique({ where: { id: programId }, select: { id: true } }),
+  ]);
+  if (!center) throw new NotFoundError("Center");
+  if (!program) throw new NotFoundError("Program");
 
   const existing = await prisma.centerProgram.findFirst({
     where: { centerId, programId },
@@ -180,8 +227,12 @@ export async function assignUserToCenter(
   centerId: string,
   input: { userId: string; validFrom?: string; validUntil?: string },
 ) {
-  await prisma.center.findUniqueOrThrow({ where: { id: centerId } });
-  await prisma.user.findUniqueOrThrow({ where: { id: input.userId } });
+  const [center, targetUser] = await Promise.all([
+    prisma.center.findUnique({ where: { id: centerId }, select: { id: true } }),
+    prisma.user.findUnique({ where: { id: input.userId }, select: { id: true } }),
+  ]);
+  if (!center) throw new NotFoundError("Center");
+  if (!targetUser) throw new NotFoundError("User");
 
   const validFrom = input.validFrom ? new Date(input.validFrom) : undefined;
   const validUntil = input.validUntil ? new Date(input.validUntil) : null;
@@ -245,14 +296,23 @@ export async function createProgram(input: {
   ageMax?: number;
   description?: string;
 }) {
+  const code = input.code?.trim();
+  const name = input.name?.trim();
+  if (!code || !name) {
+    throw new ValidationError("Program code and name are required");
+  }
+  if (input.ageMin !== undefined && input.ageMax !== undefined && input.ageMin > input.ageMax) {
+    throw new ValidationError("Minimum age cannot exceed maximum age");
+  }
+
   try {
     return await prisma.program.create({
       data: {
-        code: input.code,
-        name: input.name,
+        code,
+        name,
         ageMin: input.ageMin ?? null,
         ageMax: input.ageMax ?? null,
-        description: input.description ?? null,
+        description: input.description?.trim() ?? null,
       },
     });
   } catch (error) {
@@ -265,51 +325,69 @@ export async function createProgram(input: {
 
 export async function updateProgram(
   programId: string,
-  input: { name?: string; ageMin?: number; ageMax?: number; description?: string; isActive?: boolean },
+  input: { name?: string; ageMin?: number | null; ageMax?: number | null; description?: string | null; isActive?: boolean },
 ) {
-  await prisma.program.findUniqueOrThrow({ where: { id: programId } });
+  const existing = await prisma.program.findUnique({ where: { id: programId } });
+  if (!existing) throw new NotFoundError("Program");
+
+  const nextMin = input.ageMin !== undefined ? input.ageMin : existing.ageMin;
+  const nextMax = input.ageMax !== undefined ? input.ageMax : existing.ageMax;
+  if (nextMin !== null && nextMax !== null && nextMin > nextMax) {
+    throw new ValidationError("Minimum age cannot exceed maximum age");
+  }
+
   return prisma.program.update({
     where: { id: programId },
     data: {
-      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.name !== undefined ? { name: input.name.trim() } : {}),
       ...(input.ageMin !== undefined ? { ageMin: input.ageMin } : {}),
       ...(input.ageMax !== undefined ? { ageMax: input.ageMax } : {}),
-      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.description !== undefined ? { description: input.description?.trim() ?? null } : {}),
       ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
     },
   });
 }
 
-export async function getProgramDetails(programId: string) {
+export async function getProgramDetails(programId: string, user?: JwtPayload) {
+  const scopedIds = getScopedCenterIds(user);
+  const centerFilter = scopedIds !== undefined ? { centerId: { in: scopedIds } } : {};
+
   const program = await prisma.program.findUnique({
     where: { id: programId },
     include: {
       centerPrograms: {
-        where: { isActive: true },
+        where: { isActive: true, ...centerFilter },
         include: { center: { select: { id: true, name: true, location: true } } },
       },
     },
   });
   if (!program) throw new NotFoundError("Program");
 
-  const students = await prisma.student.findMany({
-    where: { programId, isActive: true },
-    select: { id: true, fullName: true, rollNumber: true, centerId: true },
-    orderBy: { fullName: 'asc' },
-    take: 200,
-  });
-
-  const studentCount = await prisma.student.count({
-    where: { programId, isActive: true },
-  });
+  const [students, studentCount] = await Promise.all([
+    prisma.student.findMany({
+      where: { programId, isActive: true, ...centerFilter },
+      select: { id: true, fullName: true, rollNumber: true, centerId: true },
+      orderBy: { fullName: 'asc' },
+      take: 200,
+    }),
+    prisma.student.count({
+      where: { programId, isActive: true, ...centerFilter },
+    }),
+  ]);
 
   return { ...program, students, studentCount };
 }
 
-export async function getProgramCenters(programId: string) {
-  await prisma.program.findUniqueOrThrow({ where: { id: programId } });
+export async function getProgramCenters(programId: string, user?: JwtPayload) {
+  const program = await prisma.program.findUnique({ where: { id: programId }, select: { id: true } });
+  if (!program) throw new NotFoundError("Program");
+  const scopedIds = getScopedCenterIds(user);
   return prisma.centerProgram.findMany({
-    where: { programId, isActive: true },
+    where: {
+      programId,
+      isActive: true,
+      ...(scopedIds !== undefined ? { centerId: { in: scopedIds } } : {}),
+    },
     include: {
       center: true,
       program: true,

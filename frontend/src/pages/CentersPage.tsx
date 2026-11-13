@@ -7,7 +7,9 @@ import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { Building2, Plus, MapPin, Users, GraduationCap, ArrowLeft, UserCircle } from 'lucide-react';
 import { listCenters, getCenterDetails, createCenter } from '../services/centers.service';
+import { getApiErrorMessage } from '../services/api';
 import { Input } from '../components/ui/Input';
+import { usePermission } from '../hooks/usePermission';
 import type { CenterSummary } from '../types';
 
 interface CenterDetail {
@@ -24,13 +26,15 @@ interface CenterDetail {
 
 export const CentersPage: React.FC = () => {
   const navigate = useNavigate();
+  const { can } = usePermission();
+  const canManageCenters = can('manage', 'centers');
   const [centers, setCenters] = useState<CenterSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Detail view
   const [selectedCenter, setSelectedCenter] = useState<CenterDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [loadingCenterId, setLoadingCenterId] = useState<string | null>(null);
 
   // Add form
   const [showForm, setShowForm] = useState(false);
@@ -44,8 +48,8 @@ export const CentersPage: React.FC = () => {
     try {
       const data = await listCenters();
       setCenters(Array.isArray(data) ? data : []);
-    } catch {
-      setError('Failed to load centers.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load centers.'));
     } finally {
       setLoading(false);
     }
@@ -54,15 +58,15 @@ export const CentersPage: React.FC = () => {
   useEffect(() => { void load(); }, [load]);
 
   const handleSelectCenter = async (centerId: string) => {
-    setDetailLoading(true);
+    setLoadingCenterId(centerId);
     setError(null);
     try {
       const detail = await getCenterDetails(centerId);
       setSelectedCenter(detail);
-    } catch {
-      setError('Failed to load center details.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load center details.'));
     } finally {
-      setDetailLoading(false);
+      setLoadingCenterId(null);
     }
   };
 
@@ -70,14 +74,15 @@ export const CentersPage: React.FC = () => {
     e.preventDefault();
     if (!formName.trim()) return;
     setFormSaving(true);
+    setError(null);
     try {
       await createCenter({ name: formName.trim(), location: formLocation.trim() || undefined });
       setFormName('');
       setFormLocation('');
       setShowForm(false);
       await load();
-    } catch {
-      setError('Failed to create center.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to create center.'));
     } finally {
       setFormSaving(false);
     }
@@ -188,9 +193,11 @@ export const CentersPage: React.FC = () => {
     <PageWrapper
       title="Center Management"
       actions={
-        <Button variant="primary" onClick={() => setShowForm(true)}>
-          <Plus size={16} className="mr-2" /> Add New Center
-        </Button>
+        canManageCenters ? (
+          <Button variant="primary" onClick={() => setShowForm(true)}>
+            <Plus size={16} className="mr-2" /> Add New Center
+          </Button>
+        ) : undefined
       }
     >
       {error && <div className="mb-4"><ErrorMessage message={error} /></div>}
@@ -238,7 +245,7 @@ export const CentersPage: React.FC = () => {
                   )}
                 </div>
               </div>
-              {detailLoading && (
+              {loadingCenterId === c.id && (
                 <div className="mt-3 text-xs text-neutral-400">Loading...</div>
               )}
             </Card>

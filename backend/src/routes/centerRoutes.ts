@@ -4,7 +4,12 @@ import { requirePermission } from '../middleware/permission.middleware.js';
 import { requireCenterAccess } from '../middleware/center.middleware.js';
 import { PERMISSIONS } from '../config/rbac.js';
 import { validate } from '../middleware/validate.js';
-import { createCenterSchema, createProgramSchema } from '../validators/schemas.js';
+import {
+  createCenterSchema,
+  createProgramSchema,
+  updateCenterSchema,
+  updateProgramSchema,
+} from '../validators/schemas.js';
 import {
   assignProgramController,
   assignUserController,
@@ -35,7 +40,7 @@ centerRoutes.get("/:centerId", getCenterController);
 
 centerRoutes.post("/", requirePermission(PERMISSIONS.MANAGE_CENTERS), validate(createCenterSchema), createCenterController);
 centerRoutes.delete("/:centerId", requirePermission(PERMISSIONS.MANAGE_CENTERS), deleteCenterController);
-centerRoutes.put("/:centerId", requirePermission(PERMISSIONS.MANAGE_CENTERS), updateCenterController);
+centerRoutes.put("/:centerId", requirePermission(PERMISSIONS.MANAGE_CENTERS), validate(updateCenterSchema), updateCenterController);
 
 centerRoutes.post("/:centerId/programs", requirePermission(PERMISSIONS.MANAGE_CENTERS), assignProgramController);
 centerRoutes.delete(
@@ -49,7 +54,7 @@ centerRoutes.delete("/:centerId/users/:userId", requirePermission(PERMISSIONS.MA
 programRoutes.get("/", listProgramsController);
 programRoutes.get("/:programId", getProgramDetailsController);
 programRoutes.post("/", requirePermission(PERMISSIONS.MANAGE_CENTERS), validate(createProgramSchema), createProgramController);
-programRoutes.put("/:programId", requirePermission(PERMISSIONS.MANAGE_CENTERS), updateProgramController);
+programRoutes.put("/:programId", requirePermission(PERMISSIONS.MANAGE_CENTERS), validate(updateProgramSchema), updateProgramController);
 programRoutes.get("/:programId/centers", requirePermission(PERMISSIONS.MANAGE_CENTERS), programCentersController);
 
 export { programRoutes };

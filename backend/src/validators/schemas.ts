@@ -118,14 +118,43 @@ export const createCareerSchema = z.object({
 });
 
 export const createCenterSchema = z.object({
-  name: z.string().min(2, "Center name must be at least 2 characters"),
-  location: z.string().optional(),
+  name: z.string().trim().min(2, "Center name must be at least 2 characters"),
+  location: z.string().trim().optional(),
 });
 
-export const createProgramSchema = z.object({
-  code: z.string().min(1, "Program code is required"),
-  name: z.string().min(2, "Program name must be at least 2 characters"),
-  ageMin: z.number().int().min(0).optional(),
-  ageMax: z.number().int().min(0).optional(),
-  description: z.string().optional(),
+export const updateCenterSchema = z.object({
+  name: z.string().trim().min(2, "Center name must be at least 2 characters").optional(),
+  location: z.string().trim().optional(),
+  isActive: z.boolean().optional(),
 });
+
+export const createProgramSchema = z
+  .object({
+    code: z.string().trim().min(1, "Program code is required"),
+    name: z.string().trim().min(2, "Program name must be at least 2 characters"),
+    ageMin: z.number().int().min(0).optional(),
+    ageMax: z.number().int().min(0).optional(),
+    description: z.string().trim().optional(),
+  })
+  .refine(
+    (d) => d.ageMin === undefined || d.ageMax === undefined || d.ageMin <= d.ageMax,
+    "Minimum age cannot exceed maximum age",
+  );
+
+export const updateProgramSchema = z
+  .object({
+    name: z.string().trim().min(2, "Program name must be at least 2 characters").optional(),
+    ageMin: z.number().int().min(0).nullable().optional(),
+    ageMax: z.number().int().min(0).nullable().optional(),
+    description: z.string().trim().nullable().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine(
+    (d) =>
+      d.ageMin === undefined ||
+      d.ageMax === undefined ||
+      d.ageMin === null ||
+      d.ageMax === null ||
+      d.ageMin <= d.ageMax,
+    "Minimum age cannot exceed maximum age",
+  );

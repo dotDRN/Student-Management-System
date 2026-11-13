@@ -42,7 +42,7 @@ export async function getCenterController(req: Request, res: Response, next: Nex
 
 export async function createCenterController(req: Request, res: Response, next: NextFunction) {
   try {
-    const center = await createCenter(req.body);
+    const center = await createCenter(req.body, (req as AuthenticatedRequest).user);
     return res.status(201).json(center);
   } catch (error) {
     return next(error);
@@ -142,7 +142,10 @@ export async function updateProgramController(req: Request, res: Response, next:
 
 export async function programCentersController(req: Request, res: Response, next: NextFunction) {
   try {
-    const rows = await getProgramCenters(req.params.programId as string);
+    const rows = await getProgramCenters(
+      req.params.programId as string,
+      (req as AuthenticatedRequest).user,
+    );
     return res.status(200).json(rows);
   } catch (error) {
     return next(error);
@@ -151,7 +154,10 @@ export async function programCentersController(req: Request, res: Response, next
 
 export async function getProgramDetailsController(req: Request, res: Response, next: NextFunction) {
   try {
-    const details = await getProgramDetails(req.params.programId as string);
+    const details = await getProgramDetails(
+      req.params.programId as string,
+      (req as AuthenticatedRequest).user,
+    );
     return res.status(200).json(details);
   } catch (error) {
     return next(error);

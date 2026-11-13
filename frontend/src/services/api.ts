@@ -98,4 +98,14 @@ api.interceptors.response.use(
   }
 );
 
+export function getApiErrorMessage(err: unknown, fallback = "Request failed"): string {
+  const responseData = (
+    err as { response?: { data?: { error?: string; message?: string } } }
+  )?.response?.data;
+  if (responseData?.error) return responseData.error;
+  if (responseData?.message) return responseData.message;
+  if (err instanceof Error && err.message) return err.message;
+  return fallback;
+}
+
 export default api;
