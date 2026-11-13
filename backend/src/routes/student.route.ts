@@ -39,6 +39,7 @@ import {
   createSkillSchema,
   createStudentSchema,
   requestTransferSchema,
+  updateSkillSchema,
   updateStudentFeesSchema,
   updateStudentSchema,
 } from '../validators/schemas.js';
@@ -104,7 +105,7 @@ router.put("/attendance/:id", requirePermission(PERMISSIONS.MANAGE_ATTENDANCE), 
 // 6. Skills
 router.post("/:studentId/skills", requirePermission(PERMISSIONS.MANAGE_SKILLS), validate(createSkillSchema), addSkill);
 router.get("/:studentId/skills", getSkillsByStudent);
-router.put("/skills/:id", requirePermission(PERMISSIONS.MANAGE_SKILLS), validate(createSkillSchema), updateSkill);
+router.put("/skills/:id", requirePermission(PERMISSIONS.MANAGE_SKILLS), validate(updateSkillSchema), updateSkill);
 router.delete("/skills/:id", requirePermission(PERMISSIONS.MANAGE_SKILLS), deleteSkill);
 
 // 7. Careers

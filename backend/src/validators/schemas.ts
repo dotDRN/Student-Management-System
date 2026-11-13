@@ -151,8 +151,16 @@ export const upsertExamScoresSchema = z.object({
 
 export const createSkillSchema = z.object({
   skillId: uuid,
-  level: z.number().int().min(1).max(5),
-  remarks: z.string().optional(),
+  level: z.coerce.number().int().min(1, "Level must be at least 1").max(100),
+  remarks: preprocessEmptyToNull(z.string().trim().min(1)),
+  assessedOn: preprocessEmptyToUndefined(optionalDateString),
+});
+
+export const updateSkillSchema = z.object({
+  skillId: uuid.optional(),
+  level: z.coerce.number().int().min(1, "Level must be at least 1").max(100).optional(),
+  remarks: preprocessEmptyToNull(z.string().trim().min(1)),
+  assessedOn: preprocessEmptyToUndefined(optionalDateString),
 });
 
 export const createCareerSchema = z.object({

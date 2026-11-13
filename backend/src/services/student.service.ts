@@ -15,6 +15,12 @@ import {
   updateStudentFeesSchema,
   updateStudentSchema,
 } from '../validators/schemas.js';
+import {
+  createSkillLog,
+  deleteSkillLog,
+  getSkillsByStudent as getSkillLogsByStudent,
+  updateSkillLog,
+} from './skillService.js';
 
 /**
  * SCOPED WHERE: The core of the data visibility logic.
@@ -540,52 +546,17 @@ export const updateAttendance = async (user: TokenPayload, id: string, data: any
    SKILLS
 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-export const addSkill = async (user: TokenPayload, studentId: string, data: any) => {
-  const student = await getStudentById(user, studentId);
-  return prisma.studentSkillLog.create({
-    data: {
-      studentId: student.id,
-      centerId: student.centerId,
-      skillId: data.skillId,
-      level: data.level,
-      remarks: data.remarks,
-      assessedBy: user.userId,
-    },
-    include: { skill: true, assessedByUser: { select: { fullName: true } } },
-  });
-};
+export const addSkill = async (user: TokenPayload, studentId: string, data: unknown) =>
+  createSkillLog(user, studentId, data);
 
-export const getSkillsByStudent = async (user: TokenPayload, studentId: string) => {
-  const student = await getStudentById(user, studentId);
-  return prisma.studentSkillLog.findMany({
-    where: { studentId: student.id },
-    include: { skill: true, assessedByUser: { select: { fullName: true } } },
-    orderBy: { assessedOn: "desc" },
-  });
-};
+export const getSkillsByStudent = async (user: TokenPayload, studentId: string) =>
+  getSkillLogsByStudent(user, studentId);
 
-export const updateSkill = async (user: TokenPayload, id: string, data: any) => {
-  const log = await prisma.studentSkillLog.findUnique({ where: { id } });
-  if (!log) throw new NotFoundError("Skill log");
-  assertCenterAccess(user, log.centerId, "You are not authorized to update skill logs for this center");
+export const updateSkill = async (user: TokenPayload, id: string, data: unknown) =>
+  updateSkillLog(user, id, data);
 
-  return prisma.studentSkillLog.update({
-    where: { id },
-    data: {
-      ...(data.skillId !== undefined ? { skillId: data.skillId } : {}),
-      ...(data.level !== undefined ? { level: data.level } : {}),
-      ...(data.remarks !== undefined ? { remarks: data.remarks } : {}),
-    },
-    include: { skill: true, assessedByUser: { select: { fullName: true } } },
-  });
-};
-
-export const deleteSkill = async (user: TokenPayload, id: string) => {
-  const log = await prisma.studentSkillLog.findUnique({ where: { id } });
-  if (!log) throw new NotFoundError("Skill log");
-  assertCenterAccess(user, log.centerId, "You are not authorized to delete skill logs for this center");
-  return prisma.studentSkillLog.delete({ where: { id } });
-};
+export const deleteSkill = async (user: TokenPayload, id: string) =>
+  deleteSkillLog(user, id);
 
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    CAREERS (Linked to Forms)

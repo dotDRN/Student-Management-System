@@ -176,11 +176,28 @@ export interface ProgramSummary {
   studentCount?: number;
 }
 
+export interface SkillDefinition {
+  id: string;
+  programId: string;
+  name: string;
+  description?: string | null;
+  maxLevel: number;
+  isActive: boolean;
+  program?: { id: string; name: string; code?: string };
+}
+
 export interface SkillRecord {
   id: string;
   studentId: string;
-  skillName: string;
-  proficiencyLevel: string;
+  centerId?: string;
+  skillId?: string;
+  level?: number;
+  assessedOn?: string | Date;
+  remarks?: string | null;
+  skill?: SkillDefinition;
+  assessedByUser?: { id?: string; fullName: string } | null;
+  skillName?: string;
+  proficiencyLevel?: string;
   createdAt?: string | Date;
 }
 

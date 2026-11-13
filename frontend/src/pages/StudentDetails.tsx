@@ -36,6 +36,15 @@ const CHART_RED_SOFT = '#fca5a5';
 
 function radarFromSkills(skills: SkillRecord[] | null): { skill: string; score: number }[] {
   if (!skills?.length) return [];
+  const latestBySkill = new Map<string, number>();
+  for (const s of skills) {
+    if (s.skill?.name && typeof s.level === 'number' && !latestBySkill.has(s.skill.name)) {
+      latestBySkill.set(s.skill.name, s.level);
+    }
+  }
+  if (latestBySkill.size > 0) {
+    return Array.from(latestBySkill.entries()).map(([skill, score]) => ({ skill, score }));
+  }
   const row = skills[0] as unknown as Record<string, unknown>;
   const keys = ['communication', 'confidence', 'computerSkill', 'problemSolving', 'languageSkill'];
   return keys
