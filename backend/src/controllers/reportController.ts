@@ -67,8 +67,8 @@ export async function studentsFilterController(req: Request, res: Response, next
 export async function exportCsvController(req: Request, res: Response, next: NextFunction) {
   try {
     const user = (req as AuthenticatedRequest).user!;
-    const csvString = await exportStudentDataCsv(user, req.query);
-    res.setHeader("Content-Type", "text/csv");
+    const csvString = await exportStudentDataCsv(user, req.query as Record<string, unknown>);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", "attachment; filename=student_export.csv");
     return res.status(200).send(csvString);
   } catch (err) {

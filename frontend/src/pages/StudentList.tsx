@@ -12,16 +12,20 @@ import { DataTable, type DataTableColumn } from '../components/ui/DataTable';
 import { Search, Download, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuthStore } from '../store/useAuthStore';
-import { deleteStudent, getStudents, requestTransfer, getTransferRequests, completeTransfer } from '../services/students.service';
+import { useToast } from '../hooks/useToast';
+import { deleteStudent, getStudents, requestTransfer, getTransferRequests, completeTransfer, type StudentListQuery } from '../services/students.service';
 import { getApiErrorMessage } from '../services/api';
 import { listCenters, listPrograms } from '../services/centers.service';
 import { listUsers, type UserAdminItem } from '../services/users.service';
 import type { Student, CenterSummary, ProgramSummary } from '../types';
+import { formatDate } from '../utils/date';
+import { sanitizeSpreadsheetCell } from '../utils/exportSanitize';
 
 type Row = Student & { _programName: string; _centerName: string; _addedBy: string };
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
+  const toast = useToast();
   const currentUser = useAuthStore((s) => s.currentUser);
   const selectedCenterId = useAuthStore((s) => s.selectedCenterId);
 
@@ -30,6 +34,7 @@ export const StudentList: React.FC = () => {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCenterId, setFilterCenterId] = useState('');
@@ -97,13 +102,11 @@ export const StudentList: React.FC = () => {
     }
   }, [isTeacher, isAdmin, currentUser?.centerIds]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
+  const buildListQueryParams = useCallback(
+    (pageNum: number, pageLimit: number): StudentListQuery => {
       const params: StudentListQuery = {
-        page,
-        limit: 50,
+        page: pageNum,
+        limit: pageLimit,
         ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
         ...(filterProgramId ? { programId: filterProgramId } : {}),
         ...(sortOrder ? { sortOrder } : {}),
@@ -114,20 +117,26 @@ export const StudentList: React.FC = () => {
           : { isActive: 'all' }),
       };
 
-      // Center filtering logic:
       if (isAdmin) {
         if (filterCenterId) {
           params.centerId = filterCenterId;
         }
-      } else {
-        if (filterCenterId) {
-          params.centerId = filterCenterId;
-        } else if (selectedCenterId) {
-          params.centerId = selectedCenterId;
-        }
+      } else if (filterCenterId) {
+        params.centerId = filterCenterId;
+      } else if (selectedCenterId) {
+        params.centerId = selectedCenterId;
       }
 
-      const res = await getStudents(params);
+      return params;
+    },
+    [searchQuery, isAdmin, selectedCenterId, filterCenterId, filterProgramId, statusFilter, sortOrder],
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getStudents(buildListQueryParams(page, 50));
       setTotalPages(res.totalPages);
       setTotalCount(res.total);
       setRows(
@@ -144,7 +153,7 @@ export const StudentList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, isAdmin, selectedCenterId, filterCenterId, filterProgramId, statusFilter, sortOrder]);
+  }, [page, buildListQueryParams]);
 
   useEffect(() => {
     if (!showTransferTab) {
@@ -190,27 +199,51 @@ export const StudentList: React.FC = () => {
     }
   };
 
-  const handleExport = () => {
-    const dataToExport = rows.map((student) => ({
-      ID: student.id,
-      Name: student.fullName,
-      'Roll Number': student.rollNumber || '—',
-      Program: student._programName,
-      Center: student._centerName,
-      'Date of Birth': student.dob ? new Date(student.dob).toLocaleDateString() : '—',
-      Gender: student.gender || '—',
-      'Guardian Name': student.guardianName || '—',
-      'Guardian Phone': student.guardianPhone || '—',
-      'Enrollment Date': student.enrollmentDate ? new Date(student.enrollmentDate).toLocaleDateString() : '—',
-      'Total Fees': student.totalFees || 0,
-      'Fees Paid': student.feesPaid || 0,
-      ...(isAdmin ? { 'Added By': student._addedBy } : {}),
-      Status: student.isActive ? 'active' : 'inactive',
-    }));
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
-    XLSX.writeFile(workbook, 'EduSpace_Students_Export.xlsx', { compression: true });
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const firstPage = await getStudents(buildListQueryParams(1, 200));
+      const allStudents = [...firstPage.students];
+      for (let p = 2; p <= firstPage.totalPages; p += 1) {
+        const nextPage = await getStudents(buildListQueryParams(p, 200));
+        allStudents.push(...nextPage.students);
+      }
+
+      const dataToExport = allStudents.map((student) => ({
+        ID: sanitizeSpreadsheetCell(student.id),
+        Name: sanitizeSpreadsheetCell(student.fullName),
+        'Roll Number': sanitizeSpreadsheetCell(student.rollNumber || '—'),
+        Program: sanitizeSpreadsheetCell(student.program?.name ?? student.programId),
+        Center: sanitizeSpreadsheetCell(student.center?.name ?? student.centerId),
+        'Date of Birth': student.dob ? formatDate(student.dob, 'yyyy-MM-dd') : '—',
+        Gender: sanitizeSpreadsheetCell(student.gender || '—'),
+        'Guardian Name': sanitizeSpreadsheetCell(student.guardianName || '—'),
+        'Guardian Phone': sanitizeSpreadsheetCell(student.guardianPhone || '—'),
+        'Enrollment Date': student.enrollmentDate ? formatDate(student.enrollmentDate, 'yyyy-MM-dd') : '—',
+        'Total Fees': student.totalFees ?? 0,
+        'Fees Paid': student.feesPaid ?? 0,
+        ...(isAdmin
+          ? { 'Added By': sanitizeSpreadsheetCell(student.createdByUser?.fullName ?? '—') }
+          : {}),
+        Status: student.isActive ? 'active' : 'inactive',
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
+      XLSX.writeFile(workbook, 'EduSpace_Students_Export.xlsx', { compression: true });
+      toast.success({
+        title: 'Export complete',
+        description: `Exported ${allStudents.length} student record${allStudents.length === 1 ? '' : 's'}.`,
+      });
+    } catch (err) {
+      toast.error({
+        title: 'Export failed',
+        description: getApiErrorMessage(err, 'Could not export student directory.'),
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Teacher: toggle transfer selection
@@ -415,8 +448,8 @@ export const StudentList: React.FC = () => {
       title="Student Directory"
       actions={
         <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          <Button variant="secondary" onClick={handleExport}>
-            <Download size={16} className="mr-2" /> Export XLS
+          <Button variant="secondary" onClick={() => void handleExport()} disabled={exporting || loading}>
+            <Download size={16} className="mr-2" /> {exporting ? 'Exporting...' : 'Export XLS'}
           </Button>
           <Button variant="primary" onClick={() => navigate('/students/new')}>
             <Plus size={16} className="mr-2" /> Add Student
