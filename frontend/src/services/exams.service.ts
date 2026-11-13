@@ -4,41 +4,84 @@ import type { ExamType } from '../types';
 export type ListExamsQuery = {
   centerId?: string;
   programId?: string;
-  examType?: ExamType;
+  examType?: ExamType | string;
   academicYearId?: string;
   examDate?: string;
 };
 
-type ExamListItem = {
+export interface ExamListItem {
   id: string;
   name: string;
   examType: string;
+  examDate?: string | null;
   createdAt: string;
-  center?: { name: string };
-};
+  center?: { id?: string; name: string };
+  program?: { id?: string; name: string };
+  academicYear?: { id?: string; label: string };
+}
+
+export interface ExamSheetSubject {
+  id: string;
+  name: string;
+  maxMarks: number | string;
+}
+
+export interface ExamSheetScore {
+  id?: string;
+  marks: number | string | null;
+  isAbsent?: boolean;
+  remarks?: string | null;
+  student?: { id: string; fullName: string; rollNumber?: string | null };
+  subject?: ExamSheetSubject;
+}
+
+export interface ExamSheetPayload {
+  id: string;
+  name: string;
+  examType: string;
+  examDate?: string | null;
+  centerId: string;
+  programId: string;
+  academicYear?: { id: string; label: string } | null;
+  center?: { id: string; name: string } | null;
+  program?: { id: string; name: string } | null;
+  students: Array<{ id: string; fullName: string; rollNumber?: string | null }>;
+  subjects?: ExamSheetSubject[];
+  scores: ExamSheetScore[];
+}
+
+export interface ExamComparisonSubject {
+  subject: string;
+  baselineAvg: number;
+  endlineAvg: number;
+  growth: number;
+}
+
+export interface ExamComparisonPayload {
+  perSubject: ExamComparisonSubject[];
+}
 
 export const createExam = (body: Record<string, unknown>) =>
-  api.post<Record<string, unknown>>('/exams', body).then((r) => r.data);
+  api.post<ExamListItem[] | { exams: ExamListItem[] }>('/exams', body).then((r) => r.data);
 
 export const listExams = (params?: ListExamsQuery) =>
   api.get<ExamListItem[]>('/exams', { params }).then((r) => r.data);
 
 export const getExamComparison = (params?: Record<string, string | undefined>) =>
-  api.get<Record<string, unknown>>('/exams/comparison', { params }).then((r) => r.data);
+  api.get<ExamComparisonPayload>('/exams/comparison', { params }).then((r) => r.data);
 
 export const getStudentExamScores = (studentId: string) =>
-  api.get<Record<string, unknown>>(`/exams/students/${studentId}`).then((r) => r.data);
+  api.get<Record<string, unknown>[]>(`/exams/students/${studentId}`).then((r) => r.data);
 
 export const getExamById = (examId: string) =>
   api.get<Record<string, unknown>>(`/exams/${examId}`).then((r) => r.data);
 
-/** Fetches exam with auto-sync of missing students. Use this for the marks workspace. */
+/** Fetches exam with auto-sync of active students and program subjects. */
 export const getExamSheet = (examId: string) =>
-  api.get<Record<string, unknown>>(`/exams/${examId}/sheet`).then((r) => r.data);
+  api.get<ExamSheetPayload>(`/exams/${examId}/sheet`).then((r) => r.data);
 
 export const upsertExamScores = (examId: string, body: Record<string, unknown>) =>
-  api.post<Record<string, unknown>>(`/exams/${examId}/scores`, body).then((r) => r.data);
+  api.post<{ success: boolean; count?: number }>(`/exams/${examId}/scores`, body).then((r) => r.data);
 
 export const getPendingExamScores = (examId: string) =>
-  api.get<Record<string, unknown>>(`/exams/${examId}/pending`).then((r) => r.data);
-
+  api.get<Record<string, unknown>[]>(`/exams/${examId}/pending`).then((r) => r.data);

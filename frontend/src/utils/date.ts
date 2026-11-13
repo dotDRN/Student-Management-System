@@ -2,7 +2,7 @@
  * Native JavaScript date utilities
  */
 
-const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DATE_ONLY_REGEX = /^(\d{4})-(\d{2})-(\d{2})(?:T00:00:00(?:\.000)?Z)?$/;
 
 function parseDisplayDate(date: Date | string | number): { parsed: Date; isDateOnly: boolean } {
   if (typeof date === 'string') {
@@ -21,7 +21,7 @@ function parseDisplayDate(date: Date | string | number): { parsed: Date; isDateO
  * Formats a date using Intl.DateTimeFormat or manual string manipulation.
  * Supports patterns: 'MMM d, yyyy', 'MMM d, yyyy • h:mm a', 'yyyy-MM-dd'
  */
-export function formatDate(date: Date | string | number, pattern: string): string {
+export function formatDate(date: Date | string | number, pattern = 'MMM d, yyyy'): string {
   const { parsed: d, isDateOnly } = parseDisplayDate(date);
   if (isNaN(d.getTime())) return 'Invalid Date';
 

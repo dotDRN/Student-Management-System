@@ -99,10 +99,10 @@ export const updateAttendanceSessionRecordsSchema = z.object({
 export const createExamSchema = z.object({
   centerIds: z.array(uuid).min(1),
   programId: uuid,
-  examType: z.string().min(1),
-  academicYearId: z.string().min(1),
-  examDate: optionalDateString,
-  name: z.string().optional(),
+  examType: z.string().trim().min(1),
+  academicYearId: z.string().trim().min(1),
+  examDate: preprocessEmptyToUndefined(optionalDateString),
+  name: z.string().trim().optional(),
 });
 
 const formFieldSchema = z.object({
@@ -139,10 +139,10 @@ export const upsertExamScoresSchema = z.object({
       z.object({
         studentId: uuid,
         subjectId: uuid.optional(),
-        subject: z.string().min(1).optional(),
-        marks: z.number().nullable().optional(),
+        subject: z.string().trim().min(1).optional(),
+        marks: z.number().min(0).nullable().optional(),
         isAbsent: z.boolean().optional(),
-        maxMarks: z.number().positive().optional(),
+        maxMarks: z.number().positive().max(1000).optional(),
         remarks: z.string().optional(),
       }),
     )

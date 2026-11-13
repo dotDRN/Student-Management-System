@@ -1,0 +1,264 @@
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { ROLES } from "../config/rbac.js";
+import { ForbiddenError, ValidationError } from "../lib/errors.js";
+import {
+  createExam,
+  getExamComparison,
+  getExamSheet,
+  listExams,
+  upsertExamScores,
+} from "../services/examService.js";
+import type { JwtPayload } from "../utils/jwt.js";
+import { mockPrismaModel, mockPrismaTransaction } from "./helpers/mockPrisma.js";
+
+const YEAR_UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const PROGRAM_UUID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const CENTER_1 = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
+const CENTER_2 = "cccccccc-cccc-4ccc-8ccc-ccccccccccc2";
+const STUDENT_1 = "dddddddd-dddd-4ddd-8ddd-ddddddddddd1";
+const STUDENT_2 = "dddddddd-dddd-4ddd-8ddd-ddddddddddd2";
+const SUBJ_MATH = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1";
+const SUBJ_OTHER_PROG = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee9";
+
+describe("Component 1.6: Exams, Subjects, Score Upserts & Comparison", () => {
+  const supervisor: JwtPayload = {
+    userId: "u-sup",
+    tenantId: "t1",
+    email: "sup@org.org",
+    role: ROLES.SUPERVISOR,
+    centerIds: [CENTER_1],
+    isActive: true,
+  };
+
+  const teacher: JwtPayload = {
+    userId: "u-teach",
+    tenantId: "t1",
+    email: "teach@org.org",
+    role: ROLES.TEACHER,
+    centerIds: [CENTER_1],
+    isActive: true,
+  };
+
+  const techAdmin: JwtPayload = {
+    userId: "u-tech",
+    tenantId: "t1",
+    email: "tech@org.org",
+    role: ROLES.TECH_ADMIN,
+    centerIds: [],
+    isActive: true,
+  };
+
+  it("createExam resolves AcademicYear label to UUID, uses UTC examDate, and rejects unauthorized centers", async (t) => {
+    const queriedExistingWheres: Record<string, unknown>[] = [];
+    const createdDatas: Record<string, unknown>[] = [];
+
+    mockPrismaModel(t, "academicYear", {
+      findFirst: async (args: { where: { label?: string } }) =>
+        args.where.label === "2026-27" ? { id: YEAR_UUID, label: "2026-27" } : null,
+    });
+    mockPrismaModel(t, "program", {
+      findFirst: async () => ({ id: PROGRAM_UUID, isActive: true }),
+    });
+    mockPrismaModel(t, "center", {
+      findFirst: async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+        isActive: true,
+      }),
+    });
+    mockPrismaModel(t, "exam", {
+      findFirst: async (args: { where: Record<string, unknown> }) => {
+        queriedExistingWheres.push(args.where);
+        return null;
+      },
+      create: async (args: { data: Record<string, unknown> }) => {
+        createdDatas.push(args.data);
+        return { id: "ex-1", ...args.data };
+      },
+    });
+
+    const created = await createExam(supervisor, {
+      centerIds: [CENTER_1],
+      programId: PROGRAM_UUID,
+      examType: "baseline",
+      academicYearId: "2026-27",
+      examDate: "2026-11-10",
+    });
+
+    assert.equal(created.length, 1);
+    assert.equal(queriedExistingWheres[0].academicYearId, YEAR_UUID);
+    assert.equal(createdDatas[0].academicYearId, YEAR_UUID);
+    assert.equal((createdDatas[0].examDate as Date).toISOString(), "2026-11-10T00:00:00.000Z");
+
+    await assert.rejects(
+      () =>
+        createExam(supervisor, {
+          centerIds: [CENTER_2],
+          programId: PROGRAM_UUID,
+          examType: "baseline",
+          academicYearId: "2026-27",
+          examDate: "2026-11-10",
+        }),
+      ForbiddenError,
+    );
+  });
+
+  it("listExams blocks cross-center query param spoofing and uses UTC date window", async (t) => {
+    const capturedWheres: Record<string, unknown>[] = [];
+
+    mockPrismaModel(t, "academicYear", {
+      findUnique: async () => ({ id: YEAR_UUID, label: "2026-27" }),
+      findFirst: async () => ({ id: YEAR_UUID, label: "2026-27" }),
+    });
+    mockPrismaModel(t, "exam", {
+      findMany: async (args: { where: Record<string, unknown> }) => {
+        capturedWheres.push(args.where);
+        return [];
+      },
+    });
+
+    await assert.rejects(
+      () => listExams(teacher, { centerId: CENTER_2 }),
+      ForbiddenError,
+    );
+
+    await listExams(techAdmin, {
+      centerId: CENTER_2,
+      examDate: "2026-11-10",
+    });
+
+    const dateFilter = capturedWheres[0].examDate as { gte: Date; lt: Date };
+    assert.equal(capturedWheres[0].centerId, CENTER_2);
+    assert.equal(dateFilter.gte.toISOString(), "2026-11-10T00:00:00.000Z");
+    assert.equal(dateFilter.lt.toISOString(), "2026-11-11T00:00:00.000Z");
+  });
+
+  it("getExamSheet returns program subjects alongside students and scores", async (t) => {
+    mockPrismaModel(t, "exam", {
+      findUnique: async () => ({
+        id: "ex-1",
+        centerId: CENTER_1,
+        programId: PROGRAM_UUID,
+        examType: "baseline",
+        examDate: new Date("2026-11-10T00:00:00.000Z"),
+        center: { id: CENTER_1, name: "Center 1" },
+        program: { id: PROGRAM_UUID, name: "P1" },
+        academicYear: { id: YEAR_UUID, label: "2026-27" },
+      }),
+    });
+    mockPrismaModel(t, "student", {
+      findMany: async () => [{ id: STUDENT_1, fullName: "Asha", rollNumber: "01" }],
+    });
+    mockPrismaModel(t, "programSubject", {
+      findMany: async () => [{ id: SUBJ_MATH, name: "Mathematics", maxMarks: 100 }],
+    });
+    mockPrismaModel(t, "examScore", {
+      findMany: async () => [],
+    });
+
+    const sheet = await getExamSheet(teacher, "ex-1");
+    assert.equal(sheet.students.length, 1);
+    assert.equal(sheet.subjects.length, 1);
+    assert.equal(sheet.subjects[0].name, "Mathematics");
+  });
+
+  it("upsertExamScores validates student enrollment, program subjects, marks bounds, and clears absent marks", async (t) => {
+    const upsertedCreates: Record<string, unknown>[] = [];
+
+    mockPrismaModel(t, "exam", {
+      findUnique: async () => ({
+        id: "ex-1",
+        centerId: CENTER_1,
+        programId: PROGRAM_UUID,
+        program: {
+          subjects: [{ id: SUBJ_MATH, name: "Mathematics", maxMarks: 50 }],
+        },
+      }),
+    });
+    mockPrismaModel(t, "student", {
+      findMany: async () => [{ id: STUDENT_1 }, { id: STUDENT_2 }],
+    });
+    mockPrismaModel(t, "examScore", {
+      upsert: async (args: { create: Record<string, unknown> }) => {
+        upsertedCreates.push(args.create);
+        return args.create;
+      },
+    });
+    mockPrismaTransaction(t);
+
+    // Rejects marks exceeding subject maxMarks (50)
+    await assert.rejects(
+      () =>
+        upsertExamScores(teacher, "ex-1", {
+          scores: [{ studentId: STUDENT_1, subjectId: SUBJ_MATH, marks: 65 }],
+        }),
+      ValidationError,
+    );
+
+    // Rejects subject from another program
+    await assert.rejects(
+      () =>
+        upsertExamScores(teacher, "ex-1", {
+          scores: [{ studentId: STUDENT_1, subjectId: SUBJ_OTHER_PROG, marks: 20 }],
+        }),
+      ValidationError,
+    );
+
+    // Rejects student not actively enrolled in this exam's center+program
+    await assert.rejects(
+      () =>
+        upsertExamScores(teacher, "ex-1", {
+          scores: [{ studentId: "ffffffff-ffff-4fff-8fff-ffffffffffff", subjectId: SUBJ_MATH, marks: 20 }],
+        }),
+      ValidationError,
+    );
+
+    const res = await upsertExamScores(teacher, "ex-1", {
+      scores: [
+        { studentId: STUDENT_1, subjectId: SUBJ_MATH, marks: 42, isAbsent: false },
+        { studentId: STUDENT_2, subjectId: SUBJ_MATH, marks: 10, isAbsent: true, remarks: "Sick" },
+      ],
+    });
+
+    assert.equal(res.success, true);
+    assert.equal(res.count, 2);
+    assert.equal(Number(upsertedCreates[0].marks), 42);
+    assert.equal(upsertedCreates[1].marks, null);
+    assert.equal(upsertedCreates[1].isAbsent, true);
+    assert.equal(upsertedCreates[1].centerId, CENTER_1);
+  });
+
+  it("getExamComparison excludes absent/null scores and computes accurate growth", async (t) => {
+    mockPrismaModel(t, "exam", {
+      findMany: async () => [
+        {
+          id: "ex-base",
+          examType: "baseline",
+          scores: [
+            { isAbsent: false, marks: 60, subject: { name: "Math" } },
+            { isAbsent: true, marks: null, subject: { name: "Math" } },
+          ],
+        },
+        {
+          id: "ex-end",
+          examType: "endline",
+          scores: [
+            { isAbsent: false, marks: 90, subject: { name: "Math" } },
+          ],
+        },
+      ],
+    });
+
+    await assert.rejects(
+      () => getExamComparison(teacher, { centerId: CENTER_2 }),
+      ForbiddenError,
+    );
+
+    const comp = await getExamComparison(teacher, { centerId: CENTER_1 });
+    assert.equal(comp.perSubject.length, 1);
+    assert.equal(comp.perSubject[0].subject, "math");
+    assert.equal(comp.perSubject[0].baselineAvg, 60);
+    assert.equal(comp.perSubject[0].endlineAvg, 90);
+    assert.equal(comp.perSubject[0].growth, 50);
+  });
+});

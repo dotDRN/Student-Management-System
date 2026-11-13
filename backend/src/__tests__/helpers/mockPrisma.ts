@@ -43,12 +43,12 @@ export function mockPrismaModel(
 
 export function mockPrismaTransaction(
   t: TestContext,
-  txClientFactory: () => Record<string, unknown>,
+  txClientFactory: () => Record<string, unknown> = () => ({}),
 ): void {
   const originalDesc = Object.getOwnPropertyDescriptor(prisma, "$transaction");
   Object.defineProperty(prisma, "$transaction", {
-    value: async (fn: (tx: Record<string, unknown>) => Promise<unknown>) =>
-      fn(txClientFactory()),
+    value: async (arg: ((tx: Record<string, unknown>) => Promise<unknown>) | Promise<unknown>[]) =>
+      Array.isArray(arg) ? Promise.all(arg) : arg(txClientFactory()),
     writable: true,
     configurable: true,
   });
