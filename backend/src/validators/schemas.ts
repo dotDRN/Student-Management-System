@@ -211,3 +211,39 @@ export const updateProgramSchema = z
       d.ageMin <= d.ageMax,
     "Minimum age cannot exceed maximum age",
   );
+
+export const activityStatusEnum = z.enum(["planned", "ongoing", "completed", "cancelled"]);
+export const activityTypeEnum = z.enum(["class", "game", "visit", "camp", "exam", "general"]);
+
+export const createActivitySchema = z.object({
+  centerIds: z.array(uuid).min(1),
+  programId: preprocessEmptyToUndefined(uuid),
+  name: z.string().trim().min(1),
+  description: preprocessEmptyToNull(z.string().trim().min(1)),
+  volunteers: z.array(z.string().trim().min(1)).optional(),
+  activityType: activityTypeEnum.optional(),
+  status: activityStatusEnum.optional(),
+  startDate: preprocessEmptyToUndefined(optionalDateString),
+  endDate: preprocessEmptyToUndefined(optionalDateString),
+});
+
+export const updateActivitySchema = z.object({
+  programId: preprocessEmptyToNull(uuid),
+  name: z.string().trim().min(1).optional(),
+  description: preprocessEmptyToNull(z.string().trim().min(1)),
+  volunteers: z.array(z.string().trim().min(1)).optional(),
+  activityType: activityTypeEnum.optional(),
+  status: activityStatusEnum.optional(),
+  completionNotes: preprocessEmptyToNull(z.string().trim().min(1)),
+  startDate: preprocessEmptyToNull(optionalDateString),
+  endDate: preprocessEmptyToNull(optionalDateString),
+});
+
+export const assignVolunteerSchema = z.object({
+  userId: uuid,
+  validFrom: z
+    .string()
+    .min(1)
+    .refine((s) => !Number.isNaN(Date.parse(s)), "Invalid validFrom date"),
+  validUntil: preprocessEmptyToNull(optionalDateString),
+});

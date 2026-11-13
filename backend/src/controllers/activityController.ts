@@ -1,5 +1,5 @@
 ﻿import type { NextFunction, Request, Response } from "express";
-import type { JwtPayload } from '../utils/jwt.js';
+import type { JwtPayload } from "../utils/jwt.js";
 import {
   listActivities,
   getActivity,
@@ -8,7 +8,7 @@ import {
   deleteActivity,
   assignVolunteer,
   removeVolunteerAssignment,
-} from '../services/activityService.js';
+} from "../services/activityService.js";
 
 type AuthenticatedRequest = Request & { user?: JwtPayload };
 
@@ -16,11 +16,12 @@ export async function listActivitiesController(req: Request, res: Response, next
   try {
     const user = (req as AuthenticatedRequest).user!;
     const activities = await listActivities(user, {
-      centerId: req.query.centerId as string,
-      programId: req.query.programId as string,
-      from: req.query.from as string,
-      to: req.query.to as string,
-      search: req.query.search as string,
+      centerId: req.query.centerId as string | undefined,
+      programId: req.query.programId as string | undefined,
+      status: req.query.status as string | undefined,
+      from: req.query.from as string | undefined,
+      to: req.query.to as string | undefined,
+      search: req.query.search as string | undefined,
     });
     return res.status(200).json(activities);
   } catch (error) {
@@ -71,19 +72,27 @@ export async function deleteActivityController(req: Request, res: Response, next
 export async function assignVolunteerController(req: Request, res: Response, next: NextFunction) {
   try {
     const user = (req as AuthenticatedRequest).user!;
-    const assignment = await assignVolunteer(req.params.activityId as string, req.body, user.userId);
+    const assignment = await assignVolunteer(user, req.params.activityId as string, req.body);
     return res.status(200).json(assignment);
   } catch (error) {
     return next(error);
   }
 }
 
-export async function removeVolunteerAssignmentController(req: Request, res: Response, next: NextFunction) {
+export async function removeVolunteerAssignmentController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
   try {
-    await removeVolunteerAssignment(req.params.activityId as string, req.params.userId as string);
+    const user = (req as AuthenticatedRequest).user!;
+    await removeVolunteerAssignment(
+      user,
+      req.params.activityId as string,
+      req.params.userId as string,
+    );
     return res.status(204).send();
   } catch (error) {
     return next(error);
   }
 }
-

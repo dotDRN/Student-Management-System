@@ -1,68 +1,127 @@
-﻿import type { Prisma, UserActivityAssignment } from "@prisma/client";
-import { ForbiddenError, NotFoundError, ValidationError } from '../lib/errors.js';
-import prisma from '../lib/prisma.js';
-import type { JwtPayload } from '../utils/jwt.js';
-import { centerScope } from '../lib/centerScope.js';
+﻿import type { ActivityStatus, ActivityType, Prisma, UserActivityAssignment } from "@prisma/client";
+import {
+  ROLES,
+  getScopedCenterIds,
+  isAdminRole,
+  isGlobalAdmin,
+} from "../config/rbac.js";
+import { assertCenterAccess } from "../lib/centerScope.js";
+import { ForbiddenError, NotFoundError, ValidationError } from "../lib/errors.js";
+import prisma from "../lib/prisma.js";
+import {
+  getTodayUtcDateOnly,
+  parseOptionalUtcDateOnly,
+  parseUtcDateOnly,
+} from "../utils/dateOnly.js";
+import type { JwtPayload } from "../utils/jwt.js";
 
-type ListActivitiesParams = {
+export type ListActivitiesParams = {
   centerId?: string;
   programId?: string;
+  status?: string;
   from?: string;
   to?: string;
   search?: string;
 };
 
-export async function listActivities(user: JwtPayload, params: ListActivitiesParams) {
-  const { centerId, programId, from, to, search } = params;
-  const where: Prisma.ActivityWhereInput = {};
-  if (user.role !== "super_admin") {
-    where.centerId = { in: user.centerIds };
+export type CreateActivityInput = {
+  centerIds: string[];
+  programId?: string;
+  name: string;
+  description?: string | null;
+  volunteers?: string[];
+  activityType?: ActivityType;
+  status?: ActivityStatus;
+  startDate?: string | Date;
+  endDate?: string | Date;
+};
+
+export type UpdateActivityInput = {
+  programId?: string | null;
+  name?: string;
+  description?: string | null;
+  volunteers?: string[];
+  activityType?: ActivityType;
+  status?: ActivityStatus;
+  completionNotes?: string | null;
+  startDate?: string | Date | null;
+  endDate?: string | Date | null;
+};
+
+const VALID_STATUSES: ReadonlySet<string> = new Set([
+  "planned",
+  "ongoing",
+  "completed",
+  "cancelled",
+]);
+
+function normalizeUtcDateInput(
+  value: string | Date | null | undefined,
+  field: string,
+): Date | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      throw new ValidationError(`Invalid ${field} date`);
+    }
+    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
   }
+  return parseUtcDateOnly(value, field);
+}
+
+export async function listActivities(user: JwtPayload, params: ListActivitiesParams) {
+  const { centerId, programId, status, from, to, search } = params;
+  const where: Prisma.ActivityWhereInput = { isActive: true };
 
   if (centerId) {
-    if (user.role !== "super_admin" && !user.centerIds.includes(centerId)) {
-      throw new ForbiddenError("No access to this center");
-    }
+    assertCenterAccess(user, centerId, "No access to this center");
     where.centerId = centerId;
+  } else {
+    const scopedCenterIds = getScopedCenterIds(user);
+    if (scopedCenterIds !== undefined) {
+      where.centerId = { in: scopedCenterIds };
+    }
   }
 
   if (programId) {
     where.programId = programId;
   }
 
+  if (status) {
+    if (!VALID_STATUSES.has(status)) {
+      throw new ValidationError(`Invalid activity status '${status}'`);
+    }
+    where.status = status as ActivityStatus;
+  }
+
   if (from || to) {
     where.startDate = {};
-    if (from) where.startDate.gte = new Date(from);
-    if (to) where.startDate.lte = new Date(to);
+    if (from) where.startDate.gte = parseUtcDateOnly(from, "from");
+    if (to) where.startDate.lte = parseUtcDateOnly(to, "to");
   }
 
-  if (search) {
-    where.name = { contains: search, mode: "insensitive" };
+  if (search?.trim()) {
+    where.name = { contains: search.trim(), mode: "insensitive" };
   }
 
-  // Volunteer specific logic
-  if (user.role === "volunteer") {
-    const today = new Date();
-    // Only return activities assigned to this volunteer
+  if (user.role === ROLES.VOLUNTEER) {
+    const today = getTodayUtcDateOnly();
     where.userAssignments = {
       some: {
         userId: user.userId,
         validFrom: { lte: today },
-        OR: [
-          { validUntil: null },
-          { validUntil: { gte: today } }
-        ]
-      }
+        OR: [{ validUntil: null }, { validUntil: { gte: today } }],
+      },
     };
   }
 
   return prisma.activity.findMany({
     where,
     include: {
-      program: { select: { name: true } },
-      center: { select: { name: true } },
+      program: { select: { id: true, name: true } },
+      center: { select: { id: true, name: true } },
     },
-    orderBy: { startDate: "desc" },
+    orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
   });
 }
 
@@ -70,31 +129,30 @@ export async function getActivity(user: JwtPayload, activityId: string) {
   const activity = await prisma.activity.findUnique({
     where: { id: activityId },
     include: {
+      program: { select: { id: true, name: true } },
+      center: { select: { id: true, name: true } },
       userAssignments: {
         include: {
           user: {
-            select: { fullName: true, role: true, email: true },
+            select: { id: true, fullName: true, role: true, email: true },
           },
         },
       },
       _count: {
-        select: { attendanceSessions: true },
+        select: { attendanceSessions: true, activityEnrollments: true },
       },
     },
   });
 
-  if (!activity) {
-    throw new NotFoundError("Activity not found");
+  if (!activity || !activity.isActive) {
+    throw new NotFoundError("Activity");
   }
 
-  // Access check
-  if (user.role !== "super_admin") {
-    // Is the user in the center?
+  if (!isGlobalAdmin(user.role)) {
     const inCenter = user.centerIds.includes(activity.centerId);
-    
-    // Is the user directly assigned to this activity?
-    const assigned = activity.userAssignments.some((a: UserActivityAssignment) => a.userId === user.userId);
-
+    const assigned = activity.userAssignments.some(
+      (a: UserActivityAssignment) => a.userId === user.userId,
+    );
     if (!inCenter && !assigned) {
       throw new ForbiddenError("Access to this activity is denied");
     }
@@ -103,94 +161,230 @@ export async function getActivity(user: JwtPayload, activityId: string) {
   return activity;
 }
 
-export async function createActivity(user: JwtPayload, data: { centerIds: string[]; programId?: string; name: string; description?: string; volunteers?: string[]; startDate?: string | Date; endDate?: string | Date }) {
-  const { centerIds, programId, name, description, volunteers, startDate, endDate } = data;
+export async function createActivity(user: JwtPayload, data: CreateActivityInput) {
+  const {
+    centerIds,
+    programId,
+    name,
+    description,
+    volunteers,
+    activityType,
+    status,
+    startDate,
+    endDate,
+  } = data;
 
-  if (!centerIds || !centerIds.length || !name) {
+  const trimmedName = name?.trim();
+  if (!centerIds || !centerIds.length || !trimmedName) {
     throw new ValidationError("centerIds and name are required");
   }
 
-  for (const centerId of centerIds) {
-    if (user.role !== "super_admin" && !user.centerIds.includes(centerId)) {
-      throw new ForbiddenError("No access to create activity in this center");
+  if (status && !VALID_STATUSES.has(status)) {
+    throw new ValidationError(`Invalid activity status '${status}'`);
+  }
+
+  const parsedStart = normalizeUtcDateInput(startDate, "startDate");
+  const parsedEnd = normalizeUtcDateInput(endDate, "endDate");
+  if (parsedStart && parsedEnd && parsedEnd < parsedStart) {
+    throw new ValidationError("End date cannot be earlier than start date");
+  }
+
+  const uniqueCenterIds = Array.from(new Set(centerIds));
+  for (const centerId of uniqueCenterIds) {
+    assertCenterAccess(user, centerId, "No access to create activity in this center");
+    const center = await prisma.center.findFirst({
+      where: { id: centerId, isActive: true },
+      select: { id: true },
+    });
+    if (!center) {
+      throw new NotFoundError("Center");
     }
   }
 
-  const createdActivities = [];
-  for (const centerId of centerIds) {
-    const activity = await prisma.activity.create({
-      data: {
-        centerId,
-        programId,
-        name,
-        description,
-        volunteers: volunteers || [],
-        startDate: startDate ? new Date(startDate) : null,
-        endDate: endDate ? new Date(endDate) : null,
-        createdBy: user.userId,
-      },
+  if (programId) {
+    const program = await prisma.program.findFirst({
+      where: { id: programId, isActive: true },
+      select: { id: true },
     });
-    createdActivities.push(activity);
+    if (!program) {
+      throw new NotFoundError("Program");
+    }
   }
 
-  return createdActivities;
+  const cleanedVolunteers = (volunteers || []).map((v) => v.trim()).filter(Boolean);
+
+  return prisma.$transaction(async (tx) => {
+    const createdActivities = [];
+    for (const centerId of uniqueCenterIds) {
+      const activity = await tx.activity.create({
+        data: {
+          centerId,
+          programId: programId || null,
+          name: trimmedName,
+          description: description?.trim() || null,
+          volunteers: cleanedVolunteers,
+          activityType: activityType ?? "general",
+          status: status ?? "planned",
+          startDate: parsedStart,
+          endDate: parsedEnd,
+          createdBy: user.userId,
+        },
+        include: {
+          program: { select: { id: true, name: true } },
+          center: { select: { id: true, name: true } },
+        },
+      });
+      createdActivities.push(activity);
+    }
+    return createdActivities;
+  });
 }
 
-export async function updateActivity(user: JwtPayload, activityId: string, data: { name?: string; description?: string; startDate?: string | Date; endDate?: string | Date }) {
+export async function updateActivity(
+  user: JwtPayload,
+  activityId: string,
+  data: UpdateActivityInput,
+) {
   const activity = await prisma.activity.findUnique({ where: { id: activityId } });
-  
-  if (!activity) {
-    throw new NotFoundError("Activity not found");
+
+  if (!activity || !activity.isActive) {
+    throw new NotFoundError("Activity");
   }
 
-  if (user.role !== "super_admin" && !user.centerIds.includes(activity.centerId)) {
-    throw new ForbiddenError("No access to update this activity");
+  assertCenterAccess(user, activity.centerId, "No access to update this activity");
+
+  if (data.status && !VALID_STATUSES.has(data.status)) {
+    throw new ValidationError(`Invalid activity status '${data.status}'`);
   }
 
-  const { name, description, startDate, endDate } = data;
+  if (data.programId) {
+    const program = await prisma.program.findFirst({
+      where: { id: data.programId, isActive: true },
+      select: { id: true },
+    });
+    if (!program) {
+      throw new NotFoundError("Program");
+    }
+  }
 
-  return prisma.activity.update({
-    where: { id: activityId },
-    data: {
-      ...(name !== undefined && { name }),
-      ...(description !== undefined && { description }),
-      ...(startDate !== undefined && { startDate: startDate ? new Date(startDate) : null }),
-      ...(endDate !== undefined && { endDate: endDate ? new Date(endDate) : null }),
-    },
+  const nextStart =
+    data.startDate === undefined
+      ? activity.startDate
+      : normalizeUtcDateInput(data.startDate, "startDate");
+  const nextEnd =
+    data.endDate === undefined
+      ? activity.endDate
+      : normalizeUtcDateInput(data.endDate, "endDate");
+
+  if (nextStart && nextEnd && nextEnd < nextStart) {
+    throw new ValidationError("End date cannot be earlier than start date");
+  }
+
+  const nextName = data.name !== undefined ? data.name.trim() : undefined;
+  if (nextName !== undefined && !nextName) {
+    throw new ValidationError("Activity name cannot be empty");
+  }
+
+  const nextVolunteers =
+    data.volunteers !== undefined
+      ? data.volunteers.map((v) => v.trim()).filter(Boolean)
+      : undefined;
+
+  const statusChanged = Boolean(data.status && data.status !== activity.status);
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.activity.update({
+      where: { id: activityId },
+      data: {
+        ...(nextName !== undefined ? { name: nextName } : {}),
+        ...(data.description !== undefined
+          ? { description: data.description?.trim() || null }
+          : {}),
+        ...(data.programId !== undefined ? { programId: data.programId || null } : {}),
+        ...(nextVolunteers !== undefined ? { volunteers: nextVolunteers } : {}),
+        ...(data.activityType !== undefined ? { activityType: data.activityType } : {}),
+        ...(data.status !== undefined ? { status: data.status } : {}),
+        ...(data.completionNotes !== undefined
+          ? { completionNotes: data.completionNotes?.trim() || null }
+          : {}),
+        ...(data.startDate !== undefined ? { startDate: nextStart } : {}),
+        ...(data.endDate !== undefined ? { endDate: nextEnd } : {}),
+      },
+      include: {
+        program: { select: { id: true, name: true } },
+        center: { select: { id: true, name: true } },
+      },
+    });
+
+    if (statusChanged && data.status) {
+      await tx.activityStatusLog.create({
+        data: {
+          activityId: activity.id,
+          centerId: activity.centerId,
+          fromStatus: activity.status,
+          toStatus: data.status,
+          notes: data.completionNotes?.trim() || null,
+          changedBy: user.userId,
+        },
+      });
+    }
+
+    return updated;
   });
 }
 
 export async function deleteActivity(user: JwtPayload, activityId: string) {
-  // Check if activity exists
   const activity = await prisma.activity.findUnique({
     where: { id: activityId },
-    include: { _count: { select: { attendanceSessions: true } } },
+    include: {
+      _count: {
+        select: {
+          attendanceSessions: true,
+          batches: true,
+          exams: true,
+          activityEnrollments: true,
+        },
+      },
+    },
   });
 
-  if (!activity) {
-    throw new NotFoundError("Activity not found");
+  if (!activity || !activity.isActive) {
+    throw new NotFoundError("Activity");
   }
 
-  if (user.role !== "super_admin") {
+  if (!isAdminRole(user.role)) {
     throw new ForbiddenError("Only admins can delete activities");
   }
+
+  assertCenterAccess(user, activity.centerId, "No access to delete this activity");
 
   if (activity._count.attendanceSessions > 0) {
     throw new ValidationError("Cannot delete activity with linked attendance sessions");
   }
 
-  // Delete all assignments first
-  await prisma.userActivityAssignment.deleteMany({
-    where: { activityId },
-  });
+  if (
+    activity._count.batches > 0 ||
+    activity._count.exams > 0 ||
+    activity._count.activityEnrollments > 0
+  ) {
+    return prisma.activity.update({
+      where: { id: activityId },
+      data: { isActive: false },
+    });
+  }
 
-  // Hard delete activity (as per schema)
-  return prisma.activity.delete({
-    where: { id: activityId },
+  return prisma.$transaction(async (tx) => {
+    await tx.userActivityAssignment.deleteMany({ where: { activityId } });
+    await tx.activityStatusLog.deleteMany({ where: { activityId } });
+    return tx.activity.delete({ where: { id: activityId } });
   });
 }
 
-export async function assignVolunteer(activityId: string, data: { userId: string; validFrom: string | Date; validUntil?: string | Date }, createdBy: string) {
+export async function assignVolunteer(
+  user: JwtPayload,
+  activityId: string,
+  data: { userId: string; validFrom: string | Date; validUntil?: string | Date | null },
+) {
   const { userId, validFrom, validUntil } = data;
 
   if (!userId || !validFrom) {
@@ -198,47 +392,72 @@ export async function assignVolunteer(activityId: string, data: { userId: string
   }
 
   const activity = await prisma.activity.findUnique({ where: { id: activityId } });
-  if (!activity) {
-    throw new NotFoundError("Activity not found");
+  if (!activity || !activity.isActive) {
+    throw new NotFoundError("Activity");
   }
 
-  // Upsert or find-first-then-update/create since no unique constraint on (userId, activityId) exists in the schema.
-  // Wait, let's check if there is a unique constraint in the schema for UserActivityAssignment:
-  // There is no @@unique([userId, activityId]) in the schema for UserActivityAssignment!
-  // So we must check if an assignment already exists manually.
+  assertCenterAccess(user, activity.centerId, "No access to manage assignments for this activity");
 
-  const existing = await prisma.userActivityAssignment.findFirst({
-    where: { userId, activityId },
+  const targetUser = await prisma.user.findFirst({
+    where: { id: userId, isActive: true },
+    select: { id: true },
   });
-
-  if (existing) {
-    return prisma.userActivityAssignment.update({
-      where: { id: existing.id },
-      data: {
-        validFrom: new Date(validFrom),
-        validUntil: validUntil ? new Date(validUntil) : null,
-      },
-    });
+  if (!targetUser) {
+    throw new NotFoundError("User");
   }
 
-  return prisma.userActivityAssignment.create({
-    data: {
+  const parsedFrom =
+    validFrom instanceof Date
+      ? normalizeUtcDateInput(validFrom, "validFrom")!
+      : parseUtcDateOnly(validFrom, "validFrom");
+  const parsedUntil =
+    validUntil instanceof Date
+      ? normalizeUtcDateInput(validUntil, "validUntil")
+      : parseOptionalUtcDateOnly(validUntil ?? undefined, "validUntil") ?? null;
+
+  if (parsedUntil && parsedUntil < parsedFrom) {
+    throw new ValidationError("validUntil cannot be earlier than validFrom");
+  }
+
+  return prisma.userActivityAssignment.upsert({
+    where: {
+      userId_activityId: {
+        userId,
+        activityId,
+      },
+    },
+    update: {
+      validFrom: parsedFrom,
+      validUntil: parsedUntil,
+    },
+    create: {
       userId,
       activityId,
-      validFrom: new Date(validFrom),
-      validUntil: validUntil ? new Date(validUntil) : null,
-      createdBy,
+      validFrom: parsedFrom,
+      validUntil: parsedUntil,
+      createdBy: user.userId,
     },
   });
 }
 
-export async function removeVolunteerAssignment(activityId: string, userId: string) {
+export async function removeVolunteerAssignment(
+  user: JwtPayload,
+  activityId: string,
+  userId: string,
+) {
+  const activity = await prisma.activity.findUnique({ where: { id: activityId } });
+  if (!activity || !activity.isActive) {
+    throw new NotFoundError("Activity");
+  }
+
+  assertCenterAccess(user, activity.centerId, "No access to manage assignments for this activity");
+
   const existing = await prisma.userActivityAssignment.findFirst({
     where: { userId, activityId },
   });
 
   if (!existing) {
-    throw new NotFoundError("Assignment not found");
+    throw new NotFoundError("Assignment");
   }
 
   return prisma.userActivityAssignment.delete({
