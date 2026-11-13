@@ -4,6 +4,7 @@ import { ROLES } from "../config/rbac.js";
 import { ForbiddenError, ValidationError } from "../lib/errors.js";
 import {
   bulkUpdateSessionRecords,
+  getAttendanceRegister,
   getAttendanceSummary,
   getPendingSessions,
   getRecentAbsentees,
@@ -219,5 +220,171 @@ describe("Component 1.4: Attendance Sessions, Fresh Sheet, Holiday & Absentees",
         ]),
       ValidationError,
     );
+  });
+});
+
+describe("Component 2.3: Monthly Attendance Register & Consecutive Absence Streaks", () => {
+  const teacher: JwtPayload = {
+    userId: "u-teacher",
+    tenantId: "t1",
+    email: "t@org.org",
+    role: ROLES.TEACHER,
+    centerIds: ["c1"],
+    isActive: true,
+  };
+
+  it("validates center scope and YYYY-MM format in getAttendanceRegister", async () => {
+    await assert.rejects(
+      () => getAttendanceRegister(teacher, { centerId: "c-other", month: "2026-11" }),
+      ForbiddenError,
+    );
+    await assert.rejects(
+      () => getAttendanceRegister(teacher, { centerId: "c1", month: "2026-13" }),
+      ValidationError,
+    );
+    await assert.rejects(
+      () => getAttendanceRegister(teacher, { centerId: "c1", month: "nov-2026" }),
+      ValidationError,
+    );
+  });
+
+  it("builds Students x Days matrix, excludes holidays from canonical (present+late) rate, and retains historical students", async (t) => {
+    mockPrismaModel(t, "student", {
+      findMany: async () => [
+        { id: "stu-1", fullName: "Asha Rao", rollNumber: "R01" },
+      ],
+    });
+    mockPrismaModel(t, "attendanceSession", {
+      findMany: async () => [
+        {
+          id: "s-1",
+          sessionDate: new Date("2026-11-01T00:00:00.000Z"),
+          isHoliday: false,
+          records: [
+            { studentId: "stu-1", status: "present", remarks: null, student: { id: "stu-1", fullName: "Asha Rao", rollNumber: "R01" } },
+            { studentId: "stu-hist", status: "absent", remarks: "Left early", student: { id: "stu-hist", fullName: "Bikram Sen", rollNumber: "R02" } },
+          ],
+        },
+        {
+          id: "s-2",
+          sessionDate: new Date("2026-11-02T00:00:00.000Z"),
+          isHoliday: false,
+          records: [
+            { studentId: "stu-1", status: "late", remarks: "Bus delay", student: { id: "stu-1", fullName: "Asha Rao", rollNumber: "R01" } },
+          ],
+        },
+        {
+          id: "s-3",
+          sessionDate: new Date("2026-11-03T00:00:00.000Z"),
+          isHoliday: false,
+          records: [
+            { studentId: "stu-1", status: "absent", remarks: null, student: { id: "stu-1", fullName: "Asha Rao", rollNumber: "R01" } },
+          ],
+        },
+        {
+          id: "s-4",
+          sessionDate: new Date("2026-11-04T00:00:00.000Z"),
+          isHoliday: false,
+          records: [
+            { studentId: "stu-1", status: "excused", remarks: "Medical", student: { id: "stu-1", fullName: "Asha Rao", rollNumber: "R01" } },
+          ],
+        },
+        {
+          id: "s-5",
+          sessionDate: new Date("2026-11-05T00:00:00.000Z"),
+          isHoliday: true,
+          records: [
+            { studentId: "stu-1", status: "absent", remarks: null, student: { id: "stu-1", fullName: "Asha Rao", rollNumber: "R01" } },
+          ],
+        },
+      ],
+    });
+
+    const reg = await getAttendanceRegister(teacher, { centerId: "c1", month: "2026-11" });
+    assert.equal(reg.days.length, 30);
+    assert.deepEqual(reg.holidayDates, ["2026-11-05"]);
+    assert.deepEqual(reg.sessionDates, [
+      "2026-11-01",
+      "2026-11-02",
+      "2026-11-03",
+      "2026-11-04",
+      "2026-11-05",
+    ]);
+    assert.equal(reg.students.length, 2);
+
+    const asha = reg.students[0];
+    assert.equal(asha.studentId, "stu-1");
+    assert.equal(asha.statuses["2026-11-01"], "present");
+    assert.equal(asha.statuses["2026-11-02"], "late");
+    assert.equal(asha.statuses["2026-11-03"], "absent");
+    assert.equal(asha.statuses["2026-11-04"], "excused");
+    assert.equal(asha.statuses["2026-11-05"], "holiday");
+    assert.equal(asha.remarksByDate["2026-11-02"], "Bus delay");
+    assert.equal(asha.summary.present, 1);
+    assert.equal(asha.summary.late, 1);
+    assert.equal(asha.summary.absent, 1);
+    assert.equal(asha.summary.excused, 1);
+    assert.equal(asha.summary.totalMarked, 3);
+    assert.equal(asha.summary.attendanceRate, 67);
+
+    const bikram = reg.students[1];
+    assert.equal(bikram.studentId, "stu-hist");
+    assert.equal(bikram.summary.attendanceRate, 0);
+  });
+
+  it("computes consecutiveAbsenceStreak ignoring holidays, excused, and pending", async (t) => {
+    const streakQueries: Record<string, unknown>[] = [];
+    mockPrismaModel(t, "attendanceRecord", {
+      findMany: async (args: { where: Record<string, unknown> }) => {
+        if (args.where.status === "absent") {
+          return [
+            {
+              id: "r-a",
+              studentId: "stu-3",
+              status: "absent",
+              remarks: "Follow up",
+              student: { id: "stu-3", fullName: "Riya Das", rollNumber: "R03", guardianPhone: "999" },
+              session: {
+                id: "s-10",
+                sessionDate: new Date("2026-11-10T00:00:00.000Z"),
+                center: { name: "Center 1" },
+                program: { name: "Program 1" },
+              },
+            },
+            {
+              id: "r-b",
+              studentId: "stu-4",
+              status: "absent",
+              remarks: null,
+              student: { id: "stu-4", fullName: "Kabir Roy", rollNumber: "R04", guardianPhone: "888" },
+              session: {
+                id: "s-10",
+                sessionDate: new Date("2026-11-10T00:00:00.000Z"),
+                center: { name: "Center 1" },
+                program: { name: "Program 1" },
+              },
+            },
+          ];
+        }
+        streakQueries.push(args.where);
+        return [
+          { studentId: "stu-3", status: "absent", session: { sessionDate: new Date("2026-11-10T00:00:00.000Z") } },
+          { studentId: "stu-3", status: "absent", session: { sessionDate: new Date("2026-11-08T00:00:00.000Z") } },
+          { studentId: "stu-3", status: "absent", session: { sessionDate: new Date("2026-11-07T00:00:00.000Z") } },
+          { studentId: "stu-3", status: "present", session: { sessionDate: new Date("2026-11-06T00:00:00.000Z") } },
+          { studentId: "stu-4", status: "absent", session: { sessionDate: new Date("2026-11-10T00:00:00.000Z") } },
+          { studentId: "stu-4", status: "late", session: { sessionDate: new Date("2026-11-09T00:00:00.000Z") } },
+          { studentId: "stu-4", status: "absent", session: { sessionDate: new Date("2026-11-08T00:00:00.000Z") } },
+        ];
+      },
+    });
+
+    const absentees = await getRecentAbsentees(teacher, 7);
+    assert.equal(absentees.length, 2);
+    assert.equal(streakQueries.length, 1);
+    assert.deepEqual(streakQueries[0].status, { in: ["present", "absent", "late"] });
+    assert.deepEqual(streakQueries[0].session, { isHoliday: false });
+    assert.equal(absentees[0].consecutiveAbsenceStreak, 3);
+    assert.equal(absentees[1].consecutiveAbsenceStreak, 1);
   });
 });

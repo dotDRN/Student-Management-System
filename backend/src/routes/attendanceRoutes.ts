@@ -15,6 +15,7 @@ import {
   getTodayFreshSheetController,
   markHolidayController,
   getRecentAbsenteesController,
+  getAttendanceRegisterController,
 } from '../controllers/attendanceController.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -44,6 +45,7 @@ attendanceRoutes.put(
 );
 attendanceRoutes.get("/students/:studentId", getStudentAttendance);
 attendanceRoutes.get("/summary", getAttendanceSummaryController);
+attendanceRoutes.get("/register", getAttendanceRegisterController);
 attendanceRoutes.get("/pending", getPendingSessionsController);
 attendanceRoutes.get(
   "/fresh-sheet",

@@ -13,6 +13,7 @@ import {
   getTodayFreshSheet,
   markHoliday,
   getRecentAbsentees,
+  getAttendanceRegister,
 } from "../services/attendanceService.js";
 
 type AuthenticatedRequest = Request & { user?: JwtPayload };
@@ -243,6 +244,24 @@ export async function getRecentAbsenteesController(
       days,
       centerId,
     );
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getAttendanceRegisterController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const { centerId, programId, month } = req.query;
+    const result = await getAttendanceRegister((req as AuthenticatedRequest).user!, {
+      centerId: centerId as string | undefined,
+      programId: programId as string | undefined,
+      month: month as string | undefined,
+    });
     return res.status(200).json(result);
   } catch (error) {
     return next(error);

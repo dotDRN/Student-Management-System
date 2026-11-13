@@ -46,7 +46,11 @@ export const markHoliday = (sessionId: string, isHoliday: boolean) =>
 
 export type RecentAbsenteeRecord = {
   id: string;
+  sessionId?: string;
+  studentId?: string;
   status: string;
+  remarks?: string | null;
+  consecutiveAbsenceStreak?: number;
   student?: {
     id: string;
     fullName: string;
@@ -54,10 +58,38 @@ export type RecentAbsenteeRecord = {
     guardianPhone?: string | null;
   };
   session?: {
+    id?: string;
     sessionDate: string;
     center?: { name: string };
     program?: { name: string };
   };
+};
+
+export type AttendanceRegisterStudentRow = {
+  studentId: string;
+  fullName: string;
+  rollNumber?: string | null;
+  statuses: Record<string, string>;
+  remarksByDate: Record<string, string | null>;
+  summary: {
+    present: number;
+    late: number;
+    absent: number;
+    excused: number;
+    pending: number;
+    totalMarked: number;
+    attendanceRate: number;
+  };
+};
+
+export type AttendanceRegisterResponse = {
+  centerId: string;
+  programId: string | null;
+  month: string;
+  days: string[];
+  holidayDates: string[];
+  sessionDates: string[];
+  students: AttendanceRegisterStudentRow[];
 };
 
 export const getRecentAbsentees = (days: number = 7, centerId?: string) =>
@@ -66,3 +98,9 @@ export const getRecentAbsentees = (days: number = 7, centerId?: string) =>
       params: { days, ...(centerId ? { centerId } : {}) },
     })
     .then((r) => r.data);
+
+export const getAttendanceRegister = (params: {
+  centerId: string;
+  programId?: string;
+  month?: string;
+}) => api.get<AttendanceRegisterResponse>('/attendance/register', { params }).then((r) => r.data);

@@ -6,7 +6,7 @@ import { getScopedCenterIds } from "../config/rbac.js";
 import { assertCenterAccess } from "../lib/centerScope.js";
 import { resolveAcademicYearId } from "../utils/academicYear.js";
 import { calculateAttendancePercentage, countAttendanceStatuses } from "../utils/attendanceMetrics.js";
-import { getTodayUtcDateOnly, parseOptionalUtcDateOnly } from "../utils/dateOnly.js";
+import { formatUtcDateOnly, getTodayUtcDateOnly, parseOptionalUtcDateOnly } from "../utils/dateOnly.js";
 
 const VALID_ATTENDANCE_STATUSES = new Set(["pending", "present", "absent", "late", "excused"]);
 
@@ -604,17 +604,241 @@ export async function getRecentAbsentees(
   };
   applyCenterScopeToWhere(user, sessionWhere, requestedCenterId);
 
-  return prisma.attendanceRecord.findMany({
+  const absentees = await prisma.attendanceRecord.findMany({
     where: {
       status: "absent",
       session: sessionWhere as never,
     },
     include: {
       student: { select: { id: true, fullName: true, rollNumber: true, guardianPhone: true } },
-      session: { select: { sessionDate: true, center: { select: { name: true } }, program: { select: { name: true } } } },
+      session: {
+        select: {
+          id: true,
+          sessionDate: true,
+          center: { select: { name: true } },
+          program: { select: { name: true } },
+        },
+      },
     },
     orderBy: {
       session: { sessionDate: "desc" },
     },
   });
+
+  if (absentees.length === 0) {
+    return [];
+  }
+
+  const studentIds = Array.from(new Set(absentees.map((r) => r.studentId)));
+  const streakWindowRecords = await prisma.attendanceRecord.findMany({
+    where: {
+      studentId: { in: studentIds },
+      status: { in: ["present", "absent", "late"] },
+      session: { isHoliday: false },
+    },
+    select: {
+      studentId: true,
+      status: true,
+      session: { select: { sessionDate: true } },
+    },
+    orderBy: { session: { sessionDate: "desc" } },
+  });
+
+  const recordsByStudent = new Map<string, Array<{ status: string; time: number }>>();
+  for (const row of streakWindowRecords) {
+    const list = recordsByStudent.get(row.studentId) ?? [];
+    list.push({
+      status: String(row.status),
+      time: row.session?.sessionDate ? new Date(row.session.sessionDate).getTime() : 0,
+    });
+    recordsByStudent.set(row.studentId, list);
+  }
+
+  const streakByStudent = new Map<string, number>();
+  for (const [sid, list] of recordsByStudent.entries()) {
+    list.sort((a, b) => b.time - a.time);
+    let streak = 0;
+    for (const item of list) {
+      if (item.status === "absent") {
+        streak += 1;
+      } else {
+        break;
+      }
+    }
+    streakByStudent.set(sid, streak);
+  }
+
+  return absentees.map((record) => ({
+    ...record,
+    consecutiveAbsenceStreak: streakByStudent.get(record.studentId) ?? 1,
+  }));
+}
+
+const REGISTER_STATUS_PRIORITY: Record<string, number> = {
+  present: 5,
+  late: 4,
+  absent: 3,
+  excused: 2,
+  pending: 1,
+};
+
+export async function getAttendanceRegister(
+  user: JwtPayload,
+  query: {
+    centerId?: string;
+    programId?: string;
+    month?: string;
+  },
+) {
+  if (!query.centerId) {
+    throw new ValidationError("centerId is required");
+  }
+  ensureCenterAccess(user, query.centerId);
+
+  const monthStr = query.month?.trim() || formatUtcDateOnly(getTodayUtcDateOnly()).slice(0, 7);
+  const monthMatch = /^(\d{4})-(\d{2})$/.exec(monthStr);
+  if (!monthMatch) {
+    throw new ValidationError("month must be in YYYY-MM format");
+  }
+  const year = Number(monthMatch[1]);
+  const monthNum = Number(monthMatch[2]);
+  if (monthNum < 1 || monthNum > 12) {
+    throw new ValidationError("month must be between 01 and 12");
+  }
+
+  const daysInMonth = new Date(Date.UTC(year, monthNum, 0)).getUTCDate();
+  const monthStart = new Date(Date.UTC(year, monthNum - 1, 1));
+  const monthEnd = new Date(Date.UTC(year, monthNum - 1, daysInMonth));
+  const days = Array.from({ length: daysInMonth }, (_, idx) =>
+    `${monthStr}-${String(idx + 1).padStart(2, "0")}`,
+  );
+
+  const [activeStudents, sessions] = await Promise.all([
+    prisma.student.findMany({
+      where: {
+        centerId: query.centerId,
+        isActive: true,
+        ...(query.programId ? { programId: query.programId } : {}),
+      },
+      select: { id: true, fullName: true, rollNumber: true },
+      orderBy: { fullName: "asc" },
+    }),
+    prisma.attendanceSession.findMany({
+      where: {
+        centerId: query.centerId,
+        ...(query.programId ? { programId: query.programId } : {}),
+        sessionDate: { gte: monthStart, lte: monthEnd },
+      },
+      include: {
+        records: {
+          select: {
+            studentId: true,
+            status: true,
+            remarks: true,
+            student: { select: { id: true, fullName: true, rollNumber: true } },
+          },
+        },
+      },
+      orderBy: { sessionDate: "asc" },
+    }),
+  ]);
+
+  const studentMeta = new Map<string, { id: string; fullName: string; rollNumber: string | null }>();
+  for (const s of activeStudents) {
+    studentMeta.set(s.id, { id: s.id, fullName: s.fullName, rollNumber: s.rollNumber ?? null });
+  }
+
+  const holidayDateSet = new Set<string>();
+  const sessionDateSet = new Set<string>();
+  const perStudentDateMap = new Map<
+    string,
+    Map<string, { status: string; remarks: string | null; isHoliday: boolean }>
+  >();
+
+  for (const session of sessions) {
+    const dateKey = formatUtcDateOnly(new Date(session.sessionDate));
+    sessionDateSet.add(dateKey);
+    const isHolidaySession = Boolean(session.isHoliday);
+    if (isHolidaySession) {
+      holidayDateSet.add(dateKey);
+    }
+
+    for (const rec of session.records ?? []) {
+      if (!studentMeta.has(rec.studentId) && rec.student) {
+        studentMeta.set(rec.studentId, {
+          id: rec.student.id,
+          fullName: rec.student.fullName,
+          rollNumber: rec.student.rollNumber ?? null,
+        });
+      }
+      const dateEntries = perStudentDateMap.get(rec.studentId) ?? new Map();
+      const existing = dateEntries.get(dateKey);
+      const nextStatus = String(rec.status ?? "pending");
+      if (
+        !existing ||
+        (REGISTER_STATUS_PRIORITY[nextStatus] ?? 0) >= (REGISTER_STATUS_PRIORITY[existing.status] ?? 0)
+      ) {
+        dateEntries.set(dateKey, {
+          status: nextStatus,
+          remarks: rec.remarks ?? existing?.remarks ?? null,
+          isHoliday: isHolidaySession,
+        });
+      }
+      perStudentDateMap.set(rec.studentId, dateEntries);
+    }
+  }
+
+  const sortedStudents = Array.from(studentMeta.values()).sort((a, b) =>
+    a.fullName.localeCompare(b.fullName),
+  );
+
+  const students = sortedStudents.map((stu) => {
+    const dateEntries = perStudentDateMap.get(stu.id) ?? new Map();
+    const statuses: Record<string, string> = {};
+    const remarksByDate: Record<string, string | null> = {};
+    const nonHolidayRecords: Array<{ status: string }> = [];
+    let excusedCount = 0;
+    let pendingCount = 0;
+
+    for (const [dKey, entry] of dateEntries.entries()) {
+      statuses[dKey] = entry.isHoliday ? "holiday" : entry.status;
+      if (entry.remarks) {
+        remarksByDate[dKey] = entry.remarks;
+      }
+      if (!entry.isHoliday) {
+        nonHolidayRecords.push({ status: entry.status });
+        if (entry.status === "excused") excusedCount += 1;
+        if (entry.status === "pending") pendingCount += 1;
+      }
+    }
+
+    const counts = countAttendanceStatuses(nonHolidayRecords);
+    const attendanceRate = calculateAttendancePercentage(counts);
+    return {
+      studentId: stu.id,
+      fullName: stu.fullName,
+      rollNumber: stu.rollNumber,
+      statuses,
+      remarksByDate,
+      summary: {
+        present: counts.present,
+        late: counts.late,
+        absent: counts.absent,
+        excused: excusedCount,
+        pending: pendingCount,
+        totalMarked: counts.present + counts.late + counts.absent,
+        attendanceRate,
+      },
+    };
+  });
+
+  return {
+    centerId: query.centerId,
+    programId: query.programId ?? null,
+    month: monthStr,
+    days,
+    holidayDates: Array.from(holidayDateSet).sort(),
+    sessionDates: Array.from(sessionDateSet).sort(),
+    students,
+  };
 }
