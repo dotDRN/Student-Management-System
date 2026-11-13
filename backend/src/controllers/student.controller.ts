@@ -278,6 +278,38 @@ export const deleteSkill = async (
   }
 };
 
+export const getSkillMatrix = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.getSkillMatrix(req.user!, {
+      centerId: typeof req.query.centerId === "string" ? req.query.centerId : undefined,
+      programId: typeof req.query.programId === "string" ? req.query.programId : undefined,
+      assessedOn: typeof req.query.assessedOn === "string" ? req.query.assessedOn : undefined,
+    });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    console.error("Get Skill Matrix Error:", err);
+    next(err);
+  }
+};
+
+export const bulkUpsertSkills = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.bulkUpsertSkills(req.user!, req.body);
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    console.error("Bulk Upsert Skills Error:", err);
+    next(err);
+  }
+};
+
 /* ─────────────────────────────────────────
    CAREERS
 ───────────────────────────────────────── */

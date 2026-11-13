@@ -3,14 +3,16 @@ import assert from "node:assert/strict";
 import { ROLES } from "../config/rbac.js";
 import { ForbiddenError, NotFoundError, ValidationError } from "../lib/errors.js";
 import {
+  bulkUpsertSkillLogs,
   createSkillLog,
   deleteSkillLog,
+  getSkillMatrix,
   getSkillsByStudent,
   listSkillDefinitions,
   updateSkillLog,
 } from "../services/skillService.js";
 import type { JwtPayload } from "../utils/jwt.js";
-import { mockPrismaModel } from "./helpers/mockPrisma.js";
+import { mockPrismaModel, mockPrismaTransaction } from "./helpers/mockPrisma.js";
 
 const SKILL_10PT_ID = "11111111-1111-4111-8111-111111111111";
 const SKILL_5PT_ID = "22222222-2222-4222-8222-222222222222";
@@ -250,5 +252,152 @@ describe("Component 1.5: Skills Tracking & Skill Definitions", () => {
     const defs = await listSkillDefinitions("p1");
     assert.equal(defs.length, 1);
     assert.deepEqual(listedWhere, { isActive: true, programId: "p1" });
+  });
+});
+
+describe("Component 2.4: Bulk Class Skill Matrix & Batch Upsert", () => {
+  const CENTER_1_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+  const CENTER_2_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
+  const PROGRAM_1_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1";
+  const PROGRAM_2_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2";
+  const STUDENT_1_ID = "cccccccc-cccc-4ccc-8ccc-ccccccccccc1";
+  const STUDENT_2_ID = "cccccccc-cccc-4ccc-8ccc-ccccccccccc2";
+
+  const teacher: JwtPayload = {
+    userId: "u-teacher",
+    tenantId: "t1",
+    email: "teacher@org.org",
+    role: ROLES.TEACHER,
+    centerIds: [CENTER_1_ID],
+    isActive: true,
+  };
+
+  it("getSkillMatrix enforces center access and returns center/program matrix with UTC date", async (t) => {
+    await assert.rejects(
+      () => getSkillMatrix(teacher, { centerId: CENTER_2_ID, programId: PROGRAM_1_ID }),
+      ForbiddenError,
+    );
+
+    mockPrismaModel(t, "student", {
+      findMany: async () => [
+        { id: STUDENT_1_ID, fullName: "Asha Rao", rollNumber: "01", programId: PROGRAM_1_ID, centerId: CENTER_1_ID },
+      ],
+    });
+    mockPrismaModel(t, "skillDefinition", {
+      findMany: async () => [
+        { id: SKILL_5PT_ID, name: "Communication", maxLevel: 5, programId: PROGRAM_1_ID, isActive: true },
+      ],
+    });
+    mockPrismaModel(t, "studentSkillLog", {
+      findMany: async () => [
+        {
+          id: "log-existing",
+          studentId: STUDENT_1_ID,
+          skillId: SKILL_5PT_ID,
+          level: 4,
+          remarks: "Strong clarity",
+          assessedOn: new Date("2026-11-12T00:00:00.000Z"),
+        },
+      ],
+    });
+
+    const matrix = await getSkillMatrix(teacher, {
+      centerId: CENTER_1_ID,
+      programId: PROGRAM_1_ID,
+      assessedOn: "2026-11-12",
+    });
+    assert.equal(matrix.assessedOn, "2026-11-12");
+    assert.equal(matrix.students.length, 1);
+    assert.equal(matrix.skills.length, 1);
+    assert.equal(matrix.existingLogs.length, 1);
+  });
+
+  it("bulkUpsertSkillLogs validates center, active student, program match & maxLevel, then atomically creates/updates", async (t) => {
+    await assert.rejects(
+      () =>
+        bulkUpsertSkillLogs(teacher, {
+          centerId: CENTER_2_ID,
+          entries: [{ studentId: STUDENT_1_ID, skillId: SKILL_5PT_ID, level: 3 }],
+        }),
+      ForbiddenError,
+    );
+
+    mockPrismaModel(t, "student", {
+      findMany: async () => [
+        { id: STUDENT_1_ID, fullName: "Asha Rao", centerId: CENTER_1_ID, programId: PROGRAM_1_ID, isActive: true },
+        { id: STUDENT_2_ID, fullName: "Rohan Das", centerId: CENTER_1_ID, programId: PROGRAM_1_ID, isActive: true },
+      ],
+    });
+    mockPrismaModel(t, "skillDefinition", {
+      findMany: async () => [
+        { id: SKILL_5PT_ID, name: "Communication", programId: PROGRAM_1_ID, maxLevel: 5, isActive: true },
+        { id: SKILL_OTHER_PROG_ID, name: "Other Prog Skill", programId: PROGRAM_2_ID, maxLevel: 5, isActive: true },
+      ],
+    });
+
+    // Rejects level above maxLevel
+    await assert.rejects(
+      () =>
+        bulkUpsertSkillLogs(teacher, {
+          centerId: CENTER_1_ID,
+          programId: PROGRAM_1_ID,
+          assessedOn: "2026-11-12",
+          entries: [{ studentId: STUDENT_1_ID, skillId: SKILL_5PT_ID, level: 6 }],
+        }),
+      ValidationError,
+    );
+
+    // Rejects program mismatch between skill definition and student
+    await assert.rejects(
+      () =>
+        bulkUpsertSkillLogs(teacher, {
+          centerId: CENTER_1_ID,
+          programId: PROGRAM_1_ID,
+          assessedOn: "2026-11-12",
+          entries: [{ studentId: STUDENT_1_ID, skillId: SKILL_OTHER_PROG_ID, level: 3 }],
+        }),
+      ValidationError,
+    );
+
+    const updates: Record<string, unknown>[] = [];
+    const creates: Record<string, unknown>[] = [];
+    mockPrismaTransaction(t, () => ({
+      studentSkillLog: {
+        findMany: async () => [
+          {
+            id: "existing-log-1",
+            studentId: STUDENT_1_ID,
+            skillId: SKILL_5PT_ID,
+            level: 2,
+            remarks: "Old note",
+          },
+        ],
+        update: async (args: { data: Record<string, unknown> }) => {
+          updates.push(args.data);
+          return { id: "existing-log-1", ...args.data };
+        },
+        create: async (args: { data: Record<string, unknown> }) => {
+          creates.push(args.data);
+          return { id: "new-log-1", ...args.data };
+        },
+      },
+    }));
+
+    const result = await bulkUpsertSkillLogs(teacher, {
+      centerId: CENTER_1_ID,
+      programId: PROGRAM_1_ID,
+      assessedOn: "2026-11-12",
+      entries: [
+        { studentId: STUDENT_1_ID, skillId: SKILL_5PT_ID, level: 4, remarks: "Improved" },
+        { studentId: STUDENT_2_ID, skillId: SKILL_5PT_ID, level: 5 },
+      ],
+    });
+
+    assert.equal(result.assessedOn, "2026-11-12");
+    assert.equal(result.updatedCount, 1);
+    assert.equal(result.createdCount, 1);
+    assert.equal(result.savedCount, 2);
+    assert.equal(updates[0].level, 4);
+    assert.equal((creates[0].assessedOn as Date).toISOString(), "2026-11-12T00:00:00.000Z");
   });
 });

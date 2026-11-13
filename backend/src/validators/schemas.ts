@@ -163,6 +163,23 @@ export const updateSkillSchema = z.object({
   assessedOn: preprocessEmptyToUndefined(optionalDateString),
 });
 
+export const bulkUpsertSkillLogsSchema = z.object({
+  centerId: uuid,
+  programId: uuid.optional(),
+  assessedOn: preprocessEmptyToUndefined(optionalDateString),
+  entries: z
+    .array(
+      z.object({
+        studentId: uuid,
+        skillId: uuid,
+        level: z.coerce.number().int().min(1, "Level must be at least 1").max(100),
+        remarks: preprocessEmptyToNull(z.string().trim().min(1)),
+      }),
+    )
+    .min(1, "At least one skill entry is required")
+    .max(500, "Maximum 500 skill entries per batch"),
+});
+
 export const createCareerSchema = z.object({
   careerGoal: z.string().min(2),
   industry: z.string().min(2),

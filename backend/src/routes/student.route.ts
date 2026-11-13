@@ -14,6 +14,8 @@ import {
   addSkill,
   getSkillsByStudent,
   updateSkill,
+  getSkillMatrix,
+  bulkUpsertSkills,
   addCareer,
   getCareersByStudent,
   updateCareer,
@@ -38,6 +40,7 @@ import { validate } from '../middleware/validate.js';
 import {
   addFeePaymentSchema,
   bulkImportStudentsSchema,
+  bulkUpsertSkillLogsSchema,
   completeTransferSchema,
   createCareerSchema,
   createSkillSchema,
@@ -63,6 +66,13 @@ router.post(
   requirePermission(PERMISSIONS.MANAGE_STUDENTS),
   validate(bulkImportStudentsSchema),
   bulkImportStudents
+);
+router.get("/skills/matrix", getSkillMatrix);
+router.post(
+  "/skills/bulk",
+  requirePermission(PERMISSIONS.MANAGE_SKILLS),
+  validate(bulkUpsertSkillLogsSchema),
+  bulkUpsertSkills
 );
 
 // 3. Transfer Workflow

@@ -47,6 +47,7 @@ import {
 } from '../services/students.service';
 import { listUsers, type UserAdminItem } from '../services/users.service';
 import { getSkillsByStudent } from '../services/skills.service';
+import { SkillProgressionChart } from '../components/skills/SkillProgressionChart';
 import { getCareersByStudent } from '../services/career.service';
 import { getApiErrorMessage } from '../services/api';
 import { usePermission } from '../hooks/usePermission';
@@ -593,15 +594,18 @@ export const StudentDetails: React.FC = () => {
               description="Add ratings from the Skills page when the backend exposes them."
             />
           ) : (
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={radarData}>
-                  <PolarGrid />
-                  <PolarAngleAxis dataKey="skill" tick={{ fontSize: 11 }} />
-                  <Radar dataKey="score" fill={CHART_RED} fillOpacity={0.35} stroke={CHART_RED} />
-                  <Tooltip />
-                </RadarChart>
-              </ResponsiveContainer>
+            <div>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={radarData}>
+                    <PolarGrid />
+                    <PolarAngleAxis dataKey="skill" tick={{ fontSize: 11 }} />
+                    <Radar dataKey="score" fill={CHART_RED} fillOpacity={0.35} stroke={CHART_RED} />
+                    <Tooltip />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              <SkillProgressionChart records={skillsRows ?? []} heightClassName="h-56" />
             </div>
           )}
         </Card>

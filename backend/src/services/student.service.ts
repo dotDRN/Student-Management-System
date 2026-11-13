@@ -18,8 +18,10 @@ import {
   updateStudentSchema,
 } from '../validators/schemas.js';
 import {
+  bulkUpsertSkillLogs,
   createSkillLog,
   deleteSkillLog,
+  getSkillMatrix as getSkillMatrixData,
   getSkillsByStudent as getSkillLogsByStudent,
   updateSkillLog,
 } from './skillService.js';
@@ -553,6 +555,14 @@ export const updateAttendance = async (user: TokenPayload, id: string, data: any
 
 export const addSkill = async (user: TokenPayload, studentId: string, data: unknown) =>
   createSkillLog(user, studentId, data);
+
+export const getSkillMatrix = async (
+  user: TokenPayload,
+  query: { centerId?: string; programId?: string; assessedOn?: string },
+) => getSkillMatrixData(user, query);
+
+export const bulkUpsertSkills = async (user: TokenPayload, data: unknown) =>
+  bulkUpsertSkillLogs(user, data);
 
 export const getSkillsByStudent = async (user: TokenPayload, studentId: string) =>
   getSkillLogsByStudent(user, studentId);
