@@ -375,3 +375,44 @@ export const updateBatchSchema = z.object({
 export const enrollBatchStudentsSchema = z.object({
   studentIds: z.array(uuid).min(1, "Select at least one student").max(200),
 });
+
+export const alertMetricEnum = z.enum([
+  "consecutive_absences",
+  "attendance_30d_pct",
+  "exam_score_drop_pct",
+  "fee_overdue_balance",
+]);
+
+export const alertConditionEnum = z.enum(["lt", "lte", "gt", "gte", "eq"]);
+
+export const createAlertRuleSchema = z.object({
+  centerId: preprocessEmptyToNull(uuid),
+  programId: preprocessEmptyToNull(uuid),
+  metric: alertMetricEnum,
+  condition: alertConditionEnum,
+  threshold: z.coerce.number().finite().min(0).max(10000000),
+  description: preprocessEmptyToNull(z.string().trim().max(400)),
+  notifyRoles: z
+    .array(z.enum(["super_admin", "tech_admin", "center_admin", "supervisor", "teacher", "staff"]))
+    .min(1, "Select at least one role to notify")
+    .default(["center_admin", "supervisor"]),
+  isActive: z.boolean().optional(),
+});
+
+export const updateAlertRuleSchema = z.object({
+  centerId: preprocessEmptyToNull(uuid),
+  programId: preprocessEmptyToNull(uuid),
+  metric: alertMetricEnum.optional(),
+  condition: alertConditionEnum.optional(),
+  threshold: z.coerce.number().finite().min(0).max(10000000).optional(),
+  description: preprocessEmptyToNull(z.string().trim().max(400)),
+  notifyRoles: z
+    .array(z.enum(["super_admin", "tech_admin", "center_admin", "supervisor", "teacher", "staff"]))
+    .min(1)
+    .optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateAlertStatusSchema = z.object({
+  isRead: z.boolean(),
+});

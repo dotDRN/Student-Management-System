@@ -8,6 +8,7 @@ import { Shield, RefreshCw, User, Mail, Clock, Bell } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { Navigate } from 'react-router-dom';
 import { getMe } from '../services/auth.service';
+import { AlertRulesSection } from '../components/settings/AlertRulesSection';
 import { notificationPermission } from '../notifications/NotificationPermission';
 import { useNotificationStore } from '../store/useNotificationStore';
 
@@ -15,15 +16,12 @@ const BrowserNotificationSettings: React.FC = () => {
   const browserNotificationsEnabled = useNotificationStore(state => state.browserNotificationsEnabled);
   const setBrowserNotificationsEnabled = useNotificationStore(state => state.setBrowserNotificationsEnabled);
   
-  const [permission, setPermission] = useState<NotificationPermission>('default');
-  const [isSupported, setIsSupported] = useState(false);
+  const [permission, setPermission] = useState<NotificationPermission>(() =>
+    notificationPermission.isSupported() ? notificationPermission.getPermission() : 'default',
+  );
+  const [isSupported] = useState(() => notificationPermission.isSupported());
 
   useEffect(() => {
-    setIsSupported(notificationPermission.isSupported());
-    if (notificationPermission.isSupported()) {
-      setPermission(notificationPermission.getPermission());
-    }
-
     const handleFocus = () => {
       if (notificationPermission.isSupported()) {
         setPermission(notificationPermission.getPermission());
@@ -161,6 +159,11 @@ export const Settings: React.FC = () => {
     return <Navigate to="/dashboard" replace />;
   }
 
+  const profileFullName = typeof profile?.fullName === 'string' ? profile.fullName : undefined;
+  const profileEmail = typeof profile?.email === 'string' ? profile.email : undefined;
+  const profileRole = typeof profile?.role === 'string' ? profile.role : undefined;
+  const profileCreatedAt = typeof profile?.createdAt === 'string' ? profile.createdAt : undefined;
+
   return (
     <PageWrapper
       title="System Settings"
@@ -178,6 +181,7 @@ export const Settings: React.FC = () => {
 
       <div className="max-w-3xl grid grid-cols-1 gap-6">
         <BrowserNotificationSettings />
+        <AlertRulesSection />
         
         <Card>
           <h3 className="font-semibold text-neutral-900 mb-4 flex items-center gap-2">
@@ -194,7 +198,7 @@ export const Settings: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-neutral-500">Full Name</p>
-                  <p className="font-semibold text-neutral-900">{(profile as any)?.fullName || currentUser?.name || 'Administrator'}</p>
+                  <p className="font-semibold text-neutral-900">{profileFullName || currentUser?.name || 'Administrator'}</p>
                 </div>
               </div>
               
@@ -204,7 +208,7 @@ export const Settings: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-neutral-500">Email Address</p>
-                  <p className="font-semibold text-neutral-900">{(profile as any)?.email || currentUser?.email || 'N/A'}</p>
+                  <p className="font-semibold text-neutral-900">{profileEmail || currentUser?.email || 'N/A'}</p>
                 </div>
               </div>
 
@@ -214,7 +218,7 @@ export const Settings: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-neutral-500">System Role</p>
-                  <p className="font-semibold text-neutral-900 capitalize">{(profile as any)?.role || currentUser?.role || 'Admin'}</p>
+                  <p className="font-semibold text-neutral-900 capitalize">{profileRole || currentUser?.role || 'Admin'}</p>
                 </div>
               </div>
 
@@ -225,7 +229,7 @@ export const Settings: React.FC = () => {
                 <div>
                   <p className="text-xs font-medium text-neutral-500">Joined Date</p>
                   <p className="font-semibold text-neutral-900">
-                    {(profile as any)?.createdAt ? new Date((profile as any).createdAt).toLocaleDateString() : 'Active'}
+                    {profileCreatedAt ? new Date(profileCreatedAt).toLocaleDateString() : 'Active'}
                   </p>
                 </div>
               </div>

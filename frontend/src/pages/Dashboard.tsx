@@ -24,6 +24,7 @@ import { getReportsDashboard, type ReportsDashboardData } from '../services/repo
 import { createCenter, deleteCenter } from '../services/centers.service';
 import { getApiErrorMessage } from '../services/api';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { RiskAlertsCard } from '../components/dashboard/RiskAlertsCard';
 import { useToast } from '../hooks/useToast';
 import { usePermission } from '../hooks/usePermission';
 
@@ -355,6 +356,8 @@ export const Dashboard: React.FC = () => {
               </button>
             </Card>
           </div>
+
+          <RiskAlertsCard />
 
           {isAdmin && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
