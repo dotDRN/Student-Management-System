@@ -17,6 +17,7 @@ export interface ActivityRecord {
   volunteers: string[];
   center?: { id?: string; name: string } | null;
   program?: { id?: string; name: string } | null;
+  _count?: { activityEnrollments?: number };
 }
 
 export interface ListActivitiesQuery {
@@ -66,3 +67,86 @@ export const updateActivity = (activityId: string, payload: UpdateActivityPayloa
 
 export const deleteActivity = (activityId: string) =>
   api.delete(`/activities/${activityId}`);
+
+export type ActivityEnrollmentStatus = 'requested_by_teacher' | 'approved_by_admin';
+
+export interface ActivityEnrollmentRecord {
+  id: string;
+  activityId: string;
+  studentId: string;
+  status: ActivityEnrollmentStatus;
+  requestedBy: string;
+  createdAt: string;
+  student?: {
+    id: string;
+    fullName: string;
+    rollNumber?: string | null;
+    centerId: string;
+    programId: string;
+    program?: { id: string; name: string } | null;
+  };
+  requestedByUser?: {
+    id: string;
+    fullName: string;
+    role?: string;
+  } | null;
+  activity?: {
+    id: string;
+    name: string;
+    activityType?: ActivityType;
+    status: ActivityStatus;
+    startDate?: string | null;
+    endDate?: string | null;
+    center?: { id: string; name: string } | null;
+    program?: { id: string; name: string } | null;
+  };
+}
+
+export interface HolisticCreditSummary {
+  totalEnrolled: number;
+  approvedCount: number;
+  pendingCount: number;
+  completedCount: number;
+  holisticPoints: number;
+}
+
+export interface StudentActivityEnrollmentsResponse {
+  studentId: string;
+  enrollments: ActivityEnrollmentRecord[];
+  summary: HolisticCreditSummary;
+}
+
+export const listActivityEnrollments = (activityId: string) =>
+  api
+    .get<ActivityEnrollmentRecord[]>(`/activities/${activityId}/enrollments`)
+    .then((r) => (Array.isArray(r.data) ? r.data : []));
+
+export const enrollStudentsInActivity = (activityId: string, studentIds: string[]) =>
+  api
+    .post<{
+      activityId: string;
+      status: ActivityEnrollmentStatus;
+      enrolledCount: number;
+      skippedCount: number;
+      enrollments: ActivityEnrollmentRecord[];
+    }>(`/activities/${activityId}/enrollments`, { studentIds })
+    .then((r) => r.data);
+
+export const updateActivityEnrollmentStatus = (
+  activityId: string,
+  studentId: string,
+  status: ActivityEnrollmentStatus,
+) =>
+  api
+    .patch<ActivityEnrollmentRecord>(`/activities/${activityId}/enrollments/${studentId}`, {
+      status,
+    })
+    .then((r) => r.data);
+
+export const removeActivityEnrollment = (activityId: string, studentId: string) =>
+  api.delete(`/activities/${activityId}/enrollments/${studentId}`);
+
+export const getStudentActivityEnrollments = (studentId: string) =>
+  api
+    .get<StudentActivityEnrollmentsResponse>(`/activities/students/${studentId}`)
+    .then((r) => r.data);

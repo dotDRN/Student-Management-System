@@ -8,6 +8,11 @@ import {
   deleteActivity,
   assignVolunteer,
   removeVolunteerAssignment,
+  listActivityEnrollments,
+  enrollStudentsInActivity,
+  updateActivityEnrollmentStatus,
+  removeActivityEnrollment,
+  getStudentActivityEnrollments,
 } from "../services/activityService.js";
 
 type AuthenticatedRequest = Request & { user?: JwtPayload };
@@ -92,6 +97,89 @@ export async function removeVolunteerAssignmentController(
       req.params.userId as string,
     );
     return res.status(204).send();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function listActivityEnrollmentsController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const user = (req as AuthenticatedRequest).user!;
+    const enrollments = await listActivityEnrollments(user, req.params.activityId as string);
+    return res.status(200).json(enrollments);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function enrollStudentsInActivityController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const user = (req as AuthenticatedRequest).user!;
+    const result = await enrollStudentsInActivity(
+      user,
+      req.params.activityId as string,
+      req.body.studentIds as string[],
+    );
+    return res.status(201).json(result);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function updateActivityEnrollmentStatusController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const user = (req as AuthenticatedRequest).user!;
+    const updated = await updateActivityEnrollmentStatus(
+      user,
+      req.params.activityId as string,
+      req.params.studentId as string,
+      req.body.status as "requested_by_teacher" | "approved_by_admin",
+    );
+    return res.status(200).json(updated);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function removeActivityEnrollmentController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const user = (req as AuthenticatedRequest).user!;
+    await removeActivityEnrollment(
+      user,
+      req.params.activityId as string,
+      req.params.studentId as string,
+    );
+    return res.status(204).send();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getStudentActivityEnrollmentsController(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const user = (req as AuthenticatedRequest).user!;
+    const result = await getStudentActivityEnrollments(user, req.params.studentId as string);
+    return res.status(200).json(result);
   } catch (error) {
     return next(error);
   }

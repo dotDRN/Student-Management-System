@@ -7,6 +7,7 @@ import {
   MapPin,
   Plus,
   Trash2,
+  Users,
 } from 'lucide-react';
 import { PageWrapper } from '../components/layout/PageWrapper';
 import { Card } from '../components/ui/Card';
@@ -21,6 +22,7 @@ import { useToast } from '../hooks/useToast';
 import { getApiErrorMessage } from '../services/api';
 import { listCenters, listPrograms } from '../services/centers.service';
 import { BatchesPanel } from '../components/activities/BatchesPanel';
+import { ActivityEnrollmentsModal } from '../components/activities/ActivityEnrollmentsModal';
 import {
   createActivity,
   deleteActivity,
@@ -90,6 +92,7 @@ export const Activities: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityRecord | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [enrollmentActivity, setEnrollmentActivity] = useState<ActivityRecord | null>(null);
 
   const buildEmptyForm = useCallback(
     (defaultCenterIds: string[] = [], defaultProgramId = ''): ActivityFormState => ({
@@ -485,31 +488,42 @@ export const Activities: React.FC = () => {
                         {activity.center.name}
                       </div>
                     )}
+                    <div className="flex items-center gap-1.5 text-xs text-neutral-500">
+                      <Users size={14} className="text-neutral-400" />
+                      {activity._count?.activityEnrollments ?? 0} participant
+                      {(activity._count?.activityEnrollments ?? 0) === 1 ? '' : 's'}
+                    </div>
                   </div>
                 </div>
 
-                {(canManageActivities || canDeleteActivities) && (
-                  <div className="flex md:flex-col justify-center gap-2 min-w-[160px]">
-                    {canManageActivities && (
-                      <Button
-                        variant="ghost"
-                        className="text-xs w-full border border-neutral-100"
-                        onClick={() => openEditModal(activity)}
-                      >
-                        Edit Details
-                      </Button>
-                    )}
-                    {canDeleteActivities && (
-                      <Button
-                        variant="ghost"
-                        className="text-xs text-danger border border-danger/20 hover:bg-danger/10 w-full"
-                        onClick={() => setDeleteTargetId(activity.id)}
-                      >
-                        <Trash2 size={16} className="mr-2" /> Delete
-                      </Button>
-                    )}
-                  </div>
-                )}
+                <div className="flex md:flex-col justify-center gap-2 min-w-[160px]">
+                  <Button
+                    variant="secondary"
+                    className="text-xs w-full"
+                    onClick={() => setEnrollmentActivity(activity)}
+                  >
+                    <Users size={14} className="mr-1.5" />
+                    Participants ({activity._count?.activityEnrollments ?? 0})
+                  </Button>
+                  {canManageActivities && (
+                    <Button
+                      variant="ghost"
+                      className="text-xs w-full border border-neutral-100"
+                      onClick={() => openEditModal(activity)}
+                    >
+                      Edit Details
+                    </Button>
+                  )}
+                  {canDeleteActivities && (
+                    <Button
+                      variant="ghost"
+                      className="text-xs text-danger border border-danger/20 hover:bg-danger/10 w-full"
+                      onClick={() => setDeleteTargetId(activity.id)}
+                    >
+                      <Trash2 size={16} className="mr-2" /> Delete
+                    </Button>
+                  )}
+                </div>
               </div>
             </Card>
           ))
@@ -694,6 +708,12 @@ export const Activities: React.FC = () => {
         variant="danger"
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTargetId(null)}
+      />
+
+      <ActivityEnrollmentsModal
+        activity={enrollmentActivity}
+        onClose={() => setEnrollmentActivity(null)}
+        onUpdated={() => void fetchActivitiesList()}
       />
         </>
       )}

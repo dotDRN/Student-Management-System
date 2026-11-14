@@ -5,8 +5,10 @@ import { requireCenterAccess } from "../middleware/center.middleware.js";
 import { validate } from "../middleware/validate.js";
 import { PERMISSIONS } from "../config/rbac.js";
 import {
+  activityEnrollStudentsSchema,
   assignVolunteerSchema,
   createActivitySchema,
+  updateActivityEnrollmentStatusSchema,
   updateActivitySchema,
 } from "../validators/schemas.js";
 import {
@@ -17,6 +19,11 @@ import {
   deleteActivityController,
   assignVolunteerController,
   removeVolunteerAssignmentController,
+  listActivityEnrollmentsController,
+  enrollStudentsInActivityController,
+  updateActivityEnrollmentStatusController,
+  removeActivityEnrollmentController,
+  getStudentActivityEnrollmentsController,
 } from "../controllers/activityController.js";
 
 const activityRoutes = Router();
@@ -25,6 +32,25 @@ activityRoutes.use(authenticate);
 activityRoutes.use(requireCenterAccess());
 
 activityRoutes.get("/", listActivitiesController);
+activityRoutes.get("/students/:studentId", getStudentActivityEnrollmentsController);
+activityRoutes.get("/:activityId/enrollments", listActivityEnrollmentsController);
+activityRoutes.post(
+  "/:activityId/enrollments",
+  requirePermission(PERMISSIONS.MANAGE_ACTIVITIES),
+  validate(activityEnrollStudentsSchema),
+  enrollStudentsInActivityController,
+);
+activityRoutes.patch(
+  "/:activityId/enrollments/:studentId",
+  requirePermission(PERMISSIONS.MANAGE_ACTIVITIES),
+  validate(updateActivityEnrollmentStatusSchema),
+  updateActivityEnrollmentStatusController,
+);
+activityRoutes.delete(
+  "/:activityId/enrollments/:studentId",
+  requirePermission(PERMISSIONS.MANAGE_ACTIVITIES),
+  removeActivityEnrollmentController,
+);
 activityRoutes.get("/:activityId", getActivityController);
 activityRoutes.post(
   "/",

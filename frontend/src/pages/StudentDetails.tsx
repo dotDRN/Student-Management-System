@@ -36,6 +36,7 @@ import {
   Printer,
   UserPlus,
   Trash2,
+  Award,
 } from 'lucide-react';
 import {
   getStudentProfile,
@@ -50,6 +51,10 @@ import { getSkillsByStudent } from '../services/skills.service';
 import { SkillProgressionChart } from '../components/skills/SkillProgressionChart';
 import { StudentReportCard } from '../components/students/StudentReportCard';
 import { getCareersByStudent } from '../services/career.service';
+import {
+  getStudentActivityEnrollments,
+  type StudentActivityEnrollmentsResponse,
+} from '../services/activities.service';
 import { getApiErrorMessage } from '../services/api';
 import { usePermission } from '../hooks/usePermission';
 import { useToast } from '../hooks/useToast';
@@ -92,6 +97,7 @@ export const StudentDetails: React.FC = () => {
   const [profile, setProfile] = useState<StudentProfilePayload | null>(null);
   const [skillsRows, setSkillsRows] = useState<SkillRecord[] | null>(null);
   const [careers, setCareers] = useState<CareerRecord[] | null>(null);
+  const [activitySummaryData, setActivitySummaryData] = useState<StudentActivityEnrollmentsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -141,12 +147,18 @@ export const StudentDetails: React.FC = () => {
         if (!alive) return;
         setProfile(p);
         setTotalFeesInput(p.student.totalFees != null ? String(p.student.totalFees) : '');
-        const [sk, cr] = await Promise.allSettled([getSkillsByStudent(id), getCareersByStudent(id)]);
+        const [sk, cr, act] = await Promise.allSettled([
+          getSkillsByStudent(id),
+          getCareersByStudent(id),
+          getStudentActivityEnrollments(id),
+        ]);
         if (!alive) return;
         if (sk.status === 'fulfilled') setSkillsRows(sk.value as SkillRecord[]);
         else setSkillsRows(null);
         if (cr.status === 'fulfilled') setCareers(cr.value as CareerRecord[]);
         else setCareers(null);
+        if (act.status === 'fulfilled') setActivitySummaryData(act.value);
+        else setActivitySummaryData(null);
         await loadFees(id);
       } catch {
         if (alive) setError('Could not load student.');
@@ -765,6 +777,89 @@ export const StudentDetails: React.FC = () => {
           )}
         </Card>
       )}
+
+      <Card className="mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <Award size={18} className="text-brand-600" />
+            <h2 className="text-lg font-semibold text-neutral-900">
+              Co-Curricular Activities & Holistic Credits
+            </h2>
+          </div>
+          {activitySummaryData && (
+            <Badge variant="primary">
+              {activitySummaryData.summary.holisticPoints} Holistic Pts
+            </Badge>
+          )}
+        </div>
+
+        {!activitySummaryData || activitySummaryData.enrollments.length === 0 ? (
+          <EmptyState
+            title="No co-curricular participations yet"
+            description="Enroll or nominate this student from the Activities workspace to track workshops, camps, and holistic credits."
+          />
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 rounded-lg bg-brand-50/60 border border-brand-100">
+                <p className="text-xs text-neutral-500">Holistic Points</p>
+                <p className="text-lg font-bold text-brand-700">
+                  {activitySummaryData.summary.holisticPoints} pts
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-emerald-50/60 border border-emerald-100">
+                <p className="text-xs text-neutral-500">Approved</p>
+                <p className="text-lg font-bold text-emerald-700">
+                  {activitySummaryData.summary.approvedCount}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-indigo-50/60 border border-indigo-100">
+                <p className="text-xs text-neutral-500">Completed</p>
+                <p className="text-lg font-bold text-indigo-700">
+                  {activitySummaryData.summary.completedCount}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-amber-50/60 border border-amber-100">
+                <p className="text-xs text-neutral-500">Pending Approval</p>
+                <p className="text-lg font-bold text-amber-700">
+                  {activitySummaryData.summary.pendingCount}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {activitySummaryData.enrollments.map((enr) => {
+                const isApproved = enr.status === 'approved_by_admin';
+                const isCompleted = enr.activity?.status === 'completed';
+                const pts = isApproved ? (isCompleted ? 5 : 2) : 0;
+                return (
+                  <div
+                    key={enr.id}
+                    className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border border-neutral-100 bg-neutral-50 text-sm"
+                  >
+                    <div>
+                      <div className="font-medium text-neutral-900">
+                        {enr.activity?.name || 'Activity'}
+                      </div>
+                      <div className="text-xs text-neutral-500 capitalize">
+                        {enr.activity?.activityType || 'general'} · Status:{' '}
+                        {enr.activity?.status || 'planned'}
+                        {enr.activity?.startDate ? ` · ${formatDate(enr.activity.startDate)}` : ''}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {pts > 0 && <Badge variant="success">+{pts} pts</Badge>}
+                      <Badge variant={isApproved ? 'primary' : 'warning'}>
+                        {isApproved ? 'Approved' : 'Pending'}
+                      </Badge>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </Card>
 
       <Card>
         <h2 className="text-lg font-semibold text-neutral-900 mb-4">Form submissions</h2>

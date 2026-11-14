@@ -446,3 +446,11 @@ export const promoteStudentCohortSchema = z.object({
     .min(1, "At least one student transition is required")
     .max(200, "Maximum 200 students can be transitioned per batch"),
 });
+
+export const activityEnrollStudentsSchema = z.object({
+  studentIds: z.array(uuid).min(1, "Select at least one student").max(200, "Maximum 200 students per request"),
+});
+
+export const updateActivityEnrollmentStatusSchema = z.object({
+  status: z.enum(["requested_by_teacher", "approved_by_admin"]),
+});

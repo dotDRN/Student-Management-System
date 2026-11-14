@@ -120,6 +120,7 @@ export async function listActivities(user: JwtPayload, params: ListActivitiesPar
     include: {
       program: { select: { id: true, name: true } },
       center: { select: { id: true, name: true } },
+      _count: { select: { activityEnrollments: true } },
     },
     orderBy: [{ startDate: "desc" }, { createdAt: "desc" }],
   });
@@ -463,4 +464,261 @@ export async function removeVolunteerAssignment(
   return prisma.userActivityAssignment.delete({
     where: { id: existing.id },
   });
+}
+
+export type HolisticCreditSummary = {
+  totalEnrolled: number;
+  approvedCount: number;
+  pendingCount: number;
+  completedCount: number;
+  holisticPoints: number;
+};
+
+export function calculateHolisticCreditSummary(
+  enrollments: Array<{
+    status: string;
+    activity?: { status?: string | null } | null;
+  }>,
+): HolisticCreditSummary {
+  let approvedCount = 0;
+  let pendingCount = 0;
+  let completedCount = 0;
+
+  for (const enrollment of enrollments) {
+    if (enrollment.status === "approved_by_admin") {
+      approvedCount += 1;
+      if (enrollment.activity?.status === "completed") {
+        completedCount += 1;
+      }
+    } else if (enrollment.status === "requested_by_teacher") {
+      pendingCount += 1;
+    }
+  }
+
+  // +5 holistic points per completed approved activity, +2 per ongoing/planned approved enrollment
+  const holisticPoints =
+    completedCount * 5 + Math.max(0, approvedCount - completedCount) * 2;
+
+  return {
+    totalEnrolled: enrollments.length,
+    approvedCount,
+    pendingCount,
+    completedCount,
+    holisticPoints,
+  };
+}
+
+async function loadAuthorizedActivityForEnrollment(user: JwtPayload, activityId: string) {
+  const activity = await prisma.activity.findUnique({
+    where: { id: activityId },
+    select: { id: true, centerId: true, programId: true, isActive: true, name: true },
+  });
+
+  if (!activity || !activity.isActive) {
+    throw new NotFoundError("Activity");
+  }
+
+  assertCenterAccess(user, activity.centerId, "No access to manage enrollments for this activity");
+  return activity;
+}
+
+export async function listActivityEnrollments(user: JwtPayload, activityId: string) {
+  await loadAuthorizedActivityForEnrollment(user, activityId);
+
+  return prisma.activityEnrollment.findMany({
+    where: { activityId },
+    include: {
+      student: {
+        select: {
+          id: true,
+          fullName: true,
+          rollNumber: true,
+          centerId: true,
+          programId: true,
+          isActive: true,
+          program: { select: { id: true, name: true } },
+        },
+      },
+      requestedByUser: {
+        select: { id: true, fullName: true, role: true },
+      },
+    },
+    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+  });
+}
+
+export async function enrollStudentsInActivity(
+  user: JwtPayload,
+  activityId: string,
+  studentIds: string[],
+) {
+  const activity = await loadAuthorizedActivityForEnrollment(user, activityId);
+  const uniqueIds = Array.from(new Set(studentIds.filter(Boolean)));
+  if (uniqueIds.length === 0) {
+    throw new ValidationError("Select at least one valid student");
+  }
+
+  const students = await prisma.student.findMany({
+    where: { id: { in: uniqueIds }, isActive: true },
+    select: { id: true, fullName: true, centerId: true, programId: true, isActive: true },
+  });
+
+  if (students.length !== uniqueIds.length) {
+    throw new NotFoundError("One or more active students");
+  }
+
+  for (const student of students) {
+    if (student.centerId !== activity.centerId) {
+      throw new ValidationError(
+        `Student '${student.fullName}' does not belong to Activity center`,
+      );
+    }
+    if (activity.programId && student.programId !== activity.programId) {
+      throw new ValidationError(
+        `Student '${student.fullName}' is not enrolled in this activity's program`,
+      );
+    }
+  }
+
+  const existing = await prisma.activityEnrollment.findMany({
+    where: { activityId, studentId: { in: uniqueIds } },
+    select: { studentId: true },
+  });
+  const existingSet = new Set(existing.map((e) => e.studentId));
+  const toCreate = uniqueIds.filter((sid) => !existingSet.has(sid));
+  const initialStatus = isAdminRole(user.role) ? "approved_by_admin" : "requested_by_teacher";
+
+  const created =
+    toCreate.length > 0
+      ? await prisma.$transaction((tx) =>
+          Promise.all(
+            toCreate.map((studentId) =>
+              tx.activityEnrollment.create({
+                data: {
+                  activityId,
+                  studentId,
+                  status: initialStatus,
+                  requestedBy: user.userId,
+                },
+              }),
+            ),
+          ),
+        )
+      : [];
+
+  return {
+    activityId,
+    status: initialStatus,
+    enrolledCount: created.length,
+    skippedCount: uniqueIds.length - created.length,
+    enrollments: created,
+  };
+}
+
+export async function updateActivityEnrollmentStatus(
+  user: JwtPayload,
+  activityId: string,
+  studentId: string,
+  status: "requested_by_teacher" | "approved_by_admin",
+) {
+  await loadAuthorizedActivityForEnrollment(user, activityId);
+
+  if (!isAdminRole(user.role)) {
+    throw new ForbiddenError("Only admins can approve or change activity enrollment status");
+  }
+
+  const existing = await prisma.activityEnrollment.findUnique({
+    where: {
+      activityId_studentId: { activityId, studentId },
+    },
+  });
+  if (!existing) {
+    throw new NotFoundError("Activity enrollment");
+  }
+
+  return prisma.activityEnrollment.update({
+    where: { id: existing.id },
+    data: { status },
+    include: {
+      student: {
+        select: { id: true, fullName: true, rollNumber: true },
+      },
+      requestedByUser: {
+        select: { id: true, fullName: true, role: true },
+      },
+    },
+  });
+}
+
+export async function removeActivityEnrollment(
+  user: JwtPayload,
+  activityId: string,
+  studentId: string,
+) {
+  await loadAuthorizedActivityForEnrollment(user, activityId);
+
+  const existing = await prisma.activityEnrollment.findUnique({
+    where: {
+      activityId_studentId: { activityId, studentId },
+    },
+  });
+  if (!existing) {
+    throw new NotFoundError("Activity enrollment");
+  }
+
+  const canTeacherWithdrawPending =
+    existing.requestedBy === user.userId && existing.status === "requested_by_teacher";
+
+  if (!isAdminRole(user.role) && !canTeacherWithdrawPending) {
+    throw new ForbiddenError(
+      "Only admins or the nominating teacher (while pending) can remove this enrollment",
+    );
+  }
+
+  return prisma.activityEnrollment.delete({
+    where: { id: existing.id },
+  });
+}
+
+export async function getStudentActivityEnrollments(user: JwtPayload, studentId: string) {
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: { id: true, centerId: true, isActive: true },
+  });
+  if (!student) {
+    throw new NotFoundError("Student");
+  }
+
+  assertCenterAccess(user, student.centerId, "No access to this student's activity enrollments");
+
+  const enrollments = await prisma.activityEnrollment.findMany({
+    where: {
+      studentId,
+      activity: { isActive: true },
+    },
+    include: {
+      activity: {
+        select: {
+          id: true,
+          name: true,
+          activityType: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+          center: { select: { id: true, name: true } },
+          program: { select: { id: true, name: true } },
+        },
+      },
+      requestedByUser: {
+        select: { id: true, fullName: true },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return {
+    studentId,
+    enrollments,
+    summary: calculateHolisticCreditSummary(enrollments),
+  };
 }
