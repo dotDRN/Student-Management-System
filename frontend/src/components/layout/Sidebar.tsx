@@ -91,6 +91,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
       ],
     },
     {
+      label: 'Family Portal',
+      items: [
+        { name: 'My Child Progress', path: '/parent', icon: <GraduationCap size={18} />, viewRoles: ['parent'] },
+      ],
+    },
+    {
       label: 'Workspace Admin',
       items: [
         { name: 'Centers', path: '/centers', icon: <Building2 size={18} />, viewRoles: ['super_admin', 'center_admin', 'tech_admin'] },

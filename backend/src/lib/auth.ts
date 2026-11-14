@@ -2,7 +2,7 @@ import { NextFunction, Request, RequestHandler, Response } from "express";
 import { ForbiddenError, UnauthorizedError } from "./errors.js";
 import { verifyAccessToken, JwtPayload } from "../utils/jwt.js";
 import { DEFAULT_TENANT_ID, runWithTenantContext } from "./tenantContext.js";
-import { isAdminRole } from "../config/rbac.js";
+import { isAdminRole, ROLES } from "../config/rbac.js";
 
 type AuthenticatedRequest = Request & {
   user?: JwtPayload;
@@ -30,6 +30,7 @@ export const requireAuth: RequestHandler = (
 
     if (
       !isAdminRole(decoded.role) &&
+      decoded.role !== ROLES.PARENT &&
       (!decoded.centerIds || decoded.centerIds.length === 0)
     ) {
       return next(new ForbiddenError("No centers assigned to user."));

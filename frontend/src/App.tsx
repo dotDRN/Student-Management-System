@@ -23,6 +23,8 @@ import { Activities } from './pages/Activities';
 import { ChatPage } from './pages/ChatPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { MeetingRoomsPage } from './pages/MeetingRoomsPage';
+import { ParentPortal } from './pages/ParentPortal';
+import { getHomeRouteForRole } from './utils/rbac';
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "./store/useAuthStore";
@@ -46,7 +48,7 @@ function App() {
         } else {
           logout();
         }
-      } catch (err) {
+      } catch {
         console.log("No active session");
         logout();
       } finally {
@@ -64,7 +66,7 @@ function App() {
     );
   }
 
-  const isAdmin = ['super_admin', 'center_admin', 'tech_admin'].includes(currentUser?.role || '');
+  const homeRoute = getHomeRouteForRole(currentUser?.role);
 
   return (
     <BrowserRouter>
@@ -74,23 +76,30 @@ function App() {
 
         {/* Single persistent authenticated layout & Socket.IO connection */}
         <Route element={<ProtectedRoute />}>
-          {/* --- LEVEL 1: SHARED ACCESS (Teachers & Admins) --- */}
-          <Route path="/" element={<Navigate to={isAdmin ? "/dashboard" : "/students"} replace />} />
+          <Route path="/" element={<Navigate to={homeRoute} replace />} />
 
-          <Route path="/students" element={<StudentList />} />
-          <Route path="/students/:id" element={<StudentDetails />} />
-          <Route path="/attendance" element={<Attendance />} />
-          <Route path="/skills" element={<Skills />} />
-          <Route path="/careers" element={<Careers />} />
-          <Route path="/exams" element={<Exams />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/forms" element={<FormsListPage />} />
-          <Route path="/forms/:templateId/fill" element={<FormRendererPage />} />
-          <Route path="/forms/:templateId/submissions" element={<FormSubmissionsPage />} />
-          <Route path="/activities" element={<Activities />} />
-          <Route path="/announcements" element={<Announcements />} />
-          <Route path="/chat/:conversationId?" element={<ChatPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
+          {/* --- PARENT / GUARDIAN READ-ONLY PORTAL --- */}
+          <Route element={<RoleGuard allowedRoles={['parent']} />}>
+            <Route path="/parent" element={<ParentPortal />} />
+          </Route>
+
+          {/* --- LEVEL 1: STAFF & ADMIN SHARED ACCESS --- */}
+          <Route element={<RoleGuard allowedRoles={['teacher', 'staff', 'supervisor', 'volunteer', 'super_admin', 'center_admin', 'tech_admin']} />}>
+            <Route path="/students" element={<StudentList />} />
+            <Route path="/students/:id" element={<StudentDetails />} />
+            <Route path="/attendance" element={<Attendance />} />
+            <Route path="/skills" element={<Skills />} />
+            <Route path="/careers" element={<Careers />} />
+            <Route path="/exams" element={<Exams />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/forms" element={<FormsListPage />} />
+            <Route path="/forms/:templateId/fill" element={<FormRendererPage />} />
+            <Route path="/forms/:templateId/submissions" element={<FormSubmissionsPage />} />
+            <Route path="/activities" element={<Activities />} />
+            <Route path="/announcements" element={<Announcements />} />
+            <Route path="/chat/:conversationId?" element={<ChatPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+          </Route>
 
           {/* --- LEVEL 2: DATA ENTRY & STAFF COLLABORATION (Employees & Admins Only) --- */}
           <Route element={<RoleGuard allowedRoles={['teacher', 'staff', 'supervisor', 'super_admin', 'center_admin', 'tech_admin']} />}>

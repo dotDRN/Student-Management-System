@@ -8,6 +8,7 @@ import { socketService } from '../../services/socket.service';
 import { useChatStore } from '../../store/useChatStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import { useChatSocket } from '../../hooks/useChatSocket';
+import { getHomeRouteForRole } from '../../utils/rbac';
 
 // Define the roles based on your Prisma Schema
 export type UserRole = 'super_admin' | 'center_admin' | 'supervisor' | 'teacher' | 'staff' | 'volunteer' | 'student' | 'parent' | 'shareholder' | 'tech_admin';
@@ -26,7 +27,7 @@ export const RoleGuard: React.FC<{ allowedRoles: UserRole[] }> = ({ allowedRoles
 
   if (!allowedRoles.includes(currentUser.role as UserRole)) {
     console.log(`BOUNCE: Role mismatch! Redirecting to a safe page. ${currentUser.role} tried to access ${location.pathname}`);
-    return <Navigate to="/students" replace />;
+    return <Navigate to={getHomeRouteForRole(currentUser.role)} replace />;
   }
 
   return <Outlet />;
@@ -63,8 +64,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   if (allowedRoles && !allowedRoles.includes(currentUser.role as UserRole)) {
     console.log(`BOUNCE: Role mismatch! Redirecting to a safe page. ${currentUser.role} tried to access ${location.pathname}`);
     
-    // Redirect to /students instead, which is accessible to everyone authenticated.
-    return <Navigate to="/students" replace />;
+    // Redirect to role-safe home route.
+    return <Navigate to={getHomeRouteForRole(currentUser.role)} replace />;
   }
 
   // 3. Layout Rendering

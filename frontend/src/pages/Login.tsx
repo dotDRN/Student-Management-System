@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
+import { getApiErrorMessage } from '../services/api';
+import { getHomeRouteForRole } from '../utils/rbac';
 import {
   login,
   registerInstance,
@@ -71,8 +73,7 @@ export const Login: React.FC = () => {
 
   useEffect(() => {
     if (accessToken && currentUser) {
-      const isAdmin = ['super_admin', 'center_admin', 'tech_admin'].includes(currentUser.role);
-      navigate(isAdmin ? '/dashboard' : '/students', { replace: true });
+      navigate(getHomeRouteForRole(currentUser.role), { replace: true });
     }
   }, [accessToken, currentUser, navigate]);
 
@@ -159,14 +160,9 @@ export const Login: React.FC = () => {
         res.organization || null,
       );
 
-      const isAdmin = ['super_admin', 'center_admin', 'tech_admin'].includes(user.role);
-      navigate(isAdmin ? '/dashboard' : '/students');
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.message ||
-        err.response?.data?.error ||
-        'Login failed. Check your credentials.';
-      setError(msg);
+      navigate(getHomeRouteForRole(user.role));
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Login failed. Check your credentials.'));
     } finally {
       setIsLoading(false);
     }
@@ -218,12 +214,10 @@ export const Login: React.FC = () => {
       );
 
       navigate('/dashboard');
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.message ||
-        err.response?.data?.error ||
-        'Failed to create instance. Please check your details and try again.';
-      setError(msg);
+    } catch (err) {
+      setError(
+        getApiErrorMessage(err, 'Failed to create instance. Please check your details and try again.'),
+      );
     } finally {
       setIsLoading(false);
     }
