@@ -24,11 +24,12 @@ export async function createAttendanceSession(
   next: NextFunction,
 ) {
   try {
-    const { centerId, programId, sessionDate, activityId } = req.body as {
+    const { centerId, programId, sessionDate, activityId, batchId } = req.body as {
       centerId: string;
       programId: string;
       sessionDate: string;
       activityId?: string;
+      batchId?: string;
     };
 
     const result = await createSession((req as AuthenticatedRequest).user!, {
@@ -36,6 +37,7 @@ export async function createAttendanceSession(
       programId,
       sessionDate,
       activityId,
+      batchId,
     });
 
     if (!result.created) {
@@ -54,11 +56,12 @@ export async function getAttendanceSessions(
   next: NextFunction,
 ) {
   try {
-    const { centerId, programId, from, to, hasIncomplete } = req.query;
+    const { centerId, programId, batchId, from, to, hasIncomplete } = req.query;
 
     const result = await listSessions((req as AuthenticatedRequest).user!, {
       centerId: centerId as string | undefined,
       programId: programId as string | undefined,
+      batchId: batchId as string | undefined,
       from: from as string | undefined,
       to: to as string | undefined,
       hasIncomplete: parseHasIncomplete(hasIncomplete),
@@ -198,7 +201,7 @@ export async function getTodayFreshSheetController(
   next: NextFunction,
 ) {
   try {
-    const { centerId, programId } = req.query;
+    const { centerId, programId, batchId } = req.query;
     if (!centerId || !programId) {
       return res.status(400).json({ error: "centerId and programId are required" });
     }
@@ -206,6 +209,7 @@ export async function getTodayFreshSheetController(
       (req as AuthenticatedRequest).user!,
       centerId as string,
       programId as string,
+      typeof batchId === "string" && batchId.trim() ? batchId : undefined,
     );
     return res.status(200).json(result);
   } catch (error) {
@@ -256,10 +260,11 @@ export async function getAttendanceRegisterController(
   next: NextFunction,
 ) {
   try {
-    const { centerId, programId, month } = req.query;
+    const { centerId, programId, batchId, month } = req.query;
     const result = await getAttendanceRegister((req as AuthenticatedRequest).user!, {
       centerId: centerId as string | undefined,
       programId: programId as string | undefined,
+      batchId: typeof batchId === "string" && batchId.trim() ? batchId : undefined,
       month: month as string | undefined,
     });
     return res.status(200).json(result);

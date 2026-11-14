@@ -20,6 +20,7 @@ import { usePermission } from '../hooks/usePermission';
 import { useToast } from '../hooks/useToast';
 import { getApiErrorMessage } from '../services/api';
 import { listCenters, listPrograms } from '../services/centers.service';
+import { BatchesPanel } from '../components/activities/BatchesPanel';
 import {
   createActivity,
   deleteActivity,
@@ -84,6 +85,7 @@ export const Activities: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [centerFilter, setCenterFilter] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'activities' | 'batches'>('activities');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<ActivityRecord | null>(null);
@@ -293,7 +295,34 @@ export const Activities: React.FC = () => {
   }
 
   return (
-    <PageWrapper title="Activities & Events">
+    <PageWrapper title="Activities & Batches">
+      <div className="flex flex-wrap border-b border-neutral-200 mb-6 gap-4">
+        <button
+          type="button"
+          className={`pb-2 text-sm font-medium ${activeTab === 'activities' ? 'border-b-2 border-primary text-primary' : 'text-neutral-500 hover:text-neutral-700'}`}
+          onClick={() => setActiveTab('activities')}
+        >
+          Activities &amp; Events ({activities.length})
+        </button>
+        <button
+          type="button"
+          className={`pb-2 text-sm font-medium ${activeTab === 'batches' ? 'border-b-2 border-primary text-primary' : 'text-neutral-500 hover:text-neutral-700'}`}
+          onClick={() => setActiveTab('batches')}
+        >
+          Batches &amp; Cohorts
+        </button>
+      </div>
+
+      {activeTab === 'batches' ? (
+        <BatchesPanel
+          centers={centers}
+          programs={programs}
+          activities={activities}
+          canManageBatches={canManageActivities}
+          canDeleteBatches={canDeleteActivities}
+        />
+      ) : (
+        <>
       {error && (
         <div className="mb-4">
           <ErrorMessage message={error} />
@@ -666,6 +695,8 @@ export const Activities: React.FC = () => {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTargetId(null)}
       />
+        </>
+      )}
     </PageWrapper>
   );
 };

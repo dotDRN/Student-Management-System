@@ -51,6 +51,12 @@ export interface Student {
   center?: Center;
   program?: Program;
   createdByUser?: { id: string; fullName: string } | null;
+  batchEnrollments?: Array<{
+    id?: string;
+    batchId: string;
+    enrolledOn?: string;
+    batch?: { id: string; name: string };
+  }>;
 }
 
 export interface User {

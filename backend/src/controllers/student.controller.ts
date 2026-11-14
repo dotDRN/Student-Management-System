@@ -25,7 +25,7 @@ export const getAllStudents = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const { page, limit, search, centerId, programId, isActive, sortOrder } = req.query;
+    const { page, limit, search, centerId, programId, batchId, isActive, sortOrder } = req.query;
 
     const result = await studentService.getAllStudents(req.user, {
       page: Number(page) || 1,
@@ -33,6 +33,7 @@ export const getAllStudents = async (
       search: search as string | undefined,
       centerId: centerId as string | undefined,
       programId: programId as string | undefined,
+      batchId: typeof batchId === "string" && batchId.trim() ? batchId : undefined,
       sortOrder: sortOrder as string | undefined,
       isActive:
         typeof isActive === "string"
@@ -287,6 +288,7 @@ export const getSkillMatrix = async (
     const result = await studentService.getSkillMatrix(req.user!, {
       centerId: typeof req.query.centerId === "string" ? req.query.centerId : undefined,
       programId: typeof req.query.programId === "string" ? req.query.programId : undefined,
+      batchId: typeof req.query.batchId === "string" && req.query.batchId.trim() ? req.query.batchId : undefined,
       assessedOn: typeof req.query.assessedOn === "string" ? req.query.assessedOn : undefined,
     });
     return res.status(200).json({ success: true, data: result });

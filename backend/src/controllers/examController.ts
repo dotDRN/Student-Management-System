@@ -26,7 +26,15 @@ export async function createExamController(req: Request, res: Response, next: Ne
 export async function getExamSheetController(req: Request, res: Response, next: NextFunction) {
   try {
     const { examId } = req.params;
-    const result = await getExamSheet((req as AuthenticatedRequest).user!, examId as string);
+    const batchId =
+      typeof req.query.batchId === "string" && req.query.batchId.trim()
+        ? req.query.batchId
+        : undefined;
+    const result = await getExamSheet(
+      (req as AuthenticatedRequest).user!,
+      examId as string,
+      batchId,
+    );
     return res.status(200).json(result);
   } catch (error) {
     return next(error);

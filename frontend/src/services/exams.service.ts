@@ -108,8 +108,12 @@ export const getExamById = (examId: string) =>
   api.get<Record<string, unknown>>(`/exams/${examId}`).then((r) => r.data);
 
 /** Fetches exam with auto-sync of active students and program subjects. */
-export const getExamSheet = (examId: string) =>
-  api.get<ExamSheetPayload>(`/exams/${examId}/sheet`).then((r) => r.data);
+export const getExamSheet = (examId: string, batchId?: string) =>
+  api
+    .get<ExamSheetPayload>(`/exams/${examId}/sheet`, {
+      params: batchId ? { batchId } : undefined,
+    })
+    .then((r) => r.data);
 
 export const upsertExamScores = (examId: string, body: Record<string, unknown>) =>
   api.post<{ success: boolean; count?: number }>(`/exams/${examId}/scores`, body).then((r) => r.data);

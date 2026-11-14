@@ -16,6 +16,7 @@ export type StudentListQuery = {
   search?: string;
   centerId?: string;
   programId?: string;
+  batchId?: string;
   sortOrder?: 'name_asc' | 'name_desc' | 'roll_asc' | 'roll_desc' | 'class_asc' | 'class_desc' | '';
   isActive?: boolean | string;
 };

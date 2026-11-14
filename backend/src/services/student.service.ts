@@ -111,7 +111,7 @@ export const createStudent = async (user: TokenPayload, data: unknown) => {
   });
 };
 
-export const getAllStudents = async (user: TokenPayload, { page = 1, limit = 50, centerId, programId, isActive, search, sortOrder }: Record<string, any> = {}) => {
+export const getAllStudents = async (user: TokenPayload, { page = 1, limit = 50, centerId, programId, batchId, isActive, search, sortOrder }: Record<string, any> = {}) => {
   const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const skip = (page - 1) * safeLimit;
 
@@ -131,6 +131,7 @@ export const getAllStudents = async (user: TokenPayload, { page = 1, limit = 50,
   const where = scopedWhere(user, {
     ...(centerId ? { centerId } : {}),
     ...(programId ? { programId: programId.includes(',') ? { in: programId.split(',') } : programId } : {}),
+    ...(batchId ? { batchEnrollments: { some: { batchId } } } : {}),
     ...(search ? { fullName: { contains: search, mode: "insensitive" } } : {}),
   });
   if (normalizedIsActive === undefined) {
@@ -157,6 +158,13 @@ export const getAllStudents = async (user: TokenPayload, { page = 1, limit = 50,
       include: {
         center: true,
         program: true,
+        batchEnrollments: {
+          select: {
+            id: true,
+            batchId: true,
+            batch: { select: { id: true, name: true } },
+          },
+        },
         createdByUser: {
           select: { id: true, fullName: true },
         },
@@ -174,6 +182,14 @@ export const getStudentById = async (user: TokenPayload, id: string) => {
     include: {
       center: true,
       program: true,
+      batchEnrollments: {
+        select: {
+          id: true,
+          batchId: true,
+          enrolledOn: true,
+          batch: { select: { id: true, name: true } },
+        },
+      },
       attendanceRecords: {
         orderBy: { session: { sessionDate: "desc" } },
         take: 10,
@@ -604,7 +620,7 @@ export const addSkill = async (user: TokenPayload, studentId: string, data: unkn
 
 export const getSkillMatrix = async (
   user: TokenPayload,
-  query: { centerId?: string; programId?: string; assessedOn?: string },
+  query: { centerId?: string; programId?: string; batchId?: string; assessedOn?: string },
 ) => getSkillMatrixData(user, query);
 
 export const bulkUpsertSkills = async (user: TokenPayload, data: unknown) =>

@@ -15,6 +15,7 @@ type SessionCreateInput = {
   programId: string;
   sessionDate: string;
   activityId?: string;
+  batchId?: string;
   academicYearId?: string;
 };
 
@@ -57,6 +58,29 @@ function getCompletionPercentage(records: Array<{ status: AttendanceStatus | str
   return Number(((completed / records.length) * 100).toFixed(2));
 }
 
+async function validateBatchForCenterProgram(
+  batchId: string,
+  centerId: string,
+  programId?: string,
+) {
+  const batch = await prisma.batch.findUnique({
+    where: { id: batchId },
+    include: {
+      activity: { select: { programId: true } },
+    },
+  });
+  if (!batch) {
+    throw new NotFoundError("Batch");
+  }
+  if (batch.centerId !== centerId) {
+    throw new ValidationError("Batch does not belong to the selected center");
+  }
+  if (programId && batch.activity?.programId && batch.activity.programId !== programId) {
+    throw new ValidationError("Batch does not belong to the selected program");
+  }
+  return batch;
+}
+
 export async function createSession(
   user: JwtPayload,
   input: SessionCreateInput,
@@ -71,16 +95,22 @@ export async function createSession(
   }
   ensureCenterAccess(user, input.centerId);
 
+  if (input.batchId) {
+    await validateBatchForCenterProgram(input.batchId, input.centerId, input.programId);
+  }
+
   const existing = await prisma.attendanceSession.findFirst({
     where: {
       centerId: input.centerId,
       programId: input.programId,
       sessionDate,
+      ...(input.batchId ? { batchId: input.batchId } : { batchId: null }),
     },
     include: {
       center: true,
       program: true,
       activity: true,
+      batch: true,
     },
   });
 
@@ -101,12 +131,14 @@ export async function createSession(
         academicYearId,
         sessionDate,
         activityId: input.activityId ?? null,
+        batchId: input.batchId ?? null,
         createdBy: user.userId,
       },
       include: {
         center: true,
         program: true,
         activity: true,
+        batch: true,
       },
     });
 
@@ -115,6 +147,7 @@ export async function createSession(
         centerId: input.centerId,
         programId: input.programId,
         isActive: true,
+        ...(input.batchId ? { batchEnrollments: { some: { batchId: input.batchId } } } : {}),
       },
       select: {
         id: true,
@@ -158,15 +191,28 @@ export async function createSession(
   return { created: true, ...created };
 }
 
-export async function getTodayFreshSheet(user: JwtPayload, centerId: string, programId: string) {
+export async function getTodayFreshSheet(
+  user: JwtPayload,
+  centerId: string,
+  programId: string,
+  batchId?: string,
+) {
   ensureCenterAccess(user, centerId);
+  if (batchId) {
+    await validateBatchForCenterProgram(batchId, centerId, programId);
+  }
 
   const today = getTodayUtcDateOnly();
   const todayStr = today.toISOString().slice(0, 10);
 
   // 1. Find or create the session
   let session = await prisma.attendanceSession.findFirst({
-    where: { centerId, programId, sessionDate: today },
+    where: {
+      centerId,
+      programId,
+      sessionDate: today,
+      ...(batchId ? { batchId } : { batchId: null }),
+    },
   });
 
   if (!session) {
@@ -174,6 +220,7 @@ export async function getTodayFreshSheet(user: JwtPayload, centerId: string, pro
       centerId,
       programId,
       sessionDate: todayStr,
+      ...(batchId ? { batchId } : {}),
     });
     session = created.session as typeof session;
   }
@@ -184,7 +231,12 @@ export async function getTodayFreshSheet(user: JwtPayload, centerId: string, pro
 
   // 2. Sync missing active students added after initial session creation
   const activeStudents = await prisma.student.findMany({
-    where: { centerId, programId, isActive: true },
+    where: {
+      centerId,
+      programId,
+      isActive: true,
+      ...(batchId ? { batchEnrollments: { some: { batchId } } } : {}),
+    },
     select: { id: true },
   });
 
@@ -240,6 +292,7 @@ export async function listSessions(
   query: {
     centerId?: string;
     programId?: string;
+    batchId?: string;
     from?: string;
     to?: string;
     hasIncomplete?: boolean;
@@ -251,6 +304,9 @@ export async function listSessions(
   applyCenterScopeToWhere(user, where, query.centerId);
   if (query.programId) {
     where.programId = query.programId;
+  }
+  if (query.batchId) {
+    where.batchId = query.batchId;
   }
   if (from || to) {
     where.sessionDate = {
@@ -687,6 +743,7 @@ export async function getAttendanceRegister(
   query: {
     centerId?: string;
     programId?: string;
+    batchId?: string;
     month?: string;
   },
 ) {
@@ -694,6 +751,9 @@ export async function getAttendanceRegister(
     throw new ValidationError("centerId is required");
   }
   ensureCenterAccess(user, query.centerId);
+  if (query.batchId) {
+    await validateBatchForCenterProgram(query.batchId, query.centerId, query.programId);
+  }
 
   const monthStr = query.month?.trim() || formatUtcDateOnly(getTodayUtcDateOnly()).slice(0, 7);
   const monthMatch = /^(\d{4})-(\d{2})$/.exec(monthStr);
@@ -719,6 +779,7 @@ export async function getAttendanceRegister(
         centerId: query.centerId,
         isActive: true,
         ...(query.programId ? { programId: query.programId } : {}),
+        ...(query.batchId ? { batchEnrollments: { some: { batchId: query.batchId } } } : {}),
       },
       select: { id: true, fullName: true, rollNumber: true },
       orderBy: { fullName: "asc" },
@@ -727,6 +788,9 @@ export async function getAttendanceRegister(
       where: {
         centerId: query.centerId,
         ...(query.programId ? { programId: query.programId } : {}),
+        ...(query.batchId
+          ? { OR: [{ batchId: query.batchId }, { batchId: null }] }
+          : {}),
         sessionDate: { gte: monthStart, lte: monthEnd },
       },
       include: {
@@ -743,6 +807,9 @@ export async function getAttendanceRegister(
     }),
   ]);
 
+  const batchStudentIdSet = query.batchId
+    ? new Set(activeStudents.map((s) => s.id))
+    : null;
   const studentMeta = new Map<string, { id: string; fullName: string; rollNumber: string | null }>();
   for (const s of activeStudents) {
     studentMeta.set(s.id, { id: s.id, fullName: s.fullName, rollNumber: s.rollNumber ?? null });
@@ -764,6 +831,9 @@ export async function getAttendanceRegister(
     }
 
     for (const rec of session.records ?? []) {
+      if (batchStudentIdSet && !batchStudentIdSet.has(rec.studentId)) {
+        continue;
+      }
       if (!studentMeta.has(rec.studentId) && rec.student) {
         studentMeta.set(rec.studentId, {
           id: rec.student.id,
@@ -835,6 +905,7 @@ export async function getAttendanceRegister(
   return {
     centerId: query.centerId,
     programId: query.programId ?? null,
+    batchId: query.batchId ?? null,
     month: monthStr,
     days,
     holidayDates: Array.from(holidayDateSet).sort(),

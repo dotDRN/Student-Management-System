@@ -5,6 +5,7 @@ export type CreateSessionBody = {
   programId: string;
   sessionDate: string;
   activityId?: string;
+  batchId?: string;
 };
 
 export type UpdateSessionRecordsBody = Record<string, unknown>;
@@ -38,8 +39,12 @@ export const getAttendanceSummary = (params?: Record<string, string | undefined>
 export const getPendingAttendanceSessions = (params?: Record<string, string | undefined>) =>
   api.get<Record<string, unknown>>('/attendance/pending', { params }).then((r) => r.data);
 
-export const getTodayFreshSheet = (centerId: string, programId: string) =>
-  api.get<Record<string, unknown>>('/attendance/fresh-sheet', { params: { centerId, programId } }).then((r) => r.data);
+export const getTodayFreshSheet = (centerId: string, programId: string, batchId?: string) =>
+  api
+    .get<Record<string, unknown>>('/attendance/fresh-sheet', {
+      params: { centerId, programId, ...(batchId ? { batchId } : {}) },
+    })
+    .then((r) => r.data);
 
 export const markHoliday = (sessionId: string, isHoliday: boolean) =>
   api.put<Record<string, unknown>>(`/attendance/sessions/${sessionId}/holiday`, { isHoliday }).then((r) => r.data);
@@ -102,5 +107,6 @@ export const getRecentAbsentees = (days: number = 7, centerId?: string) =>
 export const getAttendanceRegister = (params: {
   centerId: string;
   programId?: string;
+  batchId?: string;
   month?: string;
 }) => api.get<AttendanceRegisterResponse>('/attendance/register', { params }).then((r) => r.data);

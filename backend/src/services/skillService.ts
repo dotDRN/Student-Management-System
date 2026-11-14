@@ -164,7 +164,7 @@ export async function listSkillDefinitions(programId?: string) {
 
 export async function getSkillMatrix(
   user: JwtPayload,
-  query: { centerId?: string; programId?: string; assessedOn?: string },
+  query: { centerId?: string; programId?: string; batchId?: string; assessedOn?: string },
 ) {
   if (!query.centerId) {
     throw new ValidationError("centerId is required");
@@ -182,6 +182,7 @@ export async function getSkillMatrix(
         centerId: query.centerId,
         programId: query.programId,
         isActive: true,
+        ...(query.batchId ? { batchEnrollments: { some: { batchId: query.batchId } } } : {}),
       },
       select: { id: true, fullName: true, rollNumber: true, programId: true, centerId: true },
       orderBy: [{ fullName: "asc" }],

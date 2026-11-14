@@ -82,6 +82,7 @@ export const createAttendanceSessionSchema = z.object({
   programId: uuid,
   sessionDate: z.string().min(1),
   activityId: uuid.optional(),
+  batchId: preprocessEmptyToUndefined(uuid),
 });
 
 export const updateAttendanceSessionRecordsSchema = z.object({
@@ -350,3 +351,27 @@ export const linkGuardianSchema = z
     (d) => Boolean(d.parentUserId || d.email),
     "Either parentUserId or parent email is required",
   );
+
+export const createBatchSchema = z
+  .object({
+    centerId: uuid,
+    programId: preprocessEmptyToUndefined(uuid),
+    activityId: preprocessEmptyToUndefined(uuid),
+    name: z.string().trim().min(1, "Batch name is required").max(120),
+    teacherId: preprocessEmptyToNull(uuid),
+    maxStudents: preprocessEmptyToNull(z.coerce.number().int().min(1).max(500)),
+  })
+  .refine(
+    (d) => Boolean(d.activityId || d.programId),
+    "Either activityId or programId is required",
+  );
+
+export const updateBatchSchema = z.object({
+  name: z.string().trim().min(1, "Batch name cannot be empty").max(120).optional(),
+  teacherId: preprocessEmptyToNull(uuid),
+  maxStudents: preprocessEmptyToNull(z.coerce.number().int().min(1).max(500)),
+});
+
+export const enrollBatchStudentsSchema = z.object({
+  studentIds: z.array(uuid).min(1, "Select at least one student").max(200),
+});

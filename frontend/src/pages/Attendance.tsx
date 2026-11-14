@@ -21,6 +21,7 @@ import { getApiErrorMessage } from "../services/api";
 import { formatDate } from "../utils/date";
 import { sanitizeSpreadsheetCell } from "../utils/exportSanitize";
 import { listCenters, listPrograms } from "../services/centers.service";
+import { listBatches, type BatchSummary } from "../services/batches.service";
 import {
   createAttendanceSession,
   getAttendanceRegister,
@@ -129,8 +130,10 @@ export const Attendance: React.FC = () => {
 
   const [centers, setCenters] = useState<CenterSummary[]>([]);
   const [programs, setPrograms] = useState<ProgramSummary[]>([]);
+  const [batches, setBatches] = useState<BatchSummary[]>([]);
   const [centerId, setCenterId] = useState("");
   const [programId, setProgramId] = useState("");
+  const [batchId, setBatchId] = useState("");
 
   const [date, setDate] = useState(getLocalDateStr());
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -148,6 +151,7 @@ export const Attendance: React.FC = () => {
   // Monthly register state
   const [registerMonth, setRegisterMonth] = useState(() => getLocalDateStr().slice(0, 7));
   const [registerProgramId, setRegisterProgramId] = useState("");
+  const [registerBatchId, setRegisterBatchId] = useState("");
   const [registerData, setRegisterData] = useState<AttendanceRegisterResponse | null>(null);
   const [loadingRegister, setLoadingRegister] = useState(false);
 
@@ -191,6 +195,58 @@ export const Attendance: React.FC = () => {
     };
   }, [isAdmin, selectedCenterId]);
 
+  useEffect(() => {
+    if (!centerId) {
+      setBatches([]);
+      setBatchId("");
+      setRegisterBatchId("");
+      return;
+    }
+    let alive = true;
+    listBatches({ centerId })
+      .then((list) => {
+        if (!alive) return;
+        setBatches(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (alive) setBatches([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [centerId]);
+
+  const markBatchOptions = useMemo(
+    () =>
+      batches.filter(
+        (b) => !programId || !b.activity?.programId || b.activity.programId === programId,
+      ),
+    [batches, programId],
+  );
+
+  const registerBatchOptions = useMemo(
+    () =>
+      batches.filter(
+        (b) =>
+          !registerProgramId ||
+          !b.activity?.programId ||
+          b.activity.programId === registerProgramId,
+      ),
+    [batches, registerProgramId],
+  );
+
+  useEffect(() => {
+    if (batchId && !markBatchOptions.some((b) => b.id === batchId)) {
+      setBatchId("");
+    }
+  }, [batchId, markBatchOptions]);
+
+  useEffect(() => {
+    if (registerBatchId && !registerBatchOptions.some((b) => b.id === registerBatchId)) {
+      setRegisterBatchId("");
+    }
+  }, [registerBatchId, registerBatchOptions]);
+
   const loadRegister = useCallback(async () => {
     if (!centerId || !registerMonth) return;
     setLoadingRegister(true);
@@ -199,6 +255,7 @@ export const Attendance: React.FC = () => {
       const res = await getAttendanceRegister({
         centerId,
         ...(registerProgramId ? { programId: registerProgramId } : {}),
+        ...(registerBatchId ? { batchId: registerBatchId } : {}),
         month: registerMonth,
       });
       setRegisterData(res);
@@ -207,7 +264,7 @@ export const Attendance: React.FC = () => {
     } finally {
       setLoadingRegister(false);
     }
-  }, [centerId, registerProgramId, registerMonth]);
+  }, [centerId, registerProgramId, registerBatchId, registerMonth]);
 
   const loadAbsentees = useCallback(async () => {
     setLoadingAbsentees(true);
@@ -266,6 +323,7 @@ export const Attendance: React.FC = () => {
         centerId,
         programId,
         sessionDate: date,
+        ...(batchId ? { batchId } : {}),
       })) as { created?: boolean; session?: { id: string; isHoliday?: boolean } };
       const sid = res.session?.id;
       if (!sid) throw new Error("No session id");
@@ -296,7 +354,7 @@ export const Attendance: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const full = (await getTodayFreshSheet(centerId, programId)) as {
+      const full = (await getTodayFreshSheet(centerId, programId, batchId || undefined)) as {
         id?: string;
         isHoliday?: boolean;
         records?: Array<{
@@ -480,7 +538,7 @@ export const Attendance: React.FC = () => {
           <div className="lg:col-span-2 space-y-4">
             <Card>
               <h2 className="text-lg font-semibold mb-4">Session</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-neutral-600">
                     Center
@@ -516,6 +574,27 @@ export const Attendance: React.FC = () => {
                     {programs.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium text-neutral-600">
+                    Batch / Cohort (Optional)
+                  </label>
+                  <select
+                    aria-label="Session Batch"
+                    className="rounded-lg border border-neutral-300 px-3 py-2 text-sm bg-white"
+                    value={batchId}
+                    onChange={(e) => {
+                      setBatchId(e.target.value);
+                      clearLoadedSession();
+                    }}
+                  >
+                    <option value="">All Students (Whole Program)</option>
+                    {markBatchOptions.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
                       </option>
                     ))}
                   </select>
@@ -708,7 +787,7 @@ export const Attendance: React.FC = () => {
       {activeTab === "register" && (
         <Card>
           <div className="flex flex-wrap items-end justify-between gap-4 mb-4 pb-4 border-b border-neutral-100">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 min-w-[260px]">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 flex-1 min-w-[260px]">
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-neutral-600">Center</label>
                 <select
@@ -735,6 +814,22 @@ export const Attendance: React.FC = () => {
                   {programs.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-neutral-600">Batch</label>
+                <select
+                  aria-label="Register Batch"
+                  className="rounded-lg border border-neutral-300 px-3 py-2 text-sm bg-white"
+                  value={registerBatchId}
+                  onChange={(e) => setRegisterBatchId(e.target.value)}
+                >
+                  <option value="">All Batches</option>
+                  {registerBatchOptions.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
                     </option>
                   ))}
                 </select>

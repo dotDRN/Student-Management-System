@@ -135,7 +135,7 @@ export const createExam = async (user: JwtPayload, data: CreateExamInput) => {
 
 // ================= GET EXAM SHEET (WITH SUBJECTS & ACTIVE STUDENTS) =================
 
-export async function getExamSheet(user: JwtPayload, examId: string) {
+export async function getExamSheet(user: JwtPayload, examId: string, batchId?: string) {
   const exam = await prisma.exam.findUnique({
     where: { id: examId },
     include: { center: true, program: true, academicYear: true },
@@ -151,6 +151,7 @@ export async function getExamSheet(user: JwtPayload, examId: string) {
         centerId: exam.centerId,
         programId: exam.programId,
         isActive: true,
+        ...(batchId ? { batchEnrollments: { some: { batchId } } } : {}),
       },
       select: { id: true, fullName: true, rollNumber: true },
       orderBy: { fullName: "asc" },

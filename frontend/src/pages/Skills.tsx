@@ -13,6 +13,7 @@ import { usePermission } from '../hooks/usePermission';
 import { useToast } from '../hooks/useToast';
 import { getApiErrorMessage } from '../services/api';
 import { getCenterDetails, listCenters, listPrograms } from '../services/centers.service';
+import { listBatches, type BatchSummary } from '../services/batches.service';
 import { getStudents } from '../services/students.service';
 import {
   addSkill,
@@ -90,6 +91,8 @@ export const Skills: React.FC = () => {
   // Matrix mode state
   const [matrixCenterId, setMatrixCenterId] = useState('');
   const [matrixProgramId, setMatrixProgramId] = useState('');
+  const [matrixBatches, setMatrixBatches] = useState<BatchSummary[]>([]);
+  const [matrixBatchId, setMatrixBatchId] = useState('');
   const [matrixDate, setMatrixDate] = useState(todayUtcDateInput);
   const [matrixData, setMatrixData] = useState<SkillMatrixResponse | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
@@ -198,6 +201,31 @@ export const Skills: React.FC = () => {
     }
   }, [mode, selectedId, loadStudentSkills]);
 
+  useEffect(() => {
+    if (!matrixCenterId || !matrixProgramId) {
+      setMatrixBatches([]);
+      setMatrixBatchId('');
+      return;
+    }
+    let alive = true;
+    listBatches({ centerId: matrixCenterId, programId: matrixProgramId })
+      .then((list) => {
+        if (!alive) return;
+        const safeList = Array.isArray(list) ? list : [];
+        setMatrixBatches(safeList);
+        setMatrixBatchId((prev) => (prev && !safeList.some((b) => b.id === prev) ? '' : prev));
+      })
+      .catch(() => {
+        if (alive) {
+          setMatrixBatches([]);
+          setMatrixBatchId('');
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [matrixCenterId, matrixProgramId]);
+
   const loadMatrix = useCallback(async () => {
     if (!matrixCenterId || !matrixProgramId) {
       setMatrixData(null);
@@ -209,6 +237,7 @@ export const Skills: React.FC = () => {
       const res = await getSkillMatrix({
         centerId: matrixCenterId,
         programId: matrixProgramId,
+        ...(matrixBatchId ? { batchId: matrixBatchId } : {}),
         assessedOn: matrixDate || undefined,
       });
       setMatrixData(res);
@@ -230,7 +259,7 @@ export const Skills: React.FC = () => {
     } finally {
       setMatrixLoading(false);
     }
-  }, [matrixCenterId, matrixProgramId, matrixDate]);
+  }, [matrixCenterId, matrixProgramId, matrixBatchId, matrixDate]);
 
   useEffect(() => {
     if (mode === 'matrix') {
@@ -618,7 +647,7 @@ export const Skills: React.FC = () => {
       ) : (
         <Card>
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-5 border-b border-neutral-200 mb-5">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 flex-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
               <div>
                 <label className="block text-xs font-medium text-neutral-600 mb-1">Center</label>
                 <select
@@ -645,6 +674,24 @@ export const Skills: React.FC = () => {
                   {matrixProgramOptions.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-neutral-600 mb-1">
+                  Batch / Cohort
+                </label>
+                <select
+                  aria-label="Matrix Batch"
+                  className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:ring-2 focus:ring-primary/20 outline-none bg-white"
+                  value={matrixBatchId}
+                  onChange={(e) => setMatrixBatchId(e.target.value)}
+                >
+                  <option value="">All Students</option>
+                  {matrixBatches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
                     </option>
                   ))}
                 </select>

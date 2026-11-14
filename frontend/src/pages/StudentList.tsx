@@ -18,6 +18,7 @@ import { StudentBulkImportModal } from '../components/students/StudentBulkImport
 import { deleteStudent, getStudents, requestTransfer, getTransferRequests, completeTransfer, type StudentListQuery } from '../services/students.service';
 import { getApiErrorMessage } from '../services/api';
 import { listCenters, listPrograms } from '../services/centers.service';
+import { listBatches, type BatchSummary } from '../services/batches.service';
 import { listUsers, type UserAdminItem } from '../services/users.service';
 import type { Student, CenterSummary, ProgramSummary } from '../types';
 import { formatDate } from '../utils/date';
@@ -44,11 +45,13 @@ export const StudentList: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCenterId, setFilterCenterId] = useState('');
   const [filterProgramId, setFilterProgramId] = useState('');
+  const [filterBatchId, setFilterBatchId] = useState('');
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [sortOrder, setSortOrder] = useState<'name_asc' | 'name_desc' | 'roll_asc' | 'roll_desc' | 'class_asc' | 'class_desc' | ''>('');
   
   const [centers, setCenters] = useState<CenterSummary[]>([]);
   const [programs, setPrograms] = useState<ProgramSummary[]>([]);
+  const [batches, setBatches] = useState<BatchSummary[]>([]);
 
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -107,6 +110,20 @@ export const StudentList: React.FC = () => {
     }
   }, [isTeacher, isAdmin, currentUser?.centerIds]);
 
+  useEffect(() => {
+    const effectiveCenter = filterCenterId || (!isAdmin && selectedCenterId ? selectedCenterId : '');
+    listBatches({
+      ...(effectiveCenter ? { centerId: effectiveCenter } : {}),
+      ...(filterProgramId ? { programId: filterProgramId } : {}),
+    })
+      .then((list) => {
+        const safeList = Array.isArray(list) ? list : [];
+        setBatches(safeList);
+        setFilterBatchId((prev) => (prev && !safeList.some((b) => b.id === prev) ? '' : prev));
+      })
+      .catch(() => setBatches([]));
+  }, [filterCenterId, filterProgramId, isAdmin, selectedCenterId]);
+
   const buildListQueryParams = useCallback(
     (pageNum: number, pageLimit: number): StudentListQuery => {
       const params: StudentListQuery = {
@@ -114,6 +131,7 @@ export const StudentList: React.FC = () => {
         limit: pageLimit,
         ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
         ...(filterProgramId ? { programId: filterProgramId } : {}),
+        ...(filterBatchId ? { batchId: filterBatchId } : {}),
         ...(sortOrder ? { sortOrder } : {}),
         ...(statusFilter === 'active'
           ? { isActive: true }
@@ -134,7 +152,7 @@ export const StudentList: React.FC = () => {
 
       return params;
     },
-    [searchQuery, isAdmin, selectedCenterId, filterCenterId, filterProgramId, statusFilter, sortOrder],
+    [searchQuery, isAdmin, selectedCenterId, filterCenterId, filterProgramId, filterBatchId, statusFilter, sortOrder],
   );
 
   const load = useCallback(async () => {
@@ -331,6 +349,18 @@ export const StudentList: React.FC = () => {
       cell: (s) => (
         <div>
           <div className="font-medium text-neutral-900">{s.fullName}</div>
+          {s.batchEnrollments && s.batchEnrollments.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-0.5">
+              {s.batchEnrollments.map((be) => (
+                <span
+                  key={be.batchId}
+                  className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-200"
+                >
+                  {be.batch?.name ?? 'Batch'}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="text-xs text-neutral-500 md:hidden mt-1">
             {s._centerName} · {s._programName}
           </div>
@@ -680,6 +710,23 @@ export const StudentList: React.FC = () => {
                   <option value="active">Active Students</option>
                   <option value="inactive">Inactive Students</option>
                   <option value="all">All Statuses</option>
+                </select>
+
+                <select
+                  aria-label="Filter by batch"
+                  className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:border-brand-500 focus:outline-none"
+                  value={filterBatchId}
+                  onChange={(e) => {
+                    setFilterBatchId(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">All Batches</option>
+                  {batches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
                 </select>
             </div>
             <div className="flex gap-2">

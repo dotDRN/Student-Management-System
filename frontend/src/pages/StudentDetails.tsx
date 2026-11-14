@@ -325,6 +325,11 @@ export const StudentDetails: React.FC = () => {
               <h1 className="text-2xl font-bold text-neutral-900">{student.fullName}</h1>
               <div className="flex items-center gap-2 mt-1 flex-wrap">
                 {student.program && <Badge variant="primary">{student.program.name}</Badge>}
+                {student.batchEnrollments?.map((be) => (
+                  <Badge key={be.batchId} variant="neutral">
+                    {be.batch?.name ?? 'Batch'}
+                  </Badge>
+                ))}
                 <Badge variant={student.isActive !== false ? 'success' : 'neutral'}>
                   {(student.isActive !== false ? 'Active' : 'Inactive').toUpperCase()}
                 </Badge>

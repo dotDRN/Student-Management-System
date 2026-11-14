@@ -20,6 +20,7 @@ import {
   type ExamSheetPayload,
 } from '../services/exams.service';
 import { listCenters, listPrograms } from '../services/centers.service';
+import { listBatches, type BatchSummary } from '../services/batches.service';
 import { useAuthStore } from '../store/useAuthStore';
 import type { CenterSummary, ProgramSummary } from '../types';
 import { formatDate } from '../utils/date';
@@ -64,9 +65,11 @@ export const Exams: React.FC = () => {
 
   const [centers, setCenters] = useState<CenterSummary[]>([]);
   const [programs, setPrograms] = useState<ProgramSummary[]>([]);
+  const [batches, setBatches] = useState<BatchSummary[]>([]);
   const [centerId, setCenterId] = useState('');
   const [createCenterIds, setCreateCenterIds] = useState<string[]>([]);
   const [programId, setProgramId] = useState('');
+  const [batchId, setBatchId] = useState('');
   const [examType, setExamType] = useState('baseline');
   const [academicYear, setAcademicYear] = useState(
     `${new Date().getFullYear()}-${String(new Date().getFullYear() + 1).slice(-2)}`,
@@ -200,18 +203,47 @@ export const Exams: React.FC = () => {
     setGrid(nextGrid);
   }, []);
 
-  const loadWorkspace = async (id: string) => {
-    setWorkspaceLoading(true);
-    setError(null);
-    try {
-      const sheet = await getExamSheet(id);
-      hydrateFromSheet(sheet);
-    } catch (err) {
-      setError(getApiErrorMessage(err, 'Could not load exam workspace.'));
-    } finally {
-      setWorkspaceLoading(false);
+  useEffect(() => {
+    if (!centerId || !programId) {
+      setBatches([]);
+      setBatchId('');
+      return;
     }
-  };
+    let alive = true;
+    listBatches({ centerId, programId })
+      .then((list) => {
+        if (!alive) return;
+        const safeList = Array.isArray(list) ? list : [];
+        setBatches(safeList);
+        setBatchId((prev) => (prev && !safeList.some((b) => b.id === prev) ? '' : prev));
+      })
+      .catch(() => {
+        if (alive) {
+          setBatches([]);
+          setBatchId('');
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [centerId, programId]);
+
+  const loadWorkspace = useCallback(
+    async (id: string, targetBatchId?: string) => {
+      setWorkspaceLoading(true);
+      setError(null);
+      try {
+        const effectiveBatch = targetBatchId !== undefined ? targetBatchId : batchId;
+        const sheet = await getExamSheet(id, effectiveBatch || undefined);
+        hydrateFromSheet(sheet);
+      } catch (err) {
+        setError(getApiErrorMessage(err, 'Could not load exam workspace.'));
+      } finally {
+        setWorkspaceLoading(false);
+      }
+    },
+    [batchId, hydrateFromSheet],
+  );
 
   const prepareExam = async () => {
     if (!canManageExams) return;
@@ -515,6 +547,28 @@ export const Exams: React.FC = () => {
               {programs.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-neutral-600">Batch Filter (Optional)</label>
+            <select
+              aria-label="Exam Sheet Batch Filter"
+              className="mt-1 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm bg-white"
+              value={batchId}
+              onChange={(e) => {
+                const next = e.target.value;
+                setBatchId(next);
+                if (examId) {
+                  void loadWorkspace(examId, next);
+                }
+              }}
+            >
+              <option value="">All Students in Program</option>
+              {batches.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
                 </option>
               ))}
             </select>

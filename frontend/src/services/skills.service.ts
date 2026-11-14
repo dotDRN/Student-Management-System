@@ -79,6 +79,7 @@ export const deleteSkill = (skillId: string) =>
 export const getSkillMatrix = (params: {
   centerId: string;
   programId: string;
+  batchId?: string;
   assessedOn?: string;
 }) =>
   api
