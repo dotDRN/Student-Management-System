@@ -39,6 +39,7 @@ import {
   Award,
   QrCode,
 } from 'lucide-react';
+import { StudentDossierAndVault } from '../components/students/StudentDossierAndVault';
 import {
   getStudentProfile,
   getFeePayments,
@@ -866,6 +867,11 @@ export const StudentDetails: React.FC = () => {
           </div>
         )}
       </Card>
+
+      <StudentDossierAndVault
+        studentId={student.id}
+        canManageStudents={canManageStudents}
+      />
 
       <Card>
         <h2 className="text-lg font-semibold text-neutral-900 mb-4">Form submissions</h2>

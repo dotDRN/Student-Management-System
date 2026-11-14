@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import * as studentService from '../services/student.service.js';
+import * as studentDossierService from "../services/studentDossierService.js";
+import { addStudentDocumentSchema } from "../validators/schemas.js";
 
 /* ─────────────────────────────────────────
    STUDENTS
@@ -574,6 +576,87 @@ export const promoteStudentCohort = async (
     return res.status(200).json({ success: true, ...result });
   } catch (err) {
     console.error("Promote Student Cohort Error:", err);
+    next(err);
+  }
+};
+
+export const getStudentDossier = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const dossier = await studentDossierService.getStudentDossier(
+      req.user,
+      req.params.id as string
+    );
+    return res.status(200).json({ success: true, data: dossier });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const listStudentDocuments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const docs = await studentDossierService.listStudentDocuments(
+      req.user,
+      req.params.id as string
+    );
+    return res.status(200).json({ success: true, data: docs });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const addStudentDocument = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const parsed = addStudentDocumentSchema.parse(req.body);
+    const created = await studentDossierService.addStudentDocument(
+      req.user,
+      req.params.id as string,
+      {
+        title: parsed.title,
+        category: parsed.category,
+        notes: parsed.notes,
+        url: parsed.url,
+        fileName: parsed.fileName,
+        file: req.file
+          ? {
+              buffer: req.file.buffer,
+              originalname: req.file.originalname,
+              mimetype: req.file.mimetype,
+              size: req.file.size,
+            }
+          : undefined,
+      }
+    );
+    return res.status(201).json({ success: true, data: created });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteStudentDocument = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentDossierService.deleteStudentDocument(
+      req.user,
+      req.params.id as string,
+      req.params.documentId as string
+    );
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
     next(err);
   }
 };

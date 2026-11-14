@@ -454,3 +454,20 @@ export const activityEnrollStudentsSchema = z.object({
 export const updateActivityEnrollmentStatusSchema = z.object({
   status: z.enum(["requested_by_teacher", "approved_by_admin"]),
 });
+
+export const STUDENT_DOCUMENT_CATEGORIES = [
+  "identity",
+  "academic",
+  "certificate",
+  "medical",
+  "consent",
+  "other",
+] as const;
+
+export const addStudentDocumentSchema = z.object({
+  title: z.string().trim().min(1, "Document title is required").max(160),
+  category: z.enum(STUDENT_DOCUMENT_CATEGORIES).default("other"),
+  notes: preprocessEmptyToNull(z.string().trim().max(400)),
+  url: preprocessEmptyToNull(z.string().trim().max(1000)),
+  fileName: preprocessEmptyToNull(z.string().trim().max(200)),
+});

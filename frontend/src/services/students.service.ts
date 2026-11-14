@@ -142,3 +142,103 @@ export const linkGuardian = (studentId: string, payload: { parentUserId?: string
 export const unlinkGuardian = (studentId: string, parentUserId: string) =>
   api.delete<{ success: boolean; deleted: boolean }>(`/students/${studentId}/guardians/${parentUserId}`).then((r) => r.data);
 
+// ─────────────── 360° Longitudinal Dossier & Document Vault ───────────────
+
+export type DocumentCategory =
+  | 'identity'
+  | 'academic'
+  | 'certificate'
+  | 'medical'
+  | 'consent'
+  | 'other';
+
+export type DossierTimelineEventType =
+  | 'enrollment'
+  | 'lifecycle'
+  | 'transfer'
+  | 'exam'
+  | 'skill'
+  | 'fee'
+  | 'activity'
+  | 'alert'
+  | 'document';
+
+export interface DossierTimelineEvent {
+  id: string;
+  date: string;
+  type: DossierTimelineEventType;
+  title: string;
+  subtitle: string;
+  badge?: string | null;
+}
+
+export interface StudentDocumentRecord {
+  id: string;
+  title: string;
+  category: DocumentCategory;
+  url: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  notes: string | null;
+  uploadedAt: string;
+  uploadedByName: string | null;
+}
+
+export interface StudentDossierResponse {
+  studentId: string;
+  summary: {
+    totalEvents: number;
+    examMilestones: number;
+    skillMilestones: number;
+    feePaymentsCount: number;
+    transfersCount: number;
+    documentCount: number;
+  };
+  timeline: DossierTimelineEvent[];
+  documents: StudentDocumentRecord[];
+}
+
+export interface AddStudentDocumentPayload {
+  title: string;
+  category: DocumentCategory;
+  notes?: string;
+  url?: string;
+  fileName?: string;
+  file?: File;
+}
+
+export const getStudentDossier = (studentId: string) =>
+  api.get<ApiEnvelope<StudentDossierResponse>>(`/students/${studentId}/dossier`).then((r) => r.data.data);
+
+export const listStudentDocuments = (studentId: string) =>
+  api.get<ApiEnvelope<StudentDocumentRecord[]>>(`/students/${studentId}/documents`).then((r) => r.data.data);
+
+export const addStudentDocument = (studentId: string, payload: AddStudentDocumentPayload) => {
+  if (payload.file) {
+    const formData = new FormData();
+    formData.append('title', payload.title);
+    formData.append('category', payload.category);
+    if (payload.notes) formData.append('notes', payload.notes);
+    formData.append('file', payload.file);
+    return api
+      .post<ApiEnvelope<StudentDocumentRecord>>(`/students/${studentId}/documents`, formData)
+      .then((r) => r.data.data);
+  }
+  return api
+    .post<ApiEnvelope<StudentDocumentRecord>>(`/students/${studentId}/documents`, {
+      title: payload.title,
+      category: payload.category,
+      notes: payload.notes,
+      url: payload.url,
+      fileName: payload.fileName,
+    })
+    .then((r) => r.data.data);
+};
+
+export const deleteStudentDocument = (studentId: string, documentId: string) =>
+  api
+    .delete<{ success: boolean; deleted: boolean; id: string }>(`/students/${studentId}/documents/${documentId}`)
+    .then((r) => r.data);
+
+

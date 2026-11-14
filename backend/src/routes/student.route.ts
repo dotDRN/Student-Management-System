@@ -1,4 +1,10 @@
 import { Router } from "express";
+import multer from "multer";
+import {
+  ALLOWED_DOCUMENT_MIME_TYPES,
+  MAX_DOCUMENT_SIZE_BYTES,
+} from "../services/studentDossierService.js";
+import { ValidationError } from "../lib/errors.js";
 import {
   createStudent,
   getAllStudents,
@@ -6,6 +12,10 @@ import {
   getStudentById,
   getStudentSummary,
   getStudentProfile,
+  getStudentDossier,
+  listStudentDocuments,
+  addStudentDocument,
+  deleteStudentDocument,
   updateStudent,
   deleteStudent,
   addAttendance,
@@ -55,6 +65,21 @@ import {
 } from '../validators/schemas.js';
 
 const router = Router();
+
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_DOCUMENT_SIZE_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_DOCUMENT_MIME_TYPES.has((file.mimetype || "").toLowerCase())) {
+      return cb(
+        new ValidationError(
+          "Unsupported file type. Allowed formats: PDF, JPG, PNG, WEBP, DOC, DOCX, TXT, CSV."
+        )
+      );
+    }
+    cb(null, true);
+  },
+});
 
 // 1. All student routes are protected
 router.use(authenticate);
@@ -114,6 +139,19 @@ router.post(
 router.get("/", getAllStudents);
 router.get("/:id/summary", getStudentSummary);
 router.get("/:id/profile", getStudentProfile);
+router.get("/:id/dossier", getStudentDossier);
+router.get("/:id/documents", listStudentDocuments);
+router.post(
+  "/:id/documents",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  documentUpload.single("file"),
+  addStudentDocument
+);
+router.delete(
+  "/:id/documents/:documentId",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  deleteStudentDocument
+);
 router.get("/:id", getStudentById);
 
 router.put(
