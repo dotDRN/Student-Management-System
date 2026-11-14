@@ -31,6 +31,7 @@ import {
   bulkImportStudents,
   linkGuardian,
   unlinkGuardian,
+  promoteStudentCohort,
 } from '../controllers/student.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
@@ -46,6 +47,7 @@ import {
   createSkillSchema,
   createStudentSchema,
   linkGuardianSchema,
+  promoteStudentCohortSchema,
   requestTransferSchema,
   updateSkillSchema,
   updateStudentFeesSchema,
@@ -66,6 +68,12 @@ router.post(
   requirePermission(PERMISSIONS.MANAGE_STUDENTS),
   validate(bulkImportStudentsSchema),
   bulkImportStudents
+);
+router.post(
+  "/promote-cohort",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  validate(promoteStudentCohortSchema),
+  promoteStudentCohort
 );
 router.get("/skills/matrix", getSkillMatrix);
 router.post(

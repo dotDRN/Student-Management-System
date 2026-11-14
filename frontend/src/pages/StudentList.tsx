@@ -9,11 +9,12 @@ import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { DataTable, type DataTableColumn } from '../components/ui/DataTable';
-import { Search, Download, Upload, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square } from 'lucide-react';
+import { Search, Download, Upload, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square, GraduationCap } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToast } from '../hooks/useToast';
 import { usePermission } from '../hooks/usePermission';
+import { CohortPromotionModal } from '../components/students/CohortPromotionModal';
 import { StudentBulkImportModal } from '../components/students/StudentBulkImportModal';
 import { deleteStudent, getStudents, requestTransfer, getTransferRequests, completeTransfer, type StudentListQuery } from '../services/students.service';
 import { getApiErrorMessage } from '../services/api';
@@ -41,6 +42,7 @@ export const StudentList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
+  const [showCohortPromotion, setShowCohortPromotion] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCenterId, setFilterCenterId] = useState('');
@@ -487,9 +489,14 @@ export const StudentList: React.FC = () => {
             <Download size={16} className="mr-2" /> {exporting ? 'Exporting...' : 'Export XLS'}
           </Button>
           {canManageStudents && (
-            <Button variant="secondary" onClick={() => setShowBulkImport(true)}>
-              <Upload size={16} className="mr-2" /> Import Excel
-            </Button>
+            <>
+              <Button variant="secondary" onClick={() => setShowCohortPromotion(true)}>
+                <GraduationCap size={16} className="mr-2" /> Promote Cohort
+              </Button>
+              <Button variant="secondary" onClick={() => setShowBulkImport(true)}>
+                <Upload size={16} className="mr-2" /> Import Excel
+              </Button>
+            </>
           )}
           <Button variant="primary" onClick={() => navigate('/students/new')}>
             <Plus size={16} className="mr-2" /> Add Student
@@ -873,6 +880,18 @@ export const StudentList: React.FC = () => {
         programs={programs}
         defaultCenterId={filterCenterId || selectedCenterId || ''}
         onImported={() => {
+          setPage(1);
+          void load();
+        }}
+      />
+
+      <CohortPromotionModal
+        isOpen={showCohortPromotion}
+        onClose={() => setShowCohortPromotion(false)}
+        centers={centers}
+        programs={programs}
+        defaultCenterId={filterCenterId || selectedCenterId || ''}
+        onCompleted={() => {
           setPage(1);
           void load();
         }}

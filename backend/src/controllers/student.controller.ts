@@ -563,3 +563,17 @@ export const unlinkGuardian = async (
     next(err);
   }
 };
+
+export const promoteStudentCohort = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.promoteStudentCohort(req.user, req.body);
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    console.error("Promote Student Cohort Error:", err);
+    next(err);
+  }
+};

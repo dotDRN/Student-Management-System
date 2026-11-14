@@ -416,3 +416,33 @@ export const updateAlertRuleSchema = z.object({
 export const updateAlertStatusSchema = z.object({
   isRead: z.boolean(),
 });
+
+export const createAcademicYearSchema = z.object({
+  label: z.string().trim().min(4, "Academic year label is required (e.g. 2026-27)").max(30),
+  startDate: z.string().min(1, "Start date is required").refine((s) => !Number.isNaN(Date.parse(s)), "Invalid startDate"),
+  endDate: z.string().min(1, "End date is required").refine((s) => !Number.isNaN(Date.parse(s)), "Invalid endDate"),
+  isCurrent: z.boolean().optional(),
+});
+
+export const cohortTransitionItemSchema = z
+  .object({
+    studentId: uuid,
+    action: z.enum(["promote", "retain", "alumni", "discontinued"]),
+    targetProgramId: preprocessEmptyToNull(uuid),
+    stream: preprocessEmptyToNull(z.string().trim().max(80)),
+    post12thChoice: preprocessEmptyToNull(z.string().trim().max(150)),
+    collegeName: preprocessEmptyToNull(z.string().trim().max(200)),
+    discontinuationReason: preprocessEmptyToNull(z.string().trim().max(300)),
+  })
+  .refine(
+    (d) => d.action !== "promote" || Boolean(d.targetProgramId),
+    "targetProgramId is required when promoting a student",
+  );
+
+export const promoteStudentCohortSchema = z.object({
+  targetAcademicYearId: z.string().trim().min(1, "Target academic year is required"),
+  transitions: z
+    .array(cohortTransitionItemSchema)
+    .min(1, "At least one student transition is required")
+    .max(200, "Maximum 200 students can be transitioned per batch"),
+});

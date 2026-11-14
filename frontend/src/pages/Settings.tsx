@@ -8,6 +8,7 @@ import { Shield, RefreshCw, User, Mail, Clock, Bell } from 'lucide-react';
 import { useAuthStore } from '../store/useAuthStore';
 import { Navigate } from 'react-router-dom';
 import { getMe } from '../services/auth.service';
+import { AcademicYearsSection } from '../components/settings/AcademicYearsSection';
 import { AlertRulesSection } from '../components/settings/AlertRulesSection';
 import { notificationPermission } from '../notifications/NotificationPermission';
 import { useNotificationStore } from '../store/useNotificationStore';
@@ -181,6 +182,7 @@ export const Settings: React.FC = () => {
 
       <div className="max-w-3xl grid grid-cols-1 gap-6">
         <BrowserNotificationSettings />
+        <AcademicYearsSection />
         <AlertRulesSection />
         
         <Card>

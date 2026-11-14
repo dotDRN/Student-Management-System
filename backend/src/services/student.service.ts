@@ -13,6 +13,7 @@ import {
   completeTransferSchema,
   createStudentSchema,
   linkGuardianSchema,
+  promoteStudentCohortSchema,
   requestTransferSchema,
   updateStudentFeesSchema,
   updateStudentSchema,
@@ -1171,4 +1172,165 @@ export const unlinkGuardian = async (
 
   await prisma.parentStudent.delete({ where: { id: existing.id } });
   return { deleted: true, studentId, parentUserId };
+};
+
+/* ─────────────────────────────────────────
+   ACADEMIC YEAR COHORT PROMOTION & LIFECYCLE
+───────────────────────────────────────── */
+
+export const promoteStudentCohort = async (user: TokenPayload, input: unknown) => {
+  const parsed = promoteStudentCohortSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid cohort promotion payload", parsed.error.flatten());
+  }
+
+  const targetAcademicYearId = await resolveAcademicYearId(parsed.data.targetAcademicYearId, {
+    fallbackToCurrent: false,
+    strict: true,
+  });
+  if (!targetAcademicYearId) {
+    throw new ValidationError("Target academic year not found");
+  }
+
+  const dedupedByStudent = new Map<string, (typeof parsed.data.transitions)[number]>();
+  for (const item of parsed.data.transitions) {
+    dedupedByStudent.set(item.studentId, item);
+  }
+  const transitions = Array.from(dedupedByStudent.values());
+  const studentIds = transitions.map((t) => t.studentId);
+
+  const students = await prisma.student.findMany({
+    where: { id: { in: studentIds } },
+    select: {
+      id: true,
+      fullName: true,
+      centerId: true,
+      programId: true,
+      academicYearId: true,
+      stream: true,
+      post12thChoice: true,
+      collegeName: true,
+      educationDiscontinued: true,
+      isActive: true,
+    },
+  });
+  const studentMap = new Map(students.map((s) => [s.id, s]));
+
+  for (const t of transitions) {
+    const stu = studentMap.get(t.studentId);
+    if (!stu) {
+      throw new NotFoundError(`Student (${t.studentId})`);
+    }
+    assertCenterAccess(user, stu.centerId, `Not authorized to transition '${stu.fullName}'`);
+  }
+
+  const targetProgramIds = Array.from(
+    new Set(
+      transitions
+        .filter((t) => t.action === "promote" && t.targetProgramId)
+        .map((t) => t.targetProgramId as string),
+    ),
+  );
+  if (targetProgramIds.length > 0) {
+    const activePrograms = await prisma.program.findMany({
+      where: { id: { in: targetProgramIds }, isActive: true },
+      select: { id: true },
+    });
+    const validProgramSet = new Set(activePrograms.map((p) => p.id));
+    for (const pid of targetProgramIds) {
+      if (!validProgramSet.has(pid)) {
+        throw new NotFoundError(`Target program (${pid})`);
+      }
+    }
+  }
+
+  const updatedStudents = await prisma.$transaction(async (tx) => {
+    const results = [];
+    for (const item of transitions) {
+      const prev = studentMap.get(item.studentId)!;
+      const updateData: Prisma.StudentUncheckedUpdateInput = {
+        academicYearId: targetAcademicYearId,
+      };
+
+      if (item.action === "promote") {
+        updateData.programId = item.targetProgramId!;
+        updateData.isActive = true;
+        updateData.educationDiscontinued = false;
+        if (item.stream !== undefined) updateData.stream = item.stream;
+        if (item.targetProgramId !== prev.programId) {
+          await tx.batchEnrollment.deleteMany({
+            where: {
+              studentId: item.studentId,
+              batch: { activity: { programId: { not: item.targetProgramId! } } },
+            },
+          });
+        }
+      } else if (item.action === "retain") {
+        updateData.isActive = true;
+        updateData.educationDiscontinued = false;
+        if (item.stream !== undefined) updateData.stream = item.stream;
+      } else if (item.action === "alumni") {
+        updateData.isActive = false;
+        updateData.educationDiscontinued = false;
+        if (item.post12thChoice !== undefined) updateData.post12thChoice = item.post12thChoice;
+        if (item.collegeName !== undefined) updateData.collegeName = item.collegeName;
+      } else if (item.action === "discontinued") {
+        updateData.isActive = false;
+        updateData.educationDiscontinued = true;
+        if (item.post12thChoice !== undefined) updateData.post12thChoice = item.post12thChoice;
+      }
+
+      const updated = await tx.student.update({
+        where: { id: item.studentId },
+        data: updateData,
+        include: {
+          center: { select: { id: true, name: true } },
+          program: { select: { id: true, name: true, code: true } },
+          academicYear: { select: { id: true, label: true } },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: user.userId,
+          action: "COHORT_LIFECYCLE_TRANSITION",
+          tableName: "students",
+          recordId: item.studentId,
+          oldData: {
+            programId: prev.programId,
+            academicYearId: prev.academicYearId,
+            isActive: prev.isActive,
+            educationDiscontinued: prev.educationDiscontinued,
+          },
+          newData: {
+            lifecycleAction: item.action,
+            programId: updated.programId,
+            academicYearId: updated.academicYearId,
+            isActive: updated.isActive,
+            educationDiscontinued: updated.educationDiscontinued,
+            post12thChoice: updated.post12thChoice,
+            collegeName: updated.collegeName,
+            discontinuationReason: item.discontinuationReason ?? null,
+          },
+        },
+      });
+
+      results.push(updated);
+    }
+    return results;
+  });
+
+  const summary = {
+    promoted: transitions.filter((t) => t.action === "promote").length,
+    retained: transitions.filter((t) => t.action === "retain").length,
+    alumni: transitions.filter((t) => t.action === "alumni").length,
+    discontinued: transitions.filter((t) => t.action === "discontinued").length,
+  };
+
+  return {
+    targetAcademicYearId,
+    updatedCount: updatedStudents.length,
+    summary,
+    students: updatedStudents,
+  };
 };
