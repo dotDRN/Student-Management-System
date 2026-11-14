@@ -15,7 +15,7 @@ function formatWorkspaceName(rawName?: string | null): string {
     rawName === 'SPARSHA Workspace' ||
     rawName === 'VantageEd Workspace'
   ) {
-    return 'EduSpace Workspace';
+    return 'EdBase Workspace';
   }
   return rawName;
 }

@@ -14,10 +14,10 @@ export interface QueuedAttendanceItem {
   lastError?: string | null;
 }
 
-const DB_NAME = 'eduspace_offline_db';
+const DB_NAME = 'edbase_offline_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'attendance_queue';
-const FALLBACK_KEY = 'eduspace_attendance_offline_queue_v1';
+const FALLBACK_KEY = 'edbase_attendance_offline_queue_v1';
 
 // In-memory fallback for environments without IndexedDB or localStorage (e.g. unit tests)
 const memoryFallback = new Map<string, QueuedAttendanceItem>();

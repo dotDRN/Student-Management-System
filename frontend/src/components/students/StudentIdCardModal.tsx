@@ -38,7 +38,7 @@ const IdCardGrid: React.FC<{ students: IdCardStudent[]; qrMap: Record<string, st
           <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between">
             <div>
               <p className="text-[10px] uppercase tracking-wider text-slate-300 font-semibold">
-                EduSpace Student ID
+                EdBase Student ID
               </p>
               <p className="text-xs font-semibold truncate">{stu.centerName || 'Learning Center'}</p>
             </div>

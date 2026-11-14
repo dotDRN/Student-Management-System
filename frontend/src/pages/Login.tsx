@@ -22,6 +22,8 @@ import {
   LogIn,
   Sparkles,
   Layers,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 function slugify(value: string): string {
@@ -47,6 +49,7 @@ export const Login: React.FC = () => {
   });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [workspaceOptions, setWorkspaceOptions] = useState<WorkspaceOption[]>([]);
 
   // Create Instance state
@@ -61,10 +64,24 @@ export const Login: React.FC = () => {
   const [adminEmail, setAdminEmail] = useState('');
   const [adminPhone, setAdminPhone] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
 
   // Shared UI state
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const renderPasswordToggle = (visible: boolean, onToggle: () => void) => (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={visible ? 'Hide password' : 'Show password'}
+      aria-pressed={visible}
+      title={visible ? 'Hide password' : 'Show password'}
+      className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-brand-500/30 transition-colors cursor-pointer"
+    >
+      {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+    </button>
+  );
 
   const setAuth = useAuthStore((s) => s.setAuth);
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -240,7 +257,7 @@ export const Login: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-extrabold text-neutral-900 tracking-tight">
-              EduSpace
+              EdBase
             </h1>
             <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-brand-50 text-brand-700 border border-brand-200/80">
               Workspace
@@ -355,11 +372,14 @@ export const Login: React.FC = () => {
                 />
                 <Input
                   label="Password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="current-password"
+                  rightElement={renderPasswordToggle(showPassword, () =>
+                    setShowPassword((prev) => !prev),
+                  )}
                   required
                 />
 
@@ -489,11 +509,14 @@ export const Login: React.FC = () => {
                 />
                 <Input
                   label="Admin Password (min 8 characters)"
-                  type="password"
+                  type={showAdminPassword ? 'text' : 'password'}
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="new-password"
+                  rightElement={renderPasswordToggle(showAdminPassword, () =>
+                    setShowAdminPassword((prev) => !prev),
+                  )}
                   required
                 />
               </div>

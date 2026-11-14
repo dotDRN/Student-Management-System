@@ -1,6 +1,6 @@
-# EduSpace — Multi-Tenant Academic Operations & Student Workspace Platform
+# EdBase — Multi-Tenant Academic Operations & Student Workspace Platform
 
-Welcome to **EduSpace**, an enterprise-grade, multi-tenant institutional operations and learner intelligence SaaS built to manage distributed centers, students, academic lifecycles, dynamic form workflows, and real-time collaboration.
+Welcome to **EdBase**, an enterprise-grade, multi-tenant institutional operations and learner intelligence SaaS built to manage distributed centers, students, academic lifecycles, dynamic form workflows, and real-time collaboration.
 
 **Tech Stack:** 
 - **Frontend**: React 19 + Vite (Tailwind CSS v4, Zustand, React Query, Socket.IO Client)

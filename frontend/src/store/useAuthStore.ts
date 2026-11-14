@@ -52,7 +52,7 @@ export const useAuthStore = create<AuthState>()(
           raw === "SPARSHA Default Organization" ||
           raw === "SPARSHA Workspace" ||
           raw === "VantageEd Workspace"
-            ? "EduSpace Workspace"
+            ? "EdBase Workspace"
             : raw;
 
         const resolvedTenant: OrganizationInfo | null = tenant
