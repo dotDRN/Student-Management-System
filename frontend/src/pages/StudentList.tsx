@@ -9,13 +9,14 @@ import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { DataTable, type DataTableColumn } from '../components/ui/DataTable';
-import { Search, Download, Upload, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square, GraduationCap } from 'lucide-react';
+import { Search, Download, Upload, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square, GraduationCap, QrCode } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuthStore } from '../store/useAuthStore';
 import { useToast } from '../hooks/useToast';
 import { usePermission } from '../hooks/usePermission';
 import { CohortPromotionModal } from '../components/students/CohortPromotionModal';
 import { StudentBulkImportModal } from '../components/students/StudentBulkImportModal';
+import { StudentIdCardModal } from '../components/students/StudentIdCardModal';
 import { deleteStudent, getStudents, requestTransfer, getTransferRequests, completeTransfer, type StudentListQuery } from '../services/students.service';
 import { getApiErrorMessage } from '../services/api';
 import { listCenters, listPrograms } from '../services/centers.service';
@@ -43,6 +44,7 @@ export const StudentList: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [showCohortPromotion, setShowCohortPromotion] = useState(false);
+  const [showIdCardsModal, setShowIdCardsModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCenterId, setFilterCenterId] = useState('');
@@ -484,7 +486,10 @@ export const StudentList: React.FC = () => {
     <PageWrapper
       title="Student Directory"
       actions={
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap gap-2 w-full md:w-auto no-print">
+          <Button variant="secondary" onClick={() => setShowIdCardsModal(true)} disabled={rows.length === 0}>
+            <QrCode size={16} className="mr-2" /> ID Cards
+          </Button>
           <Button variant="secondary" onClick={() => void handleExport()} disabled={exporting || loading}>
             <Download size={16} className="mr-2" /> {exporting ? 'Exporting...' : 'Export XLS'}
           </Button>
@@ -626,7 +631,7 @@ export const StudentList: React.FC = () => {
         </Card>
       ) : (
         /* Main Student List */
-        <Card className="mb-6">
+        <Card className={showIdCardsModal ? 'mb-6 no-print' : 'mb-6'}>
           <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-neutral-50 p-3 rounded-lg border border-neutral-100 mb-4">
             <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
               <div className="relative w-full md:w-64">
@@ -895,6 +900,22 @@ export const StudentList: React.FC = () => {
           setPage(1);
           void load();
         }}
+      />
+
+      <StudentIdCardModal
+        isOpen={showIdCardsModal}
+        onClose={() => setShowIdCardsModal(false)}
+        students={rows.map((r) => ({
+          id: r.id,
+          fullName: r.fullName,
+          rollNumber: r.rollNumber,
+          centerName: r._centerName,
+          programName: r._programName,
+          stream: r.stream,
+          guardianPhone: r.guardianPhone,
+          enrollmentDate: r.enrollmentDate,
+        }))}
+        title={`Printable Student QR ID Cards (${rows.length})`}
       />
     </PageWrapper>
   );

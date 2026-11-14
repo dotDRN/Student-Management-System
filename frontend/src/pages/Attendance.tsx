@@ -6,6 +6,9 @@ import {
   CheckCheck,
   Download,
   MessageSquare,
+  QrCode,
+  RefreshCw,
+  WifiOff,
 } from "lucide-react";
 import { PageWrapper } from "../components/layout/PageWrapper";
 import { Card } from "../components/ui/Card";
@@ -14,12 +17,20 @@ import { Button } from "../components/ui/Button";
 import { LoadingSpinner } from "../components/ui/LoadingSpinner";
 import { ErrorMessage } from "../components/ui/ErrorMessage";
 import { Badge } from "../components/ui/Badge";
+import { QrAttendanceModal } from "../components/attendance/QrAttendanceModal";
 import { useAuthStore } from "../store/useAuthStore";
 import { usePermission } from "../hooks/usePermission";
 import { useToast } from "../hooks/useToast";
 import { getApiErrorMessage } from "../services/api";
 import { formatDate } from "../utils/date";
 import { sanitizeSpreadsheetCell } from "../utils/exportSanitize";
+import {
+  enqueueAttendanceMutation,
+  flushAttendanceQueue,
+  isLikelyNetworkError,
+  listQueuedAttendanceMutations,
+  type QueuedAttendanceItem,
+} from "../utils/offlineAttendanceQueue";
 import { listCenters, listPrograms } from "../services/centers.service";
 import { listBatches, type BatchSummary } from "../services/batches.service";
 import {
@@ -145,6 +156,12 @@ export const Attendance: React.FC = () => {
   const [isEditing, setIsEditing] = useState(true);
   const [success, setSuccess] = useState(false);
   const [isHoliday, setIsHoliday] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [isOnline, setIsOnline] = useState(() =>
+    typeof navigator !== "undefined" ? navigator.onLine : true,
+  );
+  const [queuedMutations, setQueuedMutations] = useState<QueuedAttendanceItem[]>([]);
+  const [syncingQueue, setSyncingQueue] = useState(false);
 
   const [activeTab, setActiveTab] = useState<"mark" | "register" | "absentees">("mark");
 
@@ -170,6 +187,65 @@ export const Attendance: React.FC = () => {
     setIsHoliday(false);
     setIsEditing(true);
   };
+
+  const refreshOfflineQueue = useCallback(async () => {
+    const items = await listQueuedAttendanceMutations();
+    setQueuedMutations(items);
+    return items;
+  }, []);
+
+  const handleFlushOfflineQueue = useCallback(
+    async (silent = false) => {
+      if (syncingQueue) return;
+      const current = await listQueuedAttendanceMutations();
+      if (current.length === 0) return;
+
+      setSyncingQueue(true);
+      try {
+        const result = await flushAttendanceQueue((sid, recs) =>
+          updateAttendanceSessionRecords(sid, { records: recs }),
+        );
+        setQueuedMutations(result.remaining);
+        if (result.synced > 0) {
+          toast.success({
+            title: `Synced ${result.synced} offline attendance sheet${result.synced === 1 ? "" : "s"}`,
+          });
+        }
+        if (result.failed > 0 && !silent) {
+          toast.error({
+            title: `${result.failed} queued sheet(s) still failed to sync`,
+            description: result.remaining[0]?.lastError || "Check connection and retry.",
+          });
+        }
+      } finally {
+        setSyncingQueue(false);
+      }
+    },
+    [syncingQueue, toast],
+  );
+
+  useEffect(() => {
+    let alive = true;
+    void listQueuedAttendanceMutations().then((items) => {
+      if (alive) setQueuedMutations(items);
+    });
+
+    const onOnline = () => {
+      setIsOnline(true);
+      void handleFlushOfflineQueue(true);
+    };
+    const onOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      alive = false;
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, [handleFlushOfflineQueue]);
 
   useEffect(() => {
     let alive = true;
@@ -406,14 +482,18 @@ export const Attendance: React.FC = () => {
     setError(null);
     setSuccess(false);
 
+    const records = rows
+      .filter((r) => r.recordId)
+      .map((r) => ({
+        recordId: r.recordId,
+        status: r.status || "pending",
+        remarks: r.remarks.trim() ? r.remarks.trim() : null,
+      }));
+
     try {
-      const records = rows
-        .filter((r) => r.recordId)
-        .map((r) => ({
-          recordId: r.recordId,
-          status: r.status || "pending",
-          ...(r.remarks.trim() ? { remarks: r.remarks.trim() } : { remarks: null }),
-        }));
+      if (!isOnline) {
+        throw { code: "ERR_NETWORK", message: "Browser is offline" };
+      }
 
       await updateAttendanceSessionRecords(sessionId, { records });
 
@@ -421,7 +501,24 @@ export const Attendance: React.FC = () => {
       setSuccess(true);
       toast.success({ title: "Attendance saved" });
     } catch (err) {
-      setError(getApiErrorMessage(err, "Failed to save attendance."));
+      if (!isOnline || isLikelyNetworkError(err)) {
+        const centerLabel = centers.find((c) => c.id === centerId)?.name || "Center";
+        const progLabel = programs.find((p) => p.id === programId)?.name || "Program";
+        await enqueueAttendanceMutation({
+          sessionId,
+          sessionLabel: `${centerLabel} · ${progLabel} · ${date}`,
+          records,
+        });
+        await refreshOfflineQueue();
+        setIsEditing(false);
+        setSuccess(true);
+        toast.info({
+          title: "Saved to Offline Queue",
+          description: "Attendance changes were stored locally and will sync automatically when reconnected.",
+        });
+      } else {
+        setError(getApiErrorMessage(err, "Failed to save attendance."));
+      }
     } finally {
       setLoading(false);
     }
@@ -506,6 +603,43 @@ export const Attendance: React.FC = () => {
 
   return (
     <PageWrapper title="Attendance">
+      {(!isOnline || queuedMutations.length > 0) && (
+        <div
+          className={`mb-4 rounded-xl border px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-sm ${
+            !isOnline
+              ? "bg-amber-50 border-amber-200 text-amber-900"
+              : "bg-indigo-50 border-indigo-200 text-indigo-900"
+          }`}
+        >
+          <div className="flex items-center gap-2.5">
+            {!isOnline ? <WifiOff size={17} className="shrink-0" /> : <RefreshCw size={17} className="shrink-0" />}
+            <div>
+              <p className="font-semibold">
+                {!isOnline
+                  ? "Offline Field Mode Active"
+                  : `${queuedMutations.length} Offline Attendance Sheet${queuedMutations.length === 1 ? "" : "s"} Pending Sync`}
+              </p>
+              <p className="text-xs opacity-80">
+                {!isOnline
+                  ? `Submissions will be saved to device storage (${queuedMutations.length} queued) and synced automatically when internet returns.`
+                  : "Connection restored. Sync queued attendance updates now."}
+              </p>
+            </div>
+          </div>
+          {isOnline && queuedMutations.length > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="primary"
+              isLoading={syncingQueue}
+              onClick={() => void handleFlushOfflineQueue(false)}
+            >
+              <RefreshCw size={14} className="mr-1.5" /> Sync Pending ({queuedMutations.length})
+            </Button>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap border-b border-neutral-200 mb-6 gap-4">
         <button
           className={`pb-2 text-sm font-medium ${activeTab === "mark" ? "border-b-2 border-primary text-primary" : "text-neutral-500 hover:text-neutral-700"}`}
@@ -636,6 +770,17 @@ export const Attendance: React.FC = () => {
                 <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
                   <h2 className="text-lg font-semibold">Students ({rows.length})</h2>
                   <div className="flex flex-wrap items-center gap-3">
+                    {isEditing && canManageAttendance && rows.length > 0 && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setShowQrModal(true)}
+                      >
+                        <QrCode size={15} className="mr-1.5 text-brand-600" />
+                        QR Check-In
+                      </Button>
+                    )}
                     {isEditing && canManageAttendance && pendingCount > 0 && (
                       <Button
                         type="button"
@@ -1043,6 +1188,24 @@ export const Attendance: React.FC = () => {
           )}
         </Card>
       )}
+
+      <QrAttendanceModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        students={rows.map((r) => ({
+          studentId: r.studentId,
+          name: r.name,
+          rollNumber: r.rollNumber,
+          status: r.status,
+        }))}
+        onMarkStudent={(studentId, st) => {
+          setRows((prev) =>
+            prev.map((row) =>
+              row.studentId === studentId ? { ...row, status: st } : row,
+            ),
+          );
+        }}
+      />
     </PageWrapper>
   );
 };

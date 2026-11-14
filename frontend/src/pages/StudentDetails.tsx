@@ -37,6 +37,7 @@ import {
   UserPlus,
   Trash2,
   Award,
+  QrCode,
 } from 'lucide-react';
 import {
   getStudentProfile,
@@ -50,6 +51,7 @@ import { listUsers, type UserAdminItem } from '../services/users.service';
 import { getSkillsByStudent } from '../services/skills.service';
 import { SkillProgressionChart } from '../components/skills/SkillProgressionChart';
 import { StudentReportCard } from '../components/students/StudentReportCard';
+import { StudentIdCardModal } from '../components/students/StudentIdCardModal';
 import { getCareersByStudent } from '../services/career.service';
 import {
   getStudentActivityEnrollments,
@@ -101,6 +103,7 @@ export const StudentDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showIdCardModal, setShowIdCardModal] = useState(false);
 
   // Fee state
   const [feePayments, setFeePayments] = useState<FeePayment[]>([]);
@@ -319,6 +322,9 @@ export const StudentDetails: React.FC = () => {
         <div className="flex gap-2 no-print">
           <Button variant="ghost" onClick={() => navigate('/students')} className="bg-white">
             <ArrowLeft size={16} className="mr-2" /> Back
+          </Button>
+          <Button variant="secondary" onClick={() => setShowIdCardModal(true)}>
+            <QrCode size={16} className="mr-2" /> ID Card
           </Button>
           <Button variant="primary" onClick={() => navigate(`/students/${student.id}/edit`)}>
             <Edit2 size={16} className="mr-2" /> Edit
@@ -935,11 +941,29 @@ export const StudentDetails: React.FC = () => {
       </div>
       </div>
 
-      {!selectedReceipt && (
+      {!selectedReceipt && !showIdCardModal && (
         <div className="hidden print:block p-6 border border-neutral-300 rounded-xl bg-white">
           <StudentReportCard profile={profile} radarData={radarData} careers={careers ?? []} />
         </div>
       )}
+
+      <StudentIdCardModal
+        isOpen={showIdCardModal}
+        onClose={() => setShowIdCardModal(false)}
+        students={[
+          {
+            id: student.id,
+            fullName: student.fullName,
+            rollNumber: student.rollNumber,
+            centerName: student.center?.name,
+            programName: student.program?.name,
+            stream: student.stream,
+            guardianPhone: student.guardianPhone,
+            enrollmentDate: student.enrollmentDate,
+          },
+        ]}
+        title={`${student.fullName} — Student QR ID Card`}
+      />
 
       {selectedReceipt && (() => {
         const receiptNode = (
