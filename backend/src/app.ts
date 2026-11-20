@@ -24,6 +24,7 @@ import announcementRoutes from './routes/announcementRoutes.js';
 import koboRoutes from './routes/kobo.routes.js';
 
 import notificationRoutes from './routes/notification.routes.js';
+import syncRoutes from './routes/syncRoutes.js';
 
 import path from "path";
 import { fileURLToPath } from "url";
@@ -65,6 +66,14 @@ app.get("/health", (_req, res) => {
   });
 });
 
+const syncLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === "production" ? 300 : 10000,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use("/api/sync", syncLimiter, syncRoutes);
 app.use(limiter);
 
 app.use("/api/auth", authRoutes);

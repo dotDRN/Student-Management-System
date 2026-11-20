@@ -1,6 +1,8 @@
 import axios from "axios";
 import { useAuthStore } from "../store/useAuthStore";
 import { socketService } from "./socket.service";
+import { isLikelyNetworkError } from "../utils/offlineAttendanceQueue";
+import { getPendingLocalSyncCounts } from "../offline/offlineDb";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
@@ -85,8 +87,25 @@ api.interceptors.response.use(
 
         return api(originalRequest);
       } catch (refreshError) {
-        // Refresh failed → logout
-        useAuthStore.getState().logout();
+        // Never wipe local session/outbox when refresh failed simply because the device is offline
+        if (isLikelyNetworkError(refreshError)) {
+          useAuthStore.getState().setOfflineSession(true);
+          return Promise.reject(refreshError);
+        }
+
+        // If user has unsynced offline changes, pause and prompt inline re-authentication instead of hard-logout
+        const authState = useAuthStore.getState();
+        if (authState.currentUser) {
+          const tenantId = authState.currentTenant?.id || authState.currentUser.tenantId;
+          const counts = await getPendingLocalSyncCounts(tenantId, authState.currentUser.id);
+          if (counts.pending > 0 || counts.conflicts > 0) {
+            authState.setNeedsReauth(true);
+            return Promise.reject(refreshError);
+          }
+        }
+
+        // Refresh failed and no unsynced local work → logout
+        await authState.logout();
         window.location.href = "/login";
         return Promise.reject(refreshError);
       } finally {

@@ -1,4 +1,7 @@
 import api from './api';
+import { getActiveOfflineDb } from '../offline/syncEngine';
+import { withOfflineRead } from '../offline/offlineServiceHelper';
+import type { LocalEntityRecord } from '../offline/offlineDb';
 
 export interface BatchSummary {
   id: string;
@@ -49,7 +52,29 @@ export const listBatches = (params?: {
   activityId?: string;
   teacherId?: string;
   search?: string;
-}) => api.get<BatchSummary[]>('/batches', { params }).then((r) => r.data);
+}) =>
+  withOfflineRead<BatchSummary[]>(
+    () => api.get<BatchSummary[]>('/batches', { params }).then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) return [];
+      let rows = (await db.batches.toArray()) as unknown as BatchSummary[];
+      if (params?.centerId) rows = rows.filter((b) => b.centerId === params.centerId);
+      if (params?.activityId) rows = rows.filter((b) => b.activityId === params.activityId);
+      if (params?.teacherId) rows = rows.filter((b) => b.teacherId === params.teacherId);
+      if (params?.search) {
+        const q = params.search.toLowerCase();
+        rows = rows.filter((b) => b.name?.toLowerCase().includes(q));
+      }
+      return rows;
+    },
+    async (batches) => {
+      const db = getActiveOfflineDb();
+      if (db && batches.length > 0) {
+        await db.batches.bulkPut(batches as unknown as LocalEntityRecord[]);
+      }
+    },
+  );
 
 export const getBatchById = (batchId: string) =>
   api.get<BatchDetail>(`/batches/${batchId}`).then((r) => r.data);

@@ -37,6 +37,7 @@ export interface Student {
   gender?: Gender | null;
   guardianName?: string | null;
   guardianPhone?: string | null;
+  address?: string | null;
   stream?: string | null;
   post12thChoice?: string | null;
   collegeName?: string | null;
@@ -47,6 +48,8 @@ export interface Student {
   totalFees?: number | null;
   feesPaid?: number;
   isFullyPaid?: boolean;
+  version?: number;
+  updatedAt?: string | Date;
   createdAt: string | Date;
   center?: Center;
   program?: Program;

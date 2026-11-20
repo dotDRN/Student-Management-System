@@ -123,6 +123,12 @@ export interface ServerToClientEvents {
     status: "online" | "offline";
   }) => void;
 
+  "sync:updated": (data: {
+    entities: string[];
+    updatedBy: string;
+    serverTime: string;
+  }) => void;
+
   // Meeting Rooms & Huddles Events
   "meeting:lobby-sync": (data: { rooms: MeetingRoom[] }) => void;
   "meeting:joined": (data: {

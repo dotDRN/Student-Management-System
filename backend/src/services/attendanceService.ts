@@ -437,6 +437,7 @@ export async function bulkUpdateSessionRecords(
         data: {
           status: record.status as AttendanceStatus,
           remarks: record.remarks ?? null,
+          version: { increment: 1 },
         },
       }),
     ),

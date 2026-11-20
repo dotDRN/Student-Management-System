@@ -1,4 +1,7 @@
 import api from './api';
+import { getActiveOfflineDb } from '../offline/syncEngine';
+import { withOfflineRead } from '../offline/offlineServiceHelper';
+import type { LocalEntityRecord } from '../offline/offlineDb';
 
 export interface AcademicYearRecord {
   id: string;
@@ -38,7 +41,21 @@ export interface PromoteCohortResponse {
 }
 
 export const listAcademicYears = () =>
-  api.get<AcademicYearRecord[]>('/academic-years').then((r) => r.data);
+  withOfflineRead<AcademicYearRecord[]>(
+    () => api.get<AcademicYearRecord[]>('/academic-years').then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) return [];
+      const rows = await db.academicYears.toArray();
+      return rows as unknown as AcademicYearRecord[];
+    },
+    async (years) => {
+      const db = getActiveOfflineDb();
+      if (db && years.length > 0) {
+        await db.academicYears.bulkPut(years as unknown as LocalEntityRecord[]);
+      }
+    },
+  );
 
 export const createAcademicYear = (payload: {
   label: string;

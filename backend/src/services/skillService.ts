@@ -131,6 +131,7 @@ export async function updateSkillLog(user: JwtPayload, id: string, data: unknown
       ...(parsed.data.level !== undefined ? { level: parsed.data.level } : {}),
       ...(parsed.data.remarks !== undefined ? { remarks: parsed.data.remarks } : {}),
       ...assessedOnUpdate,
+      version: { increment: 1 },
     },
     include: {
       skill: true,
@@ -325,6 +326,7 @@ export async function bulkUpsertSkillLogs(user: JwtPayload, data: unknown) {
             level: entry.level,
             remarks: entry.remarks !== undefined ? entry.remarks : existing.remarks,
             assessedBy: user.userId,
+            version: { increment: 1 },
           },
           include: {
             skill: true,

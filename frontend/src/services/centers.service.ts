@@ -1,5 +1,8 @@
 import api from './api';
 import type { CenterSummary, ProgramSummary, UserRole } from '../types';
+import { getActiveOfflineDb } from '../offline/syncEngine';
+import { withOfflineRead } from '../offline/offlineServiceHelper';
+import type { LocalEntityRecord } from '../offline/offlineDb';
 
 export interface CenterStaffAssignment {
   id: string;
@@ -61,14 +64,29 @@ export interface ProgramDetail {
 }
 
 export const listCenters = () =>
-  api.get('/centers').then((r) => {
-    if (r.data?.centers?.centers) {
-      return r.data.centers.centers as CenterSummary[];
-    }
-    if (r.data?.centers && Array.isArray(r.data.centers)) return r.data.centers as CenterSummary[];
-    if (Array.isArray(r.data)) return r.data as CenterSummary[];
-    return [];
-  });
+  withOfflineRead<CenterSummary[]>(
+    () =>
+      api.get('/centers').then((r) => {
+        if (r.data?.centers?.centers) {
+          return r.data.centers.centers as CenterSummary[];
+        }
+        if (r.data?.centers && Array.isArray(r.data.centers)) return r.data.centers as CenterSummary[];
+        if (Array.isArray(r.data)) return r.data as CenterSummary[];
+        return [];
+      }),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) return [];
+      const rows = await db.centers.toArray();
+      return rows as unknown as CenterSummary[];
+    },
+    async (centers) => {
+      const db = getActiveOfflineDb();
+      if (db && centers.length > 0) {
+        await db.centers.bulkPut(centers as unknown as LocalEntityRecord[]);
+      }
+    },
+  );
 
 export const getCenterDetails = (centerId: string) =>
   api.get<CenterDetail>(`/centers/${centerId}`).then((r) => r.data);
@@ -96,7 +114,22 @@ export const assignUserToCenter = (
 export const removeUserFromCenter = (centerId: string, userId: string) =>
   api.delete(`/centers/${centerId}/users/${userId}`).then((r) => r.data);
 
-export const listPrograms = () => api.get<ProgramSummary[]>('/programs').then((r) => r.data);
+export const listPrograms = () =>
+  withOfflineRead<ProgramSummary[]>(
+    () => api.get<ProgramSummary[]>('/programs').then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) return [];
+      const rows = await db.programs.toArray();
+      return rows as unknown as ProgramSummary[];
+    },
+    async (programs) => {
+      const db = getActiveOfflineDb();
+      if (db && programs.length > 0) {
+        await db.programs.bulkPut(programs as unknown as LocalEntityRecord[]);
+      }
+    },
+  );
 
 export const getProgramDetails = (programId: string) =>
   api.get<ProgramDetail>(`/programs/${programId}`).then((r) => r.data);
@@ -141,4 +174,11 @@ export const deleteSkillDefinition = (programId: string, skillId: string) =>
   api.delete<{ id: string; deleted: boolean; deactivated: boolean }>(`/programs/${programId}/skills/${skillId}`).then((r) => r.data);
 
 export const getMyCenters = () =>
-  api.get('/users/me/centers').then((r) => r.data);
+  withOfflineRead(
+    () => api.get('/users/me/centers').then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) return [];
+      return db.centers.toArray();
+    },
+  );

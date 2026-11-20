@@ -162,7 +162,11 @@ describe("Component 1.3: Students, Profiles, Careers, Transfers & Fees", () => {
     }));
 
     await updateStudentFees(teacherC1, student1Id, { totalFees: 2500 });
-    assert.deepEqual(capturedUpdateData, { totalFees: 2500, isFullyPaid: false });
+    assert.deepEqual(capturedUpdateData, {
+      totalFees: 2500,
+      isFullyPaid: false,
+      version: { increment: 1 },
+    });
   });
 
   it("enforces center authorization on updateCareer and deleteCareer", async (t) => {

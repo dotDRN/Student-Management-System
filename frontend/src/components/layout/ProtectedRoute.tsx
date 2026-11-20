@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/useAuthStore';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NotificationDrawer } from '../NotificationDrawer';
+import { ConflictResolutionModal } from '../sync/ConflictResolutionModal';
+import { ReauthModal } from '../sync/ReauthModal';
 import { socketService } from '../../services/socket.service';
+import { syncEngine } from '../../offline/syncEngine';
 import { useChatStore } from '../../store/useChatStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import { useChatSocket } from '../../hooks/useChatSocket';
@@ -36,15 +40,27 @@ export const RoleGuard: React.FC<{ allowedRoles: UserRole[] }> = ({ allowedRoles
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
   const accessToken = useAuthStore((state) => state.accessToken);
   const currentUser = useAuthStore((state) => state.currentUser);
+  const isOfflineSession = useAuthStore((state) => state.isOfflineSession);
+  const needsReauth = useAuthStore((state) => state.needsReauth);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
+  const queryClient = useQueryClient();
   const resetChatState = useChatStore((state) => state.resetChatState);
   const clearNotifications = useNotificationStore((state) => state.clear);
 
   useChatSocket();
 
   useEffect(() => {
-    if (accessToken) {
+    if (currentUser) {
+      syncEngine.start(queryClient);
+    }
+    return () => {
+      syncEngine.stop();
+    };
+  }, [currentUser, queryClient]);
+
+  useEffect(() => {
+    if (accessToken && !isOfflineSession) {
       socketService.connect();
     }
 
@@ -53,10 +69,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
       resetChatState();
       clearNotifications();
     };
-  }, [accessToken, resetChatState, clearNotifications]);
+  }, [accessToken, isOfflineSession, resetChatState, clearNotifications]);
 
-  // 1. Authentication Check
-  if (!accessToken || !currentUser) {
+  // 1. Authentication Check (allow persisted offline session or pending re-auth so local work is preserved)
+  if (!currentUser || (!accessToken && !isOfflineSession && !needsReauth)) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
@@ -73,6 +89,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
     <div className="flex h-screen overflow-hidden bg-neutral-50">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <NotificationDrawer />
+      <ConflictResolutionModal />
+      <ReauthModal />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <TopBar onMenuClick={() => setIsSidebarOpen(true)} />

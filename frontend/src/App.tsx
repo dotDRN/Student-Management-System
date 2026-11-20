@@ -29,15 +29,24 @@ import { getHomeRouteForRole } from './utils/rbac';
 import { useEffect, useState } from "react";
 import { useAuthStore } from "./store/useAuthStore";
 import { ToastContainer } from './components/toast/ToastContainer';
+import { getPendingLocalSyncCounts } from './offline/offlineDb';
 
 function App() {
-  const { currentUser, initializeAuth, setAuth, logout } = useAuthStore();
+  const { currentUser, initializeAuth, setAuth, setOfflineSession, setNeedsReauth, logout } = useAuthStore();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const initAuth = async () => {
       try {
         initializeAuth();
+        const persisted = useAuthStore.getState();
+
+        // If browser is clearly offline and we have a persisted local user, boot straight into offline mode
+        if (typeof navigator !== "undefined" && navigator.onLine === false && persisted.currentUser) {
+          setOfflineSession(true);
+          return;
+        }
+
         const res = await fetch("/api/auth/refresh", {
           method: "POST",
           credentials: "include",
@@ -46,17 +55,33 @@ function App() {
           const data = await res.json();
           setAuth(data.user, data.accessToken, data.organization || null);
         } else {
-          logout();
+          // Explicit 401/403 from server: preserve local session + prompt re-auth if unsynced local work exists
+          if (persisted.currentUser) {
+            const tenantId = persisted.currentTenant?.id || persisted.currentUser.tenantId;
+            const counts = await getPendingLocalSyncCounts(tenantId, persisted.currentUser.id);
+            if (counts.pending > 0 || counts.conflicts > 0) {
+              setNeedsReauth(true);
+              return;
+            }
+          }
+          await logout();
         }
       } catch {
-        console.log("No active session");
-        logout();
+        // Network error / offline reload: keep persisted session active in offline mode
+        const persisted = useAuthStore.getState();
+        if (persisted.currentUser) {
+          console.log("Offline startup detected — preserving persisted session.");
+          setOfflineSession(true);
+        } else {
+          console.log("No active session");
+          await logout();
+        }
       } finally {
         setLoading(false);
       }
     };
     initAuth();
-  }, [initializeAuth, setAuth, logout]);
+  }, [initializeAuth, setAuth, setOfflineSession, setNeedsReauth, logout]);
 
   if (loading) {
     return (

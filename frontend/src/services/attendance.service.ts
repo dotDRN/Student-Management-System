@@ -1,4 +1,8 @@
 import api from './api';
+import { getActiveOfflineDb, syncEngine } from '../offline/syncEngine';
+import { withOfflineMutation, withOfflineRead } from '../offline/offlineServiceHelper';
+import { computeFieldDiff, generateClientUuid } from '../offline/outboxHelpers';
+import type { LocalEntityRecord } from '../offline/offlineDb';
 
 export type CreateSessionBody = {
   centerId: string;
@@ -11,27 +15,250 @@ export type CreateSessionBody = {
 export type UpdateSessionRecordsBody = Record<string, unknown>;
 
 export const createAttendanceSession = (body: CreateSessionBody) =>
-  api.post<Record<string, unknown>>('/attendance/sessions', body).then((r) => r.data);
+  withOfflineMutation<Record<string, unknown>>(
+    () => api.post<Record<string, unknown>>('/attendance/sessions', body).then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      const sessionId = generateClientUuid();
+      const nowIso = new Date().toISOString();
+
+      let students = db
+        ? await db.students.where('centerId').equals(body.centerId).toArray()
+        : [];
+      students = students.filter(
+        (s) => s.isActive !== false && (!body.programId || s.programId === body.programId),
+      );
+      if (db && body.batchId) {
+        const enrollments = await db.batchEnrollments
+          .where('batchId')
+          .equals(body.batchId)
+          .toArray();
+        const enrolledIds = new Set(enrollments.map((e) => String(e.studentId)));
+        students = students.filter((s) => enrolledIds.has(s.id));
+      }
+
+      const [center, program] = db
+        ? await Promise.all([
+            db.centers.get(body.centerId),
+            body.programId ? db.programs.get(body.programId) : Promise.resolve(undefined),
+          ])
+        : [undefined, undefined];
+
+      const localRecords: LocalEntityRecord[] = students.map((student) => ({
+        id: generateClientUuid(),
+        sessionId,
+        studentId: student.id,
+        centerId: body.centerId,
+        status: 'pending',
+        remarks: null,
+        version: 1,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        student: {
+          id: student.id,
+          fullName: student.fullName,
+          rollNumber: student.rollNumber ?? null,
+        },
+      }));
+
+      const localSession: LocalEntityRecord = {
+        id: sessionId,
+        centerId: body.centerId,
+        programId: body.programId,
+        activityId: body.activityId ?? null,
+        batchId: body.batchId ?? null,
+        sessionDate: body.sessionDate,
+        isHoliday: false,
+        version: 1,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        center: center ?? null,
+        program: program ?? null,
+      };
+
+      if (db) {
+        await db.attendanceSessions.put(localSession);
+        if (localRecords.length > 0) {
+          await db.attendanceRecords.bulkPut(localRecords);
+        }
+      }
+
+      await syncEngine.enqueueMutation({
+        entityType: 'attendance_session',
+        entityId: sessionId,
+        entityLabel: `Attendance Session (${body.sessionDate})`,
+        action: 'CREATE',
+        changedFields: { ...body },
+      });
+
+      return { created: true, session: { ...localSession, records: localRecords }, offlineQueued: true };
+    },
+    async (res) => {
+      const db = getActiveOfflineDb();
+      const session = (res.session ?? res) as LocalEntityRecord | undefined;
+      if (db && session?.id) {
+        await db.attendanceSessions.put(session);
+        if (Array.isArray(session.records)) {
+          await db.attendanceRecords.bulkPut(session.records as LocalEntityRecord[]);
+        }
+      }
+    },
+  );
 
 export const getAttendanceSessions = (params?: Record<string, string | undefined>) =>
-  api.get<Record<string, unknown>>('/attendance/sessions', { params }).then((r) => r.data);
+  withOfflineRead<Record<string, unknown>>(
+    () => api.get<Record<string, unknown>>('/attendance/sessions', { params }).then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) return { sessions: [] };
+      let sessions = await db.attendanceSessions.toArray();
+      if (params?.centerId) sessions = sessions.filter((s) => s.centerId === params.centerId);
+      if (params?.programId) sessions = sessions.filter((s) => s.programId === params.programId);
+      if (params?.batchId) sessions = sessions.filter((s) => s.batchId === params.batchId);
+      sessions.sort((a, b) => String(b.sessionDate || '').localeCompare(String(a.sessionDate || '')));
+      return { sessions };
+    },
+    async (res) => {
+      const db = getActiveOfflineDb();
+      const list = Array.isArray(res) ? res : (res.sessions as LocalEntityRecord[] | undefined);
+      if (db && Array.isArray(list) && list.length > 0) {
+        await db.attendanceSessions.bulkPut(list as LocalEntityRecord[]);
+      }
+    },
+  );
 
 export const getAttendanceSessionById = (sessionId: string) =>
-  api.get<Record<string, unknown>>(`/attendance/sessions/${sessionId}`).then((r) => r.data);
+  withOfflineRead<Record<string, unknown>>(
+    () => api.get<Record<string, unknown>>(`/attendance/sessions/${sessionId}`).then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      const session = db ? await db.attendanceSessions.get(sessionId) : undefined;
+      if (!session) throw new Error('Attendance session not available offline');
+      const records = db
+        ? await db.attendanceRecords.where('sessionId').equals(sessionId).toArray()
+        : [];
+      return { ...session, records };
+    },
+    async (res) => {
+      const db = getActiveOfflineDb();
+      if (db && typeof res.id === 'string') {
+        await db.attendanceSessions.put(res as LocalEntityRecord);
+        if (Array.isArray(res.records)) {
+          await db.attendanceRecords.bulkPut(res.records as LocalEntityRecord[]);
+        }
+      }
+    },
+  );
 
 export const getAttendanceSessionRecords = (sessionId: string) =>
-  api.get<{ records: unknown[] }>(`/attendance/sessions/${sessionId}/records`).then((r) => r.data);
+  withOfflineRead<{ records: unknown[] }>(
+    () =>
+      api
+        .get<{ records: unknown[] }>(`/attendance/sessions/${sessionId}/records`)
+        .then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) return { records: [] };
+      const records = await db.attendanceRecords.where('sessionId').equals(sessionId).toArray();
+      return { records };
+    },
+    async (res) => {
+      const db = getActiveOfflineDb();
+      if (db && Array.isArray(res.records) && res.records.length > 0) {
+        await db.attendanceRecords.bulkPut(res.records as LocalEntityRecord[]);
+      }
+    },
+  );
 
 export const updateAttendanceSessionRecords = (
   sessionId: string,
   body: UpdateSessionRecordsBody,
 ) =>
-  api
-    .put<Record<string, unknown>>(`/attendance/sessions/${sessionId}/records`, body)
-    .then((r) => r.data);
+  withOfflineMutation<Record<string, unknown>>(
+    () =>
+      api
+        .put<Record<string, unknown>>(`/attendance/sessions/${sessionId}/records`, body)
+        .then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      const records = Array.isArray(body.records)
+        ? (body.records as Array<{
+            recordId: string;
+            studentId?: string;
+            status: string;
+            remarks?: string | null;
+          }>)
+        : [];
+      const updatedRecords: LocalEntityRecord[] = [];
+
+      for (const rec of records) {
+        const existing = db ? await db.attendanceRecords.get(rec.recordId) : undefined;
+        const baseVersion = typeof existing?.version === 'number' ? existing.version : 1;
+        const nextFields = {
+          status: rec.status,
+          remarks: rec.remarks ?? null,
+        };
+        const { baseSnapshot, changedFields } = computeFieldDiff(
+          existing as Record<string, unknown> | undefined,
+          nextFields,
+        );
+
+        const localRec: LocalEntityRecord = {
+          ...(existing ?? {
+            id: rec.recordId,
+            sessionId,
+            studentId: rec.studentId ?? '',
+          }),
+          ...nextFields,
+          updatedAt: new Date().toISOString(),
+        };
+        updatedRecords.push(localRec);
+        if (db) {
+          await db.attendanceRecords.put(localRec);
+        }
+
+        const effectiveChanges =
+          Object.keys(changedFields).length > 0 ? changedFields : nextFields;
+        const studentName =
+          (existing?.student as { fullName?: string } | undefined)?.fullName ||
+          rec.recordId.slice(0, 8);
+
+        await syncEngine.enqueueMutation({
+          entityType: 'attendance_record',
+          entityId: rec.recordId,
+          entityLabel: `Attendance: ${studentName}`,
+          action: existing ? 'UPDATE' : 'CREATE',
+          baseVersion,
+          baseSnapshot,
+          changedFields: {
+            ...effectiveChanges,
+            sessionId,
+            ...(localRec.studentId ? { studentId: localRec.studentId } : {}),
+          },
+        });
+      }
+
+      return { id: sessionId, records: updatedRecords, offlineQueued: true };
+    },
+    async (res) => {
+      const db = getActiveOfflineDb();
+      if (db && Array.isArray(res.records)) {
+        await db.attendanceRecords.bulkPut(res.records as LocalEntityRecord[]);
+      }
+    },
+  );
 
 export const getStudentAttendance = (studentId: string) =>
-  api.get<Record<string, unknown>>(`/attendance/students/${studentId}`).then((r) => r.data);
+  withOfflineRead<Record<string, unknown>>(
+    () => api.get<Record<string, unknown>>(`/attendance/students/${studentId}`).then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      const records = db
+        ? await db.attendanceRecords.where('studentId').equals(studentId).toArray()
+        : [];
+      return { records };
+    },
+  );
 
 export const getAttendanceSummary = (params?: Record<string, string | undefined>) =>
   api.get<Record<string, unknown>>('/attendance/summary', { params }).then((r) => r.data);
@@ -40,14 +267,82 @@ export const getPendingAttendanceSessions = (params?: Record<string, string | un
   api.get<Record<string, unknown>>('/attendance/pending', { params }).then((r) => r.data);
 
 export const getTodayFreshSheet = (centerId: string, programId: string, batchId?: string) =>
-  api
-    .get<Record<string, unknown>>('/attendance/fresh-sheet', {
-      params: { centerId, programId, ...(batchId ? { batchId } : {}) },
-    })
-    .then((r) => r.data);
+  withOfflineRead<Record<string, unknown>>(
+    () =>
+      api
+        .get<Record<string, unknown>>('/attendance/fresh-sheet', {
+          params: { centerId, programId, ...(batchId ? { batchId } : {}) },
+        })
+        .then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      const today = new Date().toISOString().slice(0, 10);
+      if (db) {
+        const sessions = await db.attendanceSessions.where('centerId').equals(centerId).toArray();
+        const existing = sessions.find(
+          (s) =>
+            String(s.sessionDate || '').slice(0, 10) === today &&
+            s.programId === programId &&
+            (batchId ? s.batchId === batchId : !s.batchId),
+        );
+        if (existing) {
+          const records = await db.attendanceRecords.where('sessionId').equals(existing.id).toArray();
+          return { ...existing, records };
+        }
+      }
+      const created = await createAttendanceSession({
+        centerId,
+        programId,
+        sessionDate: today,
+        ...(batchId ? { batchId } : {}),
+      });
+      return (created.session as Record<string, unknown>) ?? created;
+    },
+    async (res) => {
+      const db = getActiveOfflineDb();
+      if (db && typeof res.id === 'string') {
+        await db.attendanceSessions.put(res as LocalEntityRecord);
+        if (Array.isArray(res.records)) {
+          await db.attendanceRecords.bulkPut(res.records as LocalEntityRecord[]);
+        }
+      }
+    },
+  );
 
 export const markHoliday = (sessionId: string, isHoliday: boolean) =>
-  api.put<Record<string, unknown>>(`/attendance/sessions/${sessionId}/holiday`, { isHoliday }).then((r) => r.data);
+  withOfflineMutation<Record<string, unknown>>(
+    () =>
+      api
+        .put<Record<string, unknown>>(`/attendance/sessions/${sessionId}/holiday`, { isHoliday })
+        .then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      const existing = db ? await db.attendanceSessions.get(sessionId) : undefined;
+      const baseVersion = typeof existing?.version === 'number' ? existing.version : 1;
+      const updated: LocalEntityRecord = {
+        ...(existing ?? { id: sessionId }),
+        isHoliday,
+        updatedAt: new Date().toISOString(),
+      };
+      if (db) await db.attendanceSessions.put(updated);
+      await syncEngine.enqueueMutation({
+        entityType: 'attendance_session',
+        entityId: sessionId,
+        entityLabel: `Holiday toggle (${String(existing?.sessionDate || sessionId.slice(0, 8))})`,
+        action: 'UPDATE',
+        baseVersion,
+        baseSnapshot: { isHoliday: existing?.isHoliday ?? false },
+        changedFields: { isHoliday },
+      });
+      return { ...updated, offlineQueued: true };
+    },
+    async (res) => {
+      const db = getActiveOfflineDb();
+      if (db && typeof res.id === 'string') {
+        await db.attendanceSessions.put(res as LocalEntityRecord);
+      }
+    },
+  );
 
 export type RecentAbsenteeRecord = {
   id: string;

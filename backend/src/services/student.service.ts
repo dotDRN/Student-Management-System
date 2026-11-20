@@ -259,6 +259,7 @@ export const updateStudent = async (user: TokenPayload, id: string, data: any) =
       ? { enrollmentDate: parseUtcDateOnly(payload.enrollmentDate, "enrollmentDate") }
       : {}),
     ...(resolvedAcademicYearId !== undefined ? { academicYearId: resolvedAcademicYearId } : {}),
+    version: { increment: 1 },
   };
 
   const result = await prisma.student.updateMany({
@@ -905,6 +906,7 @@ export const addFeePayment = async (
       data: {
         feesPaid: totalPaid,
         isFullyPaid: totalFees > 0 && totalPaid >= totalFees,
+        version: { increment: 1 },
       },
     });
 
@@ -955,6 +957,7 @@ export const updateStudentFees = async (
       data: {
         ...(data.totalFees !== undefined ? { totalFees: data.totalFees } : {}),
         isFullyPaid: computedIsFullyPaid,
+        version: { increment: 1 },
       },
       include: { center: true, program: true },
     });

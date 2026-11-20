@@ -384,6 +384,7 @@ export async function upsertExamScores(
           marks: score.marks,
           isAbsent: score.isAbsent,
           remarks: score.remarks,
+          version: { increment: 1 },
         },
         create: {
           examId,
