@@ -1,4 +1,5 @@
 import api from './api';
+import { withOfflineRead } from '../offline/offlineServiceHelper';
 
 export type ActivityStatus = 'planned' | 'ongoing' | 'completed' | 'cancelled';
 export type ActivityType = 'class' | 'game' | 'visit' | 'camp' | 'exam' | 'general';
@@ -53,8 +54,38 @@ export interface UpdateActivityPayload {
   volunteers?: string[];
 }
 
+const ACTIVITIES_CACHE_KEY = 'edbase_activities_cache_v1';
+
 export const listActivities = (params?: ListActivitiesQuery) =>
-  api.get<ActivityRecord[]>('/activities', { params }).then((r) => (Array.isArray(r.data) ? r.data : []));
+  withOfflineRead<ActivityRecord[]>(
+    () =>
+      api
+        .get<ActivityRecord[]>('/activities', { params })
+        .then((r) => (Array.isArray(r.data) ? r.data : [])),
+    async () => {
+      try {
+        const raw = localStorage.getItem(ACTIVITIES_CACHE_KEY);
+        const list: ActivityRecord[] = raw ? JSON.parse(raw) : [];
+        return list.filter((a) => {
+          if (params?.centerId && a.centerId !== params.centerId) return false;
+          if (params?.programId && a.programId !== params.programId) return false;
+          if (params?.status && a.status !== params.status) return false;
+          return true;
+        });
+      } catch {
+        return [];
+      }
+    },
+    async (list) => {
+      try {
+        if (!params?.centerId && !params?.status) {
+          localStorage.setItem(ACTIVITIES_CACHE_KEY, JSON.stringify(list));
+        }
+      } catch {
+        // Ignore quota errors
+      }
+    },
+  );
 
 export const getActivity = (activityId: string) =>
   api.get<ActivityRecord>(`/activities/${activityId}`).then((r) => r.data);
@@ -147,6 +178,20 @@ export const removeActivityEnrollment = (activityId: string, studentId: string) 
   api.delete(`/activities/${activityId}/enrollments/${studentId}`);
 
 export const getStudentActivityEnrollments = (studentId: string) =>
-  api
-    .get<StudentActivityEnrollmentsResponse>(`/activities/students/${studentId}`)
-    .then((r) => r.data);
+  withOfflineRead<StudentActivityEnrollmentsResponse>(
+    () =>
+      api
+        .get<StudentActivityEnrollmentsResponse>(`/activities/students/${studentId}`)
+        .then((r) => r.data),
+    async () => ({
+      studentId,
+      enrollments: [],
+      summary: {
+        totalEnrolled: 0,
+        approvedCount: 0,
+        pendingCount: 0,
+        completedCount: 0,
+        holisticPoints: 0,
+      },
+    }),
+  );

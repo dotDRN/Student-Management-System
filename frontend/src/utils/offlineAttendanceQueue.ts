@@ -76,20 +76,66 @@ export function isLikelyNetworkError(err: unknown): boolean {
   const candidate = err as {
     code?: string;
     message?: string;
-    response?: unknown;
+    response?: {
+      status?: number;
+      data?: unknown;
+    };
   };
   if (!candidate.response) {
     if (
       candidate.code === 'ERR_NETWORK' ||
       candidate.code === 'ECONNABORTED' ||
-      candidate.code === 'ERR_INTERNET_DISCONNECTED'
+      candidate.code === 'ERR_INTERNET_DISCONNECTED' ||
+      candidate.code === 'ETIMEDOUT'
     ) {
       return true;
     }
-    if (typeof candidate.message === 'string' && /network error|failed to fetch|offline/i.test(candidate.message)) {
+    if (
+      typeof candidate.message === 'string' &&
+      /network error|failed to fetch|offline|load failed|timeout|socket hang up/i.test(
+        candidate.message,
+      )
+    ) {
       return true;
     }
+    return false;
   }
+
+  const status = candidate.response.status;
+  // 502/503/504 indicate backend proxy failure or database offline (503 DB_UNAVAILABLE)
+  if (status === 502 || status === 503 || status === 504) {
+    return true;
+  }
+
+  // Check 500 responses from Vite dev proxy (when backend is down) or Prisma DB connection drops
+  if (status === 500) {
+    const data = candidate.response.data;
+    if (!data || data === '') {
+      // Vite dev proxy returns an empty 500 when localhost:5000 is unreachable
+      return true;
+    }
+    if (typeof data === 'string') {
+      if (
+        /econnrefused|proxy error|can't reach database|database|prisma|connection terminated|etimedout/i.test(
+          data,
+        )
+      ) {
+        return true;
+      }
+    } else if (typeof data === 'object' && data !== null) {
+      const obj = data as { code?: string; error?: string; message?: string };
+      if (obj.code === 'DB_UNAVAILABLE') return true;
+      const errText = `${obj.error ?? ''} ${obj.message ?? ''}`;
+      if (
+        /can't reach database|database server|prisma|econnrefused|etimedout|connection terminated|connection closed|server has closed the connection|pool|db_unavailable/i.test(
+          errText,
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+
   return false;
 }
 

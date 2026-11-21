@@ -373,6 +373,9 @@ export const Attendance: React.FC = () => {
       isHoliday?: boolean;
       session?: { isHoliday?: boolean };
       records?: Array<{
+        id?: string;
+        status?: string | null;
+        remarks?: string | null;
         student?: { id: string; fullName: string; rollNumber?: string };
         record?: { id: string; status: string | null; remarks?: string | null };
       }>;
@@ -380,12 +383,12 @@ export const Attendance: React.FC = () => {
     setIsHoliday(Boolean(full.isHoliday ?? full.session?.isHoliday));
     setRows(
       (full.records ?? []).map((r) => ({
-        recordId: r.record?.id ?? "",
+        recordId: r.record?.id ?? r.id ?? "",
         studentId: r.student?.id ?? "",
         name: r.student?.fullName ?? "Student",
         rollNumber: r.student?.rollNumber ?? "",
-        status: (r.record?.status as Row["status"]) ?? "pending",
-        remarks: r.record?.remarks ?? "",
+        status: ((r.record?.status ?? r.status) as Row["status"]) ?? "pending",
+        remarks: (r.record?.remarks ?? r.remarks) ?? "",
       })),
     );
   };
@@ -491,15 +494,18 @@ export const Attendance: React.FC = () => {
       }));
 
     try {
-      if (!isOnline) {
-        throw { code: "ERR_NETWORK", message: "Browser is offline" };
-      }
-
-      await updateAttendanceSessionRecords(sessionId, { records });
+      const res = await updateAttendanceSessionRecords(sessionId, { records });
 
       setIsEditing(false);
       setSuccess(true);
-      toast.success({ title: "Attendance saved" });
+      if (res && (res as { offlineQueued?: boolean }).offlineQueued) {
+        toast.info({
+          title: "Saved to Offline Storage",
+          description: "Attendance changes were stored locally and will sync automatically when reconnected.",
+        });
+      } else {
+        toast.success({ title: "Attendance saved" });
+      }
     } catch (err) {
       if (!isOnline || isLikelyNetworkError(err)) {
         const centerLabel = centers.find((c) => c.id === centerId)?.name || "Center";

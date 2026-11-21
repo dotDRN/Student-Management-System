@@ -69,12 +69,23 @@ export const getStudents = (params?: StudentListQuery) =>
       } else {
         rows.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
       }
+      const [centerRows, programRows] = await Promise.all([
+        db.centers.toArray(),
+        db.programs.toArray(),
+      ]);
+      const centerMap = new Map(centerRows.map((c) => [c.id, c]));
+      const programMap = new Map(programRows.map((p) => [p.id, p]));
+
       const page = params?.page ?? 1;
       const limit = params?.limit ?? 50;
       const total = rows.length;
       const start = (page - 1) * limit;
       return {
-        students: rows.slice(start, start + limit),
+        students: rows.slice(start, start + limit).map((s) => ({
+          ...s,
+          center: s.center ?? (centerMap.get(s.centerId) as unknown as Student['center']),
+          program: s.program ?? (programMap.get(s.programId) as unknown as Student['program']),
+        })),
         total,
         page,
         totalPages: Math.max(1, Math.ceil(total / limit)),
@@ -90,12 +101,30 @@ export const getStudents = (params?: StudentListQuery) =>
   );
 
 export const filterStudents = (params?: StudentFilterQuery) =>
-  api.get<StudentsListResult>('/students/filter', { params }).then((r) => r.data);
+  withOfflineRead<StudentsListResult>(
+    () => api.get<StudentsListResult>('/students/filter', { params }).then((r) => r.data),
+    () =>
+      getStudents({
+        centerId: params?.centerId ? String(params.centerId) : undefined,
+        programId: params?.programId ? String(params.programId) : undefined,
+        search: params?.search ? String(params.search) : undefined,
+        page: params?.page ? Number(params.page) : 1,
+        limit: params?.limit ? Number(params.limit) : 50,
+      }),
+  );
 
 export const getStudentDashboardStats = () =>
-  api
-    .get<ApiEnvelope<Record<string, unknown>>>('/students/dashboard')
-    .then((r) => r.data);
+  withOfflineRead<ApiEnvelope<Record<string, unknown>>>(
+    () =>
+      api
+        .get<ApiEnvelope<Record<string, unknown>>>('/students/dashboard')
+        .then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      const totalStudents = db ? await db.students.count() : 0;
+      return { data: { totalStudents }, status: 'success' };
+    },
+  );
 
 export const getStudentById = (id: string) =>
   withOfflineRead<Student>(
@@ -304,10 +333,37 @@ export const updateStudentAttendance = (attendanceId: string, payload: Attendanc
 // ─────────────── Transfer Workflow ───────────────
 
 export const requestTransfer = (studentIds: string[]) =>
-  api.post<{ success: boolean; updated: number }>('/students/transfers/request', { studentIds }).then((r) => r.data);
+  withOfflineMutation<{ success: boolean; updated: number }>(
+    () =>
+      api
+        .post<{ success: boolean; updated: number }>('/students/transfers/request', { studentIds })
+        .then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      let updated = 0;
+      if (db) {
+        for (const sid of studentIds) {
+          const existing = await db.students.get(sid);
+          if (existing) {
+            await db.students.put({ ...existing, transferStatus: 'pending_transfer' });
+            updated += 1;
+          }
+        }
+      }
+      return { success: true, updated };
+    },
+  );
 
 export const getTransferRequests = () =>
-  api.get<ApiEnvelope<Student[]>>('/students/transfers/pending').then((r) => r.data.data);
+  withOfflineRead<Student[]>(
+    () => api.get<ApiEnvelope<Student[]>>('/students/transfers/pending').then((r) => r.data.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) return [];
+      const all = (await db.students.toArray()) as unknown as Student[];
+      return all.filter((s) => s.transferStatus === 'pending_transfer');
+    },
+  );
 
 export const completeTransfer = (studentIds: string[], newTeacherId: string, newCenterId: string) =>
   api.post<{ success: boolean; transferred: number }>('/students/transfers/complete', {
@@ -473,7 +529,42 @@ export const bulkImportStudents = (payload: {
   programId: string;
   academicYearId?: string | null;
   students: BulkImportStudentRowInput[];
-}) => api.post<BulkImportStudentsResponse>('/students/bulk-import', payload).then((r) => r.data);
+}) =>
+  withOfflineMutation<BulkImportStudentsResponse>(
+    () => api.post<BulkImportStudentsResponse>('/students/bulk-import', payload).then((r) => r.data),
+    async () => {
+      const created: Student[] = [];
+      for (const row of payload.students) {
+        const stu = await createStudent({
+          centerId: payload.centerId,
+          programId: payload.programId,
+          fullName: row.fullName,
+          rollNumber: row.rollNumber,
+          dob: row.dob,
+          gender: row.gender,
+          guardianName: row.guardianName,
+          guardianPhone: row.guardianPhone,
+          stream: row.stream,
+          post12thChoice: row.post12thChoice,
+          collegeName: row.collegeName,
+          educationDiscontinued: row.educationDiscontinued,
+          enrollmentDate: row.enrollmentDate,
+        });
+        created.push(stu);
+      }
+      return {
+        success: true,
+        createdCount: created.length,
+        students: created,
+      };
+    },
+    async (res) => {
+      const db = getActiveOfflineDb();
+      if (db && Array.isArray(res.students) && res.students.length > 0) {
+        await db.students.bulkPut(res.students as unknown as LocalEntityRecord[]);
+      }
+    },
+  );
 
 export const linkGuardian = (studentId: string, payload: { parentUserId?: string; email?: string }) =>
   api.post<ApiEnvelope<GuardianLinkItem>>(`/students/${studentId}/guardians`, payload).then((r) => r.data.data);
@@ -548,10 +639,104 @@ export interface AddStudentDocumentPayload {
 }
 
 export const getStudentDossier = (studentId: string) =>
-  api.get<ApiEnvelope<StudentDossierResponse>>(`/students/${studentId}/dossier`).then((r) => r.data.data);
+  withOfflineRead<StudentDossierResponse>(
+    () =>
+      api
+        .get<ApiEnvelope<StudentDossierResponse>>(`/students/${studentId}/dossier`)
+        .then((r) => r.data.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) {
+        return {
+          studentId,
+          summary: {
+            totalEvents: 0,
+            examMilestones: 0,
+            skillMilestones: 0,
+            feePaymentsCount: 0,
+            transfersCount: 0,
+            documentCount: 0,
+          },
+          timeline: [],
+          documents: [],
+        };
+      }
+      const [student, examScores, skillLogs, feePayments] = await Promise.all([
+        db.students.get(studentId),
+        db.examScores.where('studentId').equals(studentId).toArray(),
+        db.skillLogs.where('studentId').equals(studentId).toArray(),
+        db.feePayments.where('studentId').equals(studentId).toArray(),
+      ]);
+
+      const timeline: DossierTimelineEvent[] = [];
+      if (student?.enrollmentDate) {
+        timeline.push({
+          id: `enroll_${student.id}`,
+          date: String(student.enrollmentDate),
+          type: 'enrollment',
+          title: 'Enrolled at Center',
+          subtitle: String(
+            (student.program as { name?: string } | undefined)?.name || 'Academic Program',
+          ),
+          badge: 'ACTIVE',
+        });
+      }
+      for (const sc of examScores) {
+        timeline.push({
+          id: `exam_${sc.id}`,
+          date: String(sc.updatedAt || sc.enteredAt || new Date().toISOString()),
+          type: 'exam',
+          title: `Exam Score · ${String((sc.subject as { name?: string } | undefined)?.name || 'Subject')}`,
+          subtitle: sc.isAbsent ? 'Marked Absent' : `Marks: ${String(sc.marks ?? '—')}`,
+          badge: String(sc.status || 'DRAFT'),
+        });
+      }
+      for (const sk of skillLogs) {
+        timeline.push({
+          id: `skill_${sk.id}`,
+          date: String(sk.assessedOn || sk.createdAt || new Date().toISOString()),
+          type: 'skill',
+          title: `Skill Assessment · ${String((sk.skill as { name?: string } | undefined)?.name || 'Skill')}`,
+          subtitle: `Proficiency Level ${String(sk.level ?? 1)}`,
+          badge: `L${String(sk.level ?? 1)}`,
+        });
+      }
+      for (const fp of feePayments) {
+        timeline.push({
+          id: `fee_${fp.id}`,
+          date: String(fp.paidAt || new Date().toISOString()),
+          type: 'fee',
+          title: `Fee Payment Received`,
+          subtitle: `₹${String(fp.amount)}${fp.notes ? ` · ${String(fp.notes)}` : ''}`,
+          badge: 'PAID',
+        });
+      }
+      timeline.sort((a, b) => b.date.localeCompare(a.date));
+
+      return {
+        studentId,
+        summary: {
+          totalEvents: timeline.length,
+          examMilestones: examScores.length,
+          skillMilestones: skillLogs.length,
+          feePaymentsCount: feePayments.length,
+          transfersCount: 0,
+          documentCount: 0,
+        },
+        timeline,
+        documents: [],
+      };
+    },
+  );
 
 export const listStudentDocuments = (studentId: string) =>
-  api.get<ApiEnvelope<StudentDocumentRecord[]>>(`/students/${studentId}/documents`).then((r) => r.data.data);
+  withOfflineRead<StudentDocumentRecord[]>(
+    () =>
+      api
+        .get<ApiEnvelope<StudentDocumentRecord[]>>(`/students/${studentId}/documents`)
+        .then((r) => r.data.data),
+    async () => [],
+  );
 
 export const addStudentDocument = (studentId: string, payload: AddStudentDocumentPayload) => {
   if (payload.file) {

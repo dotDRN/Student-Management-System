@@ -19,6 +19,31 @@ export const createAttendanceSession = (body: CreateSessionBody) =>
     () => api.post<Record<string, unknown>>('/attendance/sessions', body).then((r) => r.data),
     async () => {
       const db = getActiveOfflineDb();
+      if (db) {
+        const existingSessions = await db.attendanceSessions
+          .where('centerId')
+          .equals(body.centerId)
+          .toArray();
+        const targetDate = body.sessionDate.slice(0, 10);
+        const match = existingSessions.find(
+          (s) =>
+            String(s.sessionDate || '').slice(0, 10) === targetDate &&
+            (!body.programId || s.programId === body.programId) &&
+            (body.batchId ? s.batchId === body.batchId : !s.batchId),
+        );
+        if (match) {
+          const existingRecords = await db.attendanceRecords
+            .where('sessionId')
+            .equals(match.id)
+            .toArray();
+          return {
+            created: false,
+            session: { ...match, records: existingRecords },
+            offlineQueued: true,
+          };
+        }
+      }
+
       const sessionId = generateClientUuid();
       const nowIso = new Date().toISOString();
 
@@ -134,17 +159,85 @@ export const getAttendanceSessionById = (sessionId: string) =>
       const db = getActiveOfflineDb();
       const session = db ? await db.attendanceSessions.get(sessionId) : undefined;
       if (!session) throw new Error('Attendance session not available offline');
-      const records = db
+      const rawRecords = db
         ? await db.attendanceRecords.where('sessionId').equals(sessionId).toArray()
         : [];
+      const students = db ? await db.students.toArray() : [];
+      const studentMap = new Map(students.map((s) => [s.id, s]));
+
+      const records = rawRecords.map((rec) => {
+        const stu =
+          (rec.student as { id: string; fullName: string; rollNumber?: string | null } | undefined) ??
+          (rec.studentId && studentMap.get(String(rec.studentId))
+            ? {
+                id: String(rec.studentId),
+                fullName: String(studentMap.get(String(rec.studentId))?.fullName || 'Student'),
+                rollNumber:
+                  (studentMap.get(String(rec.studentId))?.rollNumber as string | null) ?? null,
+              }
+            : { id: String(rec.studentId || ''), fullName: 'Student', rollNumber: null });
+        const innerRecord = (rec.record as {
+          id?: string;
+          status?: string | null;
+          remarks?: string | null;
+        } | undefined) ?? {
+          id: rec.id,
+          status: String(rec.status ?? 'pending'),
+          remarks: (rec.remarks as string | null) ?? null,
+        };
+        return {
+          ...rec,
+          id: innerRecord.id || rec.id,
+          status: innerRecord.status ?? rec.status ?? 'pending',
+          remarks: innerRecord.remarks ?? rec.remarks ?? null,
+          student: stu,
+          record: {
+            id: innerRecord.id || rec.id,
+            status: innerRecord.status ?? String(rec.status ?? 'pending'),
+            remarks: (innerRecord.remarks ?? rec.remarks ?? null) as string | null,
+          },
+        };
+      });
       return { ...session, records };
     },
     async (res) => {
       const db = getActiveOfflineDb();
-      if (db && typeof res.id === 'string') {
-        await db.attendanceSessions.put(res as LocalEntityRecord);
+      const sessionIdResolved =
+        typeof res.id === 'string'
+          ? res.id
+          : typeof (res.session as { id?: string } | undefined)?.id === 'string'
+            ? (res.session as { id: string }).id
+            : sessionId;
+      if (db && sessionIdResolved) {
+        await db.attendanceSessions.put({
+          ...(res.session && typeof res.session === 'object' ? (res.session as LocalEntityRecord) : (res as LocalEntityRecord)),
+          id: sessionIdResolved,
+        });
         if (Array.isArray(res.records)) {
-          await db.attendanceRecords.bulkPut(res.records as LocalEntityRecord[]);
+          const normalized: LocalEntityRecord[] = res.records
+            .map((item) => {
+              const r = item as {
+                id?: string;
+                status?: string;
+                remarks?: string | null;
+                student?: { id: string; fullName: string; rollNumber?: string | null };
+                record?: { id?: string; status?: string; remarks?: string | null };
+              };
+              const recId = r.record?.id || r.id;
+              if (!recId) return null;
+              return {
+                id: recId,
+                sessionId: sessionIdResolved,
+                studentId: r.student?.id ?? null,
+                status: r.record?.status ?? r.status ?? 'pending',
+                remarks: r.record?.remarks ?? r.remarks ?? null,
+                student: r.student,
+              } as LocalEntityRecord;
+            })
+            .filter((x): x is LocalEntityRecord => x !== null);
+          if (normalized.length > 0) {
+            await db.attendanceRecords.bulkPut(normalized);
+          }
         }
       }
     },
@@ -393,15 +486,196 @@ export type AttendanceRegisterResponse = {
 };
 
 export const getRecentAbsentees = (days: number = 7, centerId?: string) =>
-  api
-    .get<RecentAbsenteeRecord[]>('/attendance/absentees', {
-      params: { days, ...(centerId ? { centerId } : {}) },
-    })
-    .then((r) => r.data);
+  withOfflineRead<RecentAbsenteeRecord[]>(
+    () =>
+      api
+        .get<RecentAbsenteeRecord[]>('/attendance/absentees', {
+          params: { days, ...(centerId ? { centerId } : {}) },
+        })
+        .then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      if (!db) return [];
+      const [records, sessions, students, centers, programs] = await Promise.all([
+        db.attendanceRecords.toArray(),
+        db.attendanceSessions.toArray(),
+        db.students.toArray(),
+        db.centers.toArray(),
+        db.programs.toArray(),
+      ]);
+      const sessionMap = new Map(sessions.map((s) => [s.id, s]));
+      const studentMap = new Map(students.map((s) => [s.id, s]));
+      const centerMap = new Map(centers.map((c) => [c.id, c]));
+      const programMap = new Map(programs.map((p) => [p.id, p]));
+
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+      const absentRecords = records.filter((r) => {
+        if (r.status !== 'absent') return false;
+        const sess = r.sessionId ? sessionMap.get(String(r.sessionId)) : undefined;
+        if (!sess || sess.isHoliday) return false;
+        if (centerId && sess.centerId !== centerId) return false;
+        const sDate = String(sess.sessionDate || '').slice(0, 10);
+        return sDate >= cutoffStr;
+      });
+
+      return absentRecords.map((r) => {
+        const sess = r.sessionId ? sessionMap.get(String(r.sessionId)) : undefined;
+        const stu = r.studentId ? studentMap.get(String(r.studentId)) : undefined;
+        const cName = sess?.centerId ? String(centerMap.get(String(sess.centerId))?.name || '') : '';
+        const pName = sess?.programId ? String(programMap.get(String(sess.programId))?.name || '') : '';
+        return {
+          id: r.id,
+          sessionId: String(r.sessionId || ''),
+          studentId: String(r.studentId || ''),
+          status: 'absent',
+          remarks: (r.remarks as string | null) ?? null,
+          consecutiveAbsenceStreak: 1,
+          student: stu
+            ? {
+                id: stu.id,
+                fullName: String(stu.fullName || 'Student'),
+                rollNumber: (stu.rollNumber as string | null) ?? null,
+                guardianPhone: (stu.guardianPhone as string | null) ?? null,
+              }
+            : (r.student as RecentAbsenteeRecord['student']),
+          session: sess
+            ? {
+                id: sess.id,
+                sessionDate: String(sess.sessionDate || '').slice(0, 10),
+                center: cName ? { name: cName } : undefined,
+                program: pName ? { name: pName } : undefined,
+              }
+            : undefined,
+        };
+      });
+    },
+  );
 
 export const getAttendanceRegister = (params: {
   centerId: string;
   programId?: string;
   batchId?: string;
   month?: string;
-}) => api.get<AttendanceRegisterResponse>('/attendance/register', { params }).then((r) => r.data);
+}) =>
+  withOfflineRead<AttendanceRegisterResponse>(
+    () =>
+      api
+        .get<AttendanceRegisterResponse>('/attendance/register', { params })
+        .then((r) => r.data),
+    async () => {
+      const month = params.month || new Date().toISOString().slice(0, 7);
+      const [yearNum, monthNum] = month.split('-').map(Number);
+      const daysInMonth = new Date(yearNum, monthNum, 0).getDate();
+      const days: string[] = [];
+      for (let d = 1; d <= daysInMonth; d += 1) {
+        days.push(`${month}-${String(d).padStart(2, '0')}`);
+      }
+
+      const db = getActiveOfflineDb();
+      if (!db) {
+        return {
+          centerId: params.centerId,
+          programId: params.programId ?? null,
+          month,
+          days,
+          holidayDates: [],
+          sessionDates: [],
+          students: [],
+        };
+      }
+
+      let students = await db.students.where('centerId').equals(params.centerId).toArray();
+      if (params.programId) {
+        students = students.filter((s) => s.programId === params.programId);
+      }
+      if (params.batchId) {
+        const enrollments = await db.batchEnrollments
+          .where('batchId')
+          .equals(params.batchId)
+          .toArray();
+        const enrolledIds = new Set(enrollments.map((e) => String(e.studentId)));
+        students = students.filter((s) => enrolledIds.has(s.id));
+      }
+
+      const sessions = (await db.attendanceSessions.where('centerId').equals(params.centerId).toArray()).filter(
+        (s) =>
+          String(s.sessionDate || '').startsWith(month) &&
+          (!params.programId || s.programId === params.programId) &&
+          (!params.batchId || s.batchId === params.batchId),
+      );
+      const sessionIds = new Set(sessions.map((s) => s.id));
+      const sessionDateById = new Map(
+        sessions.map((s) => [s.id, String(s.sessionDate || '').slice(0, 10)]),
+      );
+      const holidayDates = sessions
+        .filter((s) => Boolean(s.isHoliday))
+        .map((s) => String(s.sessionDate || '').slice(0, 10));
+      const holidaySet = new Set(holidayDates);
+      const sessionDates = Array.from(new Set(sessionDateById.values())).sort();
+
+      const allRecords = (await db.attendanceRecords.where('centerId').equals(params.centerId).toArray()).filter(
+        (r) => r.sessionId && sessionIds.has(String(r.sessionId)),
+      );
+
+      const studentRows: AttendanceRegisterStudentRow[] = students.map((stu) => {
+        const statuses: Record<string, string> = {};
+        const remarksByDate: Record<string, string | null> = {};
+        for (const hDate of holidayDates) {
+          statuses[hDate] = 'holiday';
+        }
+        const stuRecs = allRecords.filter((r) => r.studentId === stu.id);
+        for (const rec of stuRecs) {
+          const dStr = sessionDateById.get(String(rec.sessionId));
+          if (!dStr) continue;
+          if (!holidaySet.has(dStr)) {
+            statuses[dStr] = String(rec.status || 'pending');
+          }
+          remarksByDate[dStr] = (rec.remarks as string | null) ?? null;
+        }
+        let present = 0;
+        let late = 0;
+        let absent = 0;
+        let excused = 0;
+        let pending = 0;
+        for (const st of Object.values(statuses)) {
+          if (st === 'present') present += 1;
+          else if (st === 'late') late += 1;
+          else if (st === 'absent') absent += 1;
+          else if (st === 'excused') excused += 1;
+          else if (st === 'pending') pending += 1;
+        }
+        const totalMarked = present + late + absent;
+        const attendanceRate =
+          totalMarked > 0 ? Math.round(((present + late) / totalMarked) * 100) : 0;
+        return {
+          studentId: stu.id,
+          fullName: String(stu.fullName || 'Student'),
+          rollNumber: (stu.rollNumber as string | null) ?? null,
+          statuses,
+          remarksByDate,
+          summary: {
+            present,
+            late,
+            absent,
+            excused,
+            pending,
+            totalMarked,
+            attendanceRate,
+          },
+        };
+      });
+
+      return {
+        centerId: params.centerId,
+        programId: params.programId ?? null,
+        month,
+        days,
+        holidayDates,
+        sessionDates,
+        students: studentRows,
+      };
+    },
+  );

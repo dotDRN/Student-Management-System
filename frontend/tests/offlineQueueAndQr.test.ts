@@ -21,10 +21,37 @@ describe('Component 3.6: QR Student ID Payloads & Offline Attendance Queue', () 
     assert.deepEqual(parseStudentQrInput('   '), {});
   });
 
-  it('detects network failures distinctly from API validation responses', () => {
+  it('detects network failures and database-offline responses distinctly from API validation responses', () => {
     assert.equal(isLikelyNetworkError({ code: 'ERR_NETWORK' }), true);
     assert.equal(isLikelyNetworkError({ message: 'Network Error' }), true);
+    assert.equal(
+      isLikelyNetworkError({
+        response: { status: 503, data: { code: 'DB_UNAVAILABLE', error: 'Database offline' } },
+      }),
+      true,
+    );
+    assert.equal(
+      isLikelyNetworkError({
+        response: {
+          status: 500,
+          data: { error: "Invalid `prisma.student.findMany()` invocation: Can't reach database server at `localhost:5432`" },
+        },
+      }),
+      true,
+    );
+    assert.equal(
+      isLikelyNetworkError({
+        response: { status: 500, data: '' },
+      }),
+      true,
+    );
     assert.equal(isLikelyNetworkError({ response: { status: 400 }, message: 'Bad request' }), false);
+    assert.equal(
+      isLikelyNetworkError({
+        response: { status: 500, data: { error: 'Unexpected null reference in template' } },
+      }),
+      false,
+    );
   });
 
   it('coalesces offline session edits by sessionId and flushes cleanly when synced', async () => {

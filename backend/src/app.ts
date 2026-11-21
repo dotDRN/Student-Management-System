@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import morgan from "morgan";
 import { errorHandler } from './middleware/errorHandler.js';
+import prisma from './lib/prisma.js';
 import attendanceRoutes from './routes/attendanceRoutes.js';
 import examRoutes from './routes/examRoutes.js';
 import formRoutes from './routes/formRoutes.js';
@@ -59,11 +60,26 @@ app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(cookieParser());
-app.get("/health", (_req, res) => {
-  res.status(200).json({
-    success: true,
-    status: "ok",
-  });
+app.get("/health", async (_req, res) => {
+  try {
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("DB health check timeout")), 2000),
+      ),
+    ]);
+    return res.status(200).json({
+      success: true,
+      status: "ok",
+    });
+  } catch {
+    return res.status(503).json({
+      success: false,
+      status: "db_offline",
+      code: "DB_UNAVAILABLE",
+      error: "Database is currently unreachable.",
+    });
+  }
 });
 
 const syncLimiter = rateLimit({

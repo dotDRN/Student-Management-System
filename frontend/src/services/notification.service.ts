@@ -1,4 +1,5 @@
 import api from './api';
+import { withOfflineRead } from '../offline/offlineServiceHelper';
 import type {
   Notification,
   NotificationListResponse,
@@ -25,22 +26,42 @@ const toNotification = (recipient: NotificationRecipientResponse): Notification 
 
 class NotificationService {
   async getNotifications(page: number = 1, unreadOnly = false): Promise<NotificationListResponse> {
-    const response = await api.get<{
-      notifications: NotificationRecipientResponse[];
-      pagination: NotificationListResponse['pagination'];
-    }>('/notifications', {
-      params: { page, unreadOnly },
-    });
+    return withOfflineRead<NotificationListResponse>(
+      async () => {
+        const response = await api.get<{
+          notifications: NotificationRecipientResponse[];
+          pagination: NotificationListResponse['pagination'];
+        }>('/notifications', {
+          params: { page, unreadOnly },
+        });
 
-    return {
-      notifications: response.data.notifications.map(toNotification),
-      pagination: response.data.pagination,
-    };
+        return {
+          notifications: response.data.notifications.map(toNotification),
+          pagination: response.data.pagination,
+        };
+      },
+      async () => ({
+        notifications: [],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 0,
+          totalPages: 1,
+          hasNext: false,
+          hasPrevious: false,
+        },
+      }),
+    );
   }
 
   async getUnreadCount(): Promise<UnreadCountResponse> {
-    const response = await api.get<UnreadCountResponse>('/notifications/unread-count');
-    return response.data;
+    return withOfflineRead<UnreadCountResponse>(
+      async () => {
+        const response = await api.get<UnreadCountResponse>('/notifications/unread-count');
+        return response.data;
+      },
+      async () => ({ unreadCount: 0 }),
+    );
   }
 
   async markAsRead(notificationRecipientId: string): Promise<void> {

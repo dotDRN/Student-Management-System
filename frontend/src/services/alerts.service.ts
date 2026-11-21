@@ -1,4 +1,5 @@
 import api from './api';
+import { withOfflineRead } from '../offline/offlineServiceHelper';
 
 export type AlertMetric =
   | 'consecutive_absences'
@@ -53,7 +54,10 @@ export interface AlertRecord {
 }
 
 export const listAlertRules = (params?: { centerId?: string; activeOnly?: boolean }) =>
-  api.get<AlertRuleRecord[]>('/alerts/rules', { params }).then((r) => r.data);
+  withOfflineRead<AlertRuleRecord[]>(
+    () => api.get<AlertRuleRecord[]>('/alerts/rules', { params }).then((r) => r.data),
+    async () => [],
+  );
 
 export const createAlertRule = (payload: {
   centerId?: string | null;
@@ -82,9 +86,13 @@ export const listAlerts = (params?: {
   status?: 'open' | 'read' | 'all';
   limit?: number;
 }) =>
-  api
-    .get<{ alerts: AlertRecord[]; openCount: number }>('/alerts', { params })
-    .then((r) => r.data);
+  withOfflineRead<{ alerts: AlertRecord[]; openCount: number }>(
+    () =>
+      api
+        .get<{ alerts: AlertRecord[]; openCount: number }>('/alerts', { params })
+        .then((r) => r.data),
+    async () => ({ alerts: [], openCount: 0 }),
+  );
 
 export const evaluateAlertRulesNow = (centerId?: string) =>
   api

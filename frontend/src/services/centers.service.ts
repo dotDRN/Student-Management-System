@@ -89,7 +89,36 @@ export const listCenters = () =>
   );
 
 export const getCenterDetails = (centerId: string) =>
-  api.get<CenterDetail>(`/centers/${centerId}`).then((r) => r.data);
+  withOfflineRead<CenterDetail>(
+    () => api.get<CenterDetail>(`/centers/${centerId}`).then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      const center = db ? await db.centers.get(centerId) : undefined;
+      const students = db
+        ? await db.students.where('centerId').equals(centerId).toArray()
+        : [];
+      const programs = db ? await db.programs.toArray() : [];
+      return {
+        id: centerId,
+        name: String(center?.name || 'Center'),
+        location: (center?.location as string | null) ?? null,
+        isActive: center?.isActive !== false,
+        teachers: [],
+        students: students.map((s) => ({
+          id: s.id,
+          fullName: String(s.fullName || ''),
+          rollNumber: (s.rollNumber as string | null) ?? null,
+          programId: String(s.programId || ''),
+        })),
+        userCount: 0,
+        studentCount: students.length,
+        centerPrograms: programs.map((p) => ({
+          programId: p.id,
+          program: { id: p.id, name: String(p.name || ''), code: String(p.code || '') },
+        })),
+      };
+    },
+  );
 
 export const createCenter = (data: { name: string; location?: string }) =>
   api.post<CenterSummary>('/centers', data).then((r) => r.data);
@@ -132,7 +161,40 @@ export const listPrograms = () =>
   );
 
 export const getProgramDetails = (programId: string) =>
-  api.get<ProgramDetail>(`/programs/${programId}`).then((r) => r.data);
+  withOfflineRead<ProgramDetail>(
+    () => api.get<ProgramDetail>(`/programs/${programId}`).then((r) => r.data),
+    async () => {
+      const db = getActiveOfflineDb();
+      const prog = db ? await db.programs.get(programId) : undefined;
+      const students = db
+        ? await db.students.where('programId').equals(programId).toArray()
+        : [];
+      const subjects = db
+        ? await db.programSubjects.where('programId').equals(programId).toArray()
+        : [];
+      const skillDefs = db
+        ? await db.skillDefinitions.where('programId').equals(programId).toArray()
+        : [];
+      return {
+        id: programId,
+        code: String(prog?.code || ''),
+        name: String(prog?.name || 'Program'),
+        ageMin: (prog?.ageMin as number | null) ?? null,
+        ageMax: (prog?.ageMax as number | null) ?? null,
+        description: (prog?.description as string | null) ?? null,
+        isActive: prog?.isActive !== false,
+        studentCount: students.length,
+        students: students.map((s) => ({
+          id: s.id,
+          fullName: String(s.fullName || ''),
+          rollNumber: (s.rollNumber as string | null) ?? null,
+          centerId: String(s.centerId || ''),
+        })),
+        subjects: subjects as unknown as ProgramSubjectItem[],
+        skillDefinitions: skillDefs as unknown as SkillDefinitionItem[],
+      };
+    },
+  );
 
 export const createProgram = (data: {
   code: string;

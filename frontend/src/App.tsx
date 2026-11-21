@@ -54,6 +54,9 @@ function App() {
         if (res.ok) {
           const data = await res.json();
           setAuth(data.user, data.accessToken, data.organization || null);
+        } else if (res.status >= 500 && persisted.currentUser) {
+          // Backend or database is temporarily unreachable (500/502/503/504) -> boot into offline mode
+          setOfflineSession(true);
         } else {
           // Explicit 401/403 from server: preserve local session + prompt re-auth if unsynced local work exists
           if (persisted.currentUser) {

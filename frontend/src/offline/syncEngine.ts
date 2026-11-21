@@ -119,16 +119,20 @@ class SyncEngine {
       },
     );
 
-    // Periodic background sync every 90s when online & authenticated
+    // Poll every 12s when database/backend was unreachable or outbox has pending items,
+    // so reconnecting the database immediately flushes queued mutations to the cloud.
     this.periodicTimer = setInterval(() => {
       if (
         typeof navigator !== "undefined" &&
-        navigator.onLine &&
+        navigator.onLine !== false &&
         !useAuthStore.getState().needsReauth
       ) {
-        void this.syncNow({ skipHealthCheck: true });
+        const { isOnline, pendingCount } = useSyncStore.getState();
+        if (!isOnline || pendingCount > 0) {
+          void this.syncNow({ skipHealthCheck: false });
+        }
       }
-    }, 90_000);
+    }, 12_000);
 
     void this.migrateLegacyAttendanceQueue().then(() => {
       void this.refreshStoreCounts();
@@ -238,13 +242,14 @@ class SyncEngine {
       await this.refreshStoreCounts();
     }
 
-    // Attempt immediate background push if browser believes it's online
+    // Attempt immediate background push if currently online
     if (
       typeof navigator !== "undefined" &&
       navigator.onLine &&
+      useSyncStore.getState().isOnline &&
       !useAuthStore.getState().needsReauth
     ) {
-      void this.syncNow({ skipHealthCheck: true });
+      void this.syncNow({ skipHealthCheck: false });
     }
 
     return item;
