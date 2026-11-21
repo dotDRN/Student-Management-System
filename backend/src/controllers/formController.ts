@@ -1,5 +1,6 @@
 ﻿import type { NextFunction, Request, Response } from "express";
 import type { JwtPayload } from '../utils/jwt.js';
+import { isAdminRole } from '../config/rbac.js';
 import {
   createTemplate,
   deleteSubmission,
@@ -30,7 +31,7 @@ export async function listTemplatesController(req: Request, res: Response, next:
   try {
     const user = (req as AuthenticatedRequest).user!;
     const includeInactive =
-      user.role === "super_admin" &&
+      isAdminRole(user.role) &&
       (req.query.includeInactive === "true" || req.query.includeInactive === "1");
     const result = await listTemplates(req.query.formType as string | undefined, {
       includeInactive,

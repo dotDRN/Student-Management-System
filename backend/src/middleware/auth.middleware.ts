@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { verifyAccessToken } from "../utils/jwt.js";
-import { ADMIN_ROLES, Role } from "../config/rbac.js";
+import { ADMIN_ROLES, ROLES, Role } from "../config/rbac.js";
 import { DEFAULT_TENANT_ID, runWithTenantContext } from "../lib/tenantContext.js";
 
 /**
@@ -30,9 +30,10 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
       });
     }
 
-    // Ensure user has at least one center assigned (unless admin)
+    // Ensure user has at least one center assigned (unless admin or linked parent)
     if (
       !ADMIN_ROLES.includes(decoded.role as Role) &&
+      decoded.role !== ROLES.PARENT &&
       (!decoded.centerIds || decoded.centerIds.length === 0)
     ) {
       return res.status(403).json({

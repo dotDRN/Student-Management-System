@@ -159,6 +159,7 @@ model Organization {
   auditLogs     AuditLog[]
   conversations Conversation[]
   notifications Notification[]
+  syncOperationLogs SyncOperationLog[]
 
   @@map("organizations")
 }
@@ -494,8 +495,10 @@ model Student {
   totalFees             Decimal?       @map("total_fees") @db.Decimal(10, 2)
   feesPaid              Decimal        @default(0) @map("fees_paid") @db.Decimal(10, 2)
   isFullyPaid           Boolean        @default(false) @map("is_fully_paid")
+  version               Int            @default(1)
+  deletedAt             DateTime?      @map("deleted_at") @db.Timestamptz
   createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt             DateTime       @default(now()) @map("updated_at") @db.Timestamptz
+  updatedAt             DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   center              Center               @relation(fields: [centerId], references: [id])
   program             Program?             @relation(fields: [programId], references: [id])
@@ -535,12 +538,13 @@ model StudentTransfer {
 }
 
 model FeePayment {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  studentId String   @map("student_id") @db.Uuid
-  amount    Decimal  @db.Decimal(10, 2)
-  notes     String?
-  paidAt    DateTime @default(now()) @map("paid_at") @db.Timestamptz
-  createdBy String   @map("created_by") @db.Uuid
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  studentId         String   @map("student_id") @db.Uuid
+  amount            Decimal  @db.Decimal(10, 2)
+  notes             String?
+  paidAt            DateTime @default(now()) @map("paid_at") @db.Timestamptz
+  createdBy         String   @map("created_by") @db.Uuid
+  clientOperationId String?  @unique @map("client_operation_id")
 
   student Student @relation(fields: [studentId], references: [id])
 
@@ -584,9 +588,12 @@ model AttendanceSession {
   batchId        String?  @map("batch_id") @db.Uuid
   academicYearId String?  @map("academic_year_id") @db.Uuid
   sessionDate    DateTime @map("session_date") @db.Date
-  isHoliday      Boolean  @default(false) @map("is_holiday")
-  createdBy      String   @map("created_by") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  isHoliday      Boolean   @default(false) @map("is_holiday")
+  createdBy      String    @map("created_by") @db.Uuid
+  version        Int       @default(1)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   center        Center             @relation(fields: [centerId], references: [id])
   program       Program?           @relation(fields: [programId], references: [id])
@@ -609,7 +616,10 @@ model AttendanceRecord {
   centerId  String           @map("center_id") @db.Uuid
   status    AttendanceStatus
   remarks   String?
+  version   Int              @default(1)
+  deletedAt DateTime?        @map("deleted_at") @db.Timestamptz
   createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   session AttendanceSession @relation(fields: [sessionId], references: [id])
   student Student           @relation(fields: [studentId], references: [id])
@@ -634,7 +644,10 @@ model Exam {
   examDate       DateTime?        @map("exam_date") @db.Date
   status         SubmissionStatus @default(DRAFT)
   createdBy      String           @map("created_by") @db.Uuid
+  version        Int              @default(1)
+  deletedAt      DateTime?        @map("deleted_at") @db.Timestamptz
   createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   center        Center        @relation(fields: [centerId], references: [id])
   program       Program       @relation(fields: [programId], references: [id])
@@ -658,6 +671,9 @@ model ExamScore {
   status    SubmissionStatus @default(DRAFT)
   enteredBy String           @map("entered_by") @db.Uuid
   enteredAt DateTime         @default(now()) @map("entered_at") @db.Timestamptz
+  version   Int              @default(1)
+  deletedAt DateTime?        @map("deleted_at") @db.Timestamptz
+  updatedAt DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   exam          Exam           @relation(fields: [examId], references: [id])
   student       Student        @relation(fields: [studentId], references: [id])
@@ -680,9 +696,12 @@ model StudentSkillLog {
   skillId    String   @map("skill_id") @db.Uuid
   level      Int
   assessedBy String   @map("assessed_by") @db.Uuid
-  assessedOn DateTime @default(now()) @map("assessed_on") @db.Date
+  assessedOn DateTime  @default(now()) @map("assessed_on") @db.Date
   remarks    String?
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  version    Int       @default(1)
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   student        Student         @relation(fields: [studentId], references: [id])
   center         Center          @relation(fields: [centerId], references: [id])
@@ -763,6 +782,9 @@ model FormSubmission {
   data         Json      @default("{}")
 
   koboSubmissionId String?
+  version          Int       @default(1)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   template        FormTemplate    @relation(fields: [templateId], references: [id])
   assignment      FormAssignment? @relation(fields: [assignmentId], references: [id])
@@ -1103,4 +1125,26 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+// =============================================================================
+// 17. OFFLINE SYNC IDEMPOTENCY LOG
+// =============================================================================
+
+model SyncOperationLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  operationId String   @unique @map("operation_id") @db.Uuid
+  tenantId    String   @default(dbgenerated("'00000000-0000-0000-0000-000000000001'::uuid")) @map("tenant_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id") @db.Uuid
+  action      String
+  status      String
+  resultJson  Json?    @map("result_json")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  organization Organization @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("sync_operation_logs")
 }

@@ -137,7 +137,7 @@ export function initializeSocket(server: HttpServer): Server {
     });
 
     // =========================================================================
-    // EDUSPACE STAFF HUDDLES & MEETING ROOMS (Voice / Video / Screen / Chat)
+    // EDBASE STAFF HUDDLES & MEETING ROOMS (Voice / Video / Screen / Chat)
     // =========================================================================
     const socketUser: SocketUserContext = {
       id: userId,

@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import * as studentService from '../services/student.service.js';
+import * as studentDossierService from "../services/studentDossierService.js";
+import { addStudentDocumentSchema } from "../validators/schemas.js";
 
 /* ─────────────────────────────────────────
    STUDENTS
@@ -25,7 +27,7 @@ export const getAllStudents = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const { page, limit, search, centerId, programId, isActive, sortOrder } = req.query;
+    const { page, limit, search, centerId, programId, batchId, isActive, sortOrder } = req.query;
 
     const result = await studentService.getAllStudents(req.user, {
       page: Number(page) || 1,
@@ -33,6 +35,7 @@ export const getAllStudents = async (
       search: search as string | undefined,
       centerId: centerId as string | undefined,
       programId: programId as string | undefined,
+      batchId: typeof batchId === "string" && batchId.trim() ? batchId : undefined,
       sortOrder: sortOrder as string | undefined,
       isActive:
         typeof isActive === "string"
@@ -196,6 +199,7 @@ export const updateAttendance = async (
 ): Promise<Response | void> => {
   try {
     const record = await studentService.updateAttendance(
+      req.user!,
       (req.params.id as string),
       req.body
     );
@@ -252,6 +256,7 @@ export const updateSkill = async (
 ): Promise<Response | void> => {
   try {
     const record = await studentService.updateSkill(
+      req.user!,
       (req.params.id as string),
       req.body
     );
@@ -268,10 +273,43 @@ export const deleteSkill = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const record = await studentService.deleteSkill(req.params.id as string);
+    const record = await studentService.deleteSkill(req.user!, req.params.id as string);
     return res.status(200).json({ success: true, data: record });
   } catch (err) {
     console.error("Delete Skill Error:", err);
+    next(err);
+  }
+};
+
+export const getSkillMatrix = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.getSkillMatrix(req.user!, {
+      centerId: typeof req.query.centerId === "string" ? req.query.centerId : undefined,
+      programId: typeof req.query.programId === "string" ? req.query.programId : undefined,
+      batchId: typeof req.query.batchId === "string" && req.query.batchId.trim() ? req.query.batchId : undefined,
+      assessedOn: typeof req.query.assessedOn === "string" ? req.query.assessedOn : undefined,
+    });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    console.error("Get Skill Matrix Error:", err);
+    next(err);
+  }
+};
+
+export const bulkUpsertSkills = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.bulkUpsertSkills(req.user!, req.body);
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    console.error("Bulk Upsert Skills Error:", err);
     next(err);
   }
 };
@@ -322,6 +360,7 @@ export const updateCareer = async (
 ): Promise<Response | void> => {
   try {
     const record = await studentService.updateCareer(
+      req.user!,
       (req.params.id as string),
       req.body
     );
@@ -338,7 +377,7 @@ export const deleteCareer = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const record = await studentService.deleteCareer(req.params.id as string);
+    const record = await studentService.deleteCareer(req.user!, req.params.id as string);
     return res.status(200).json({ success: true, data: record });
   } catch (err) {
     console.error("Delete Career Error:", err);
@@ -351,12 +390,12 @@ export const deleteCareer = async (
 ───────────────────────────────────────── */
 
 export const getDashboardStats = async (
-  _req: Request,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const stats = await studentService.getDashboardStats();
+    const stats = await studentService.getDashboardStats(req.user!);
     return res.status(200).json({ success: true, data: stats });
   } catch (err) {
     console.error("Dashboard Stats Error:", err);
@@ -374,8 +413,8 @@ export const requestTransfer = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const { studentIds } = req.body;
-    const result = await studentService.requestTransfer(req.user, studentIds);
+    const { studentIds, reason } = req.body;
+    const result = await studentService.requestTransfer(req.user, studentIds, reason);
     return res.status(200).json({ success: true, ...result });
   } catch (err) {
     console.error("Request Transfer Error:", err);
@@ -403,12 +442,13 @@ export const completeTransfer = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const { studentIds, newTeacherId, newCenterId } = req.body;
+    const { studentIds, newTeacherId, newCenterId, reason } = req.body;
     const result = await studentService.completeTransfer(
       req.user,
       studentIds,
       newTeacherId,
-      newCenterId
+      newCenterId,
+      reason
     );
     return res.status(200).json({ success: true, ...result });
   } catch (err) {
@@ -472,6 +512,151 @@ export const updateStudentFees = async (
     return res.status(200).json({ success: true, data: student });
   } catch (err) {
     console.error("Update Student Fees Error:", err);
+    next(err);
+  }
+};
+
+export const bulkImportStudents = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.bulkImportStudents(req.user, req.body);
+    return res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    console.error("Bulk Import Students Error:", err);
+    next(err);
+  }
+};
+
+export const linkGuardian = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const link = await studentService.linkGuardian(
+      req.user,
+      req.params.studentId as string,
+      req.body
+    );
+    return res.status(201).json({ success: true, data: link });
+  } catch (err) {
+    console.error("Link Guardian Error:", err);
+    next(err);
+  }
+};
+
+export const unlinkGuardian = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.unlinkGuardian(
+      req.user,
+      req.params.studentId as string,
+      req.params.parentUserId as string
+    );
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    console.error("Unlink Guardian Error:", err);
+    next(err);
+  }
+};
+
+export const promoteStudentCohort = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentService.promoteStudentCohort(req.user, req.body);
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    console.error("Promote Student Cohort Error:", err);
+    next(err);
+  }
+};
+
+export const getStudentDossier = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const dossier = await studentDossierService.getStudentDossier(
+      req.user,
+      req.params.id as string
+    );
+    return res.status(200).json({ success: true, data: dossier });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const listStudentDocuments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const docs = await studentDossierService.listStudentDocuments(
+      req.user,
+      req.params.id as string
+    );
+    return res.status(200).json({ success: true, data: docs });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const addStudentDocument = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const parsed = addStudentDocumentSchema.parse(req.body);
+    const created = await studentDossierService.addStudentDocument(
+      req.user,
+      req.params.id as string,
+      {
+        title: parsed.title,
+        category: parsed.category,
+        notes: parsed.notes,
+        url: parsed.url,
+        fileName: parsed.fileName,
+        file: req.file
+          ? {
+              buffer: req.file.buffer,
+              originalname: req.file.originalname,
+              mimetype: req.file.mimetype,
+              size: req.file.size,
+            }
+          : undefined,
+      }
+    );
+    return res.status(201).json({ success: true, data: created });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteStudentDocument = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const result = await studentDossierService.deleteStudentDocument(
+      req.user,
+      req.params.id as string,
+      req.params.documentId as string
+    );
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
     next(err);
   }
 };

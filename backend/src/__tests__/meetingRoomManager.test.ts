@@ -11,7 +11,7 @@ const teacherCenterA: SocketUserContext = {
   id: "u-teacher-a",
   tenantId: TENANT_A,
   fullName: "Anita Teacher",
-  email: "anita@eduspace.org",
+  email: "anita@edbase.org",
   role: "teacher",
   centerIds: ["center-a"],
 };
@@ -20,7 +20,7 @@ const staffCenterA: SocketUserContext = {
   id: "u-staff-a",
   tenantId: TENANT_A,
   fullName: "Rohan Staff",
-  email: "rohan@eduspace.org",
+  email: "rohan@edbase.org",
   role: "staff",
   centerIds: ["center-a"],
 };
@@ -29,7 +29,7 @@ const teacherCenterB: SocketUserContext = {
   id: "u-teacher-b",
   tenantId: TENANT_A,
   fullName: "Kiran CenterB",
-  email: "kiran@eduspace.org",
+  email: "kiran@edbase.org",
   role: "teacher",
   centerIds: ["center-b"],
 };
@@ -38,7 +38,7 @@ const superAdminA: SocketUserContext = {
   id: "u-super-a",
   tenantId: TENANT_A,
   fullName: "Vikram SuperAdmin",
-  email: "vikram@eduspace.org",
+  email: "vikram@edbase.org",
   role: "super_admin",
   centerIds: [],
 };
@@ -47,7 +47,7 @@ const studentUser: SocketUserContext = {
   id: "u-student-1",
   tenantId: TENANT_A,
   fullName: "Student User",
-  email: "student@eduspace.org",
+  email: "student@edbase.org",
   role: "student",
   centerIds: ["center-a"],
 };

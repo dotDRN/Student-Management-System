@@ -5,12 +5,17 @@ import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import morgan from "morgan";
 import { errorHandler } from './middleware/errorHandler.js';
+import prisma from './lib/prisma.js';
 import attendanceRoutes from './routes/attendanceRoutes.js';
 import examRoutes from './routes/examRoutes.js';
 import formRoutes from './routes/formRoutes.js';
 import centerRoutes, { programRoutes } from './routes/centerRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import academicYearRoutes from './routes/academicYearRoutes.js';
 import activityRoutes from './routes/activityRoutes.js';
+import alertRoutes from './routes/alertRoutes.js';
+import batchRoutes from './routes/batchRoutes.js';
+import parentPortalRoutes from './routes/parentPortalRoutes.js';
 import authRoutes from './routes/auth.route.js';
 import reportRoutes from './routes/reportRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
@@ -20,6 +25,7 @@ import announcementRoutes from './routes/announcementRoutes.js';
 import koboRoutes from './routes/kobo.routes.js';
 
 import notificationRoutes from './routes/notification.routes.js';
+import syncRoutes from './routes/syncRoutes.js';
 
 import path from "path";
 import { fileURLToPath } from "url";
@@ -54,13 +60,36 @@ app.use(helmet());
 app.use(morgan("dev"));
 app.use(express.json());
 app.use(cookieParser());
-app.get("/health", (_req, res) => {
-  res.status(200).json({
-    success: true,
-    status: "ok",
-  });
+app.get("/health", async (_req, res) => {
+  try {
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("DB health check timeout")), 2000),
+      ),
+    ]);
+    return res.status(200).json({
+      success: true,
+      status: "ok",
+    });
+  } catch {
+    return res.status(503).json({
+      success: false,
+      status: "db_offline",
+      code: "DB_UNAVAILABLE",
+      error: "Database is currently unreachable.",
+    });
+  }
 });
 
+const syncLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === "production" ? 300 : 10000,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use("/api/sync", syncLimiter, syncRoutes);
 app.use(limiter);
 
 app.use("/api/auth", authRoutes);
@@ -72,6 +101,10 @@ app.use("/api/centers", centerRoutes);
 app.use("/api/programs", programRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/activities", activityRoutes);
+app.use("/api/batches", batchRoutes);
+app.use("/api/alerts", alertRoutes);
+app.use("/api/academic-years", academicYearRoutes);
+app.use("/api/parent", parentPortalRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/skills", skillRoutes);

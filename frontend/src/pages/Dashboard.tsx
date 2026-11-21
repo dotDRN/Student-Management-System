@@ -6,15 +6,37 @@ import { useAuthStore } from '../store/useAuthStore';
 import { Button } from '../components/ui/Button';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
-import { Users, BookOpen, PlusCircle, Trash2, TrendingUp, Target, Activity } from 'lucide-react';
-import { getReportsDashboard } from '../services/reports.service';
+import {
+  Users,
+  BookOpen,
+  PlusCircle,
+  Trash2,
+  TrendingUp,
+  Target,
+  Activity,
+  Clock,
+  ArrowRightLeft,
+  IndianRupee,
+  AlertTriangle,
+  ArrowRight,
+} from 'lucide-react';
+import { getReportsDashboard, type ReportsDashboardData } from '../services/reports.service';
+import { createCenter, deleteCenter } from '../services/centers.service';
+import { getApiErrorMessage } from '../services/api';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
+import { RiskAlertsCard } from '../components/dashboard/RiskAlertsCard';
+import { useToast } from '../hooks/useToast';
+import { usePermission } from '../hooks/usePermission';
 
 export const Dashboard: React.FC = () => {
   const currentUser = useAuthStore((s) => s.currentUser);
   const isAdmin = ['super_admin', 'center_admin', 'tech_admin'].includes(currentUser?.role || '');
+  const { can } = usePermission();
+  const canManageCenters = can('manage', 'centers');
+  const toast = useToast();
   const navigate = useNavigate();
 
-  const [data, setData] = useState<Record<string, unknown> | null>(null);
+  const [data, setData] = useState<ReportsDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,14 +46,17 @@ export const Dashboard: React.FC = () => {
   const [centerLocation, setCenterLocation] = useState('');
   const [addingCenter, setAddingCenter] = useState(false);
 
+  // Deactivate Center Confirmation State
+  const [centerToDeactivate, setCenterToDeactivate] = useState<{ id: string; name: string } | null>(null);
+
   const fetchDashboardData = async () => {
     setLoading(true);
     setError(null);
     try {
       const d = await getReportsDashboard();
       setData(d);
-    } catch {
-      setError('Failed to load dashboard.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load dashboard.'));
     } finally {
       setLoading(false);
     }
@@ -45,17 +70,35 @@ export const Dashboard: React.FC = () => {
     e.preventDefault();
     setAddingCenter(true);
     try {
-      const m = await import('../services/centers.service');
-      await m.createCenter({ name: centerName, location: centerLocation });
+      await createCenter({ name: centerName.trim(), location: centerLocation.trim() || undefined });
       setShowCenterModal(false);
       setCenterName('');
       setCenterLocation('');
+      toast.success({ title: 'Center created' });
       void fetchDashboardData();
-    } catch (error: unknown) {
-      const message = (error as { response?: { data?: { message?: string }}})?.response?.data?.message || 'Failed to add center. Please check your permissions.';
-      alert(message);
+    } catch (err: unknown) {
+      toast.error({
+        title: 'Failed to add center',
+        description: getApiErrorMessage(err, 'Please check your permissions.'),
+      });
     } finally {
       setAddingCenter(false);
+    }
+  };
+
+  const handleConfirmDeactivateCenter = async () => {
+    if (!centerToDeactivate) return;
+    const target = centerToDeactivate;
+    setCenterToDeactivate(null);
+    try {
+      await deleteCenter(target.id);
+      toast.success({ title: 'Center deactivated', description: `${target.name} has been archived.` });
+      void fetchDashboardData();
+    } catch (err: unknown) {
+      toast.error({
+        title: 'Failed to deactivate center',
+        description: getApiErrorMessage(err, 'Cannot deactivate center.'),
+      });
     }
   };
 
@@ -64,7 +107,7 @@ export const Dashboard: React.FC = () => {
       title="Dashboard Overview"
       actions={
         <div className="flex gap-2">
-          {isAdmin && (
+          {canManageCenters && (
             <Button variant="secondary" size="sm" className="hidden sm:flex" onClick={() => setShowCenterModal(true)}>
               <PlusCircle size={16} className="mr-2" />
               Add Center
@@ -190,6 +233,132 @@ export const Dashboard: React.FC = () => {
             </Card>
           </div>
 
+          {/* Operational Action Center */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+            <Card className="border border-neutral-200/80 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    Pending Attendance Today
+                  </span>
+                  <Clock size={18} className="text-amber-600" />
+                </div>
+                <p className="text-2xl font-bold text-neutral-900">
+                  {Number(data?.pendingAttendanceToday ?? 0)}
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  {Number(data?.pendingAttendanceToday ?? 0) === 0
+                    ? 'All today sheets finalized'
+                    : 'Sheets with unmarked students'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/attendance')}
+                className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800"
+              >
+                Open Attendance <ArrowRight size={13} />
+              </button>
+            </Card>
+
+            <Card className="border border-neutral-200/80 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    Transfer Requests
+                  </span>
+                  <ArrowRightLeft size={18} className="text-indigo-600" />
+                </div>
+                <p className="text-2xl font-bold text-neutral-900">
+                  {Number(data?.pendingTransfersCount ?? 0)}
+                </p>
+                <p className="text-xs text-neutral-500 mt-1">
+                  Students awaiting center transfer
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/students')}
+                className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800"
+              >
+                Manage Students <ArrowRight size={13} />
+              </button>
+            </Card>
+
+            <Card className="border border-neutral-200/80 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    Fee Collection
+                  </span>
+                  <IndianRupee size={18} className="text-emerald-600" />
+                </div>
+                <p className="text-2xl font-bold text-neutral-900">
+                  {data?.feeSummary?.collectionPct ?? 0}%
+                </p>
+                <div className="w-full bg-neutral-100 h-1.5 rounded-full mt-2 overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-full rounded-full"
+                    style={{ width: `${data?.feeSummary?.collectionPct ?? 0}%` }}
+                  />
+                </div>
+                <p className="text-xs text-neutral-500 mt-1.5">
+                  ₹{(data?.feeSummary?.totalCollected ?? 0).toLocaleString()} / ₹
+                  {(data?.feeSummary?.totalAssigned ?? 0).toLocaleString()}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/reports')}
+                className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800"
+              >
+                Fee &amp; Master Reports <ArrowRight size={13} />
+              </button>
+            </Card>
+
+            <Card className="border border-neutral-200/80 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-neutral-500">
+                    Lowest Attendance Centers
+                  </span>
+                  <AlertTriangle size={18} className="text-rose-600" />
+                </div>
+                {!data?.lowestAttendanceCenters?.length ? (
+                  <p className="text-xs text-neutral-500 mt-2">No active center data yet.</p>
+                ) : (
+                  <ul className="space-y-1.5 mt-1">
+                    {data.lowestAttendanceCenters.map((c) => (
+                      <li key={c.centerId} className="flex items-center justify-between text-xs">
+                        <span className="truncate font-medium text-neutral-700 pr-2">{c.name}</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded font-semibold ${
+                            c.attendanceRate < 75
+                              ? 'bg-red-50 text-red-700'
+                              : c.attendanceRate < 85
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          {c.attendanceRate}%
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/attendance')}
+                className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 hover:text-brand-800"
+              >
+                View Register <ArrowRight size={13} />
+              </button>
+            </Card>
+          </div>
+
+          <RiskAlertsCard />
+
           {isAdmin && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <Card className="border-none shadow-sm">
@@ -198,32 +367,29 @@ export const Dashboard: React.FC = () => {
                   Center Breakdown
                 </h3>
                 <ul className="space-y-4">
-                  {((data?.centerBreakdown as Array<Record<string, unknown>>) ?? []).map((c) => (
-                    <li key={String(c.centerId)} className="group">
+                  {(data?.centerBreakdown ?? []).map((c) => (
+                    <li key={c.centerId} className="group">
                       <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-bold text-neutral-700">{String(c.name)}</span>
+                        <span className="text-sm font-bold text-neutral-700">{c.name}</span>
                         <div className="flex items-center gap-3">
                           <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-tighter">
-                            {String(c.studentCount)} Students
+                            {c.studentCount} Students
                           </span>
-                          <button
-                            title="Remove Center"
-                            className="text-neutral-300 hover:text-danger transition-colors p-1 opacity-0 group-hover:opacity-100"
-                            onClick={async () => {
-                              if (confirm(`Are you sure you want to delete ${String(c.name)}?`)) {
-                                try {
-                                  const m = await import('../services/centers.service');
-                                  await m.deleteCenter(String(c.centerId));
-                                  void fetchDashboardData();
-                                } catch (error: unknown) {
-                                  const message = (error as { response?: { data?: { message?: string }}})?.response?.data?.message || 'Failed to delete center.';
-                                  alert(message);
-                                }
+                          {canManageCenters && (
+                            <button
+                              type="button"
+                              title="Deactivate Center"
+                              className="text-neutral-300 hover:text-danger transition-colors p-1 opacity-0 group-hover:opacity-100"
+                              onClick={() =>
+                                setCenterToDeactivate({
+                                  id: c.centerId,
+                                  name: c.name,
+                                })
                               }
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div className="w-full bg-neutral-100 h-1.5 rounded-full overflow-hidden">
@@ -232,7 +398,7 @@ export const Dashboard: React.FC = () => {
                           style={{ width: `${Number(c.attendanceRate)}%` }}
                         />
                       </div>
-                      <p className="text-[10px] text-right mt-1 font-bold text-neutral-500">{String(c.attendanceRate)}% Attendance</p>
+                      <p className="text-[10px] text-right mt-1 font-bold text-neutral-500">{c.attendanceRate}% Attendance</p>
                     </li>
                   ))}
                 </ul>
@@ -244,11 +410,11 @@ export const Dashboard: React.FC = () => {
                   Program Distribution
                 </h3>
                 <div className="space-y-4">
-                  {((data?.programBreakdown as Array<Record<string, unknown>>) ?? []).map((p) => (
-                    <div key={String(p.programId)} className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl border border-neutral-100 hover:border-primary/20 transition-colors">
-                      <span className="text-sm font-bold text-neutral-700">{String(p.name)}</span>
+                  {(data?.programBreakdown ?? []).map((p) => (
+                    <div key={p.programId} className="flex items-center justify-between p-3 bg-neutral-50 rounded-xl border border-neutral-100 hover:border-primary/20 transition-colors">
+                      <span className="text-sm font-bold text-neutral-700">{p.name}</span>
                       <span className="px-3 py-1 bg-white rounded-full border border-neutral-200 text-xs font-black text-primary">
-                        {String(p.studentCount)}
+                        {p.studentCount}
                       </span>
                     </div>
                   ))}
@@ -258,6 +424,15 @@ export const Dashboard: React.FC = () => {
           )}
         </>
       )}
+      <ConfirmModal
+        open={Boolean(centerToDeactivate)}
+        title="Deactivate Center"
+        message={`Are you sure you want to deactivate ${centerToDeactivate?.name ?? 'this center'}? Historical records remain preserved, and centers with active students cannot be deactivated.`}
+        confirmLabel="Deactivate"
+        variant="danger"
+        onConfirm={() => void handleConfirmDeactivateCenter()}
+        onCancel={() => setCenterToDeactivate(null)}
+      />
     </PageWrapper>
   );
 };

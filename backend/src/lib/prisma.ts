@@ -14,6 +14,7 @@ const DIRECT_TENANT_MODELS = new Set([
   "AuditLog",
   "Conversation",
   "Notification",
+  "SyncOperationLog",
 ]);
 
 const CENTER_SCOPED_MODELS = new Set([
