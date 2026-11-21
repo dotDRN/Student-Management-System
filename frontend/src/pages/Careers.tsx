@@ -13,6 +13,7 @@ import type { Student } from '../types';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
+import { CareerAiGuidancePanel } from '../components/ai/CareerAiGuidancePanel';
 import { Plus } from 'lucide-react';
 
 export const Careers: React.FC = () => {
@@ -135,6 +136,25 @@ export const Careers: React.FC = () => {
     }
   };
 
+  const selectedStudent = students.find((s) => s.id === selectedId);
+
+  const handleApplyAiPathway = async (pathway: {
+    careerGoal: string;
+    industry: string;
+    notes: string;
+    milestones: string[];
+  }) => {
+    if (!selectedId) return;
+    setError(null);
+    try {
+      await addCareer(selectedId, pathway);
+      const data = await getCareersByStudent(selectedId);
+      setCareers(data);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to apply AI career pathway.'));
+    }
+  };
+
   if (loading) {
     return (
       <PageWrapper title="Career Tracking">
@@ -225,6 +245,14 @@ export const Careers: React.FC = () => {
           </div>
         )}
       </Card>
+
+      {selectedId && selectedStudent && (
+        <CareerAiGuidancePanel
+          studentId={selectedId}
+          studentName={selectedStudent.fullName}
+          onApplyPathway={handleApplyAiPathway}
+        />
+      )}
 
       <ConfirmModal
         open={Boolean(deleteTargetId)}

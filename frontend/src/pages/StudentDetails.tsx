@@ -40,6 +40,7 @@ import {
   QrCode,
 } from 'lucide-react';
 import { StudentDossierAndVault } from '../components/students/StudentDossierAndVault';
+import { StudentAiBriefingCard } from '../components/ai/StudentAiBriefingCard';
 import {
   getStudentProfile,
   getFeePayments,
@@ -538,6 +539,8 @@ export const StudentDetails: React.FC = () => {
           <p className="text-sm text-neutral-500 text-center py-3">No payment records yet.</p>
         )}
       </Card>
+
+      <StudentAiBriefingCard studentId={student.id} studentName={student.fullName} />
 
       <Card className="mb-6">
         <div className="flex justify-between items-center mb-4 border-b border-neutral-100 pb-3">
