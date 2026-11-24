@@ -429,7 +429,6 @@ export const getStudentProfile = async (user: TokenPayload, id: string) => {
     attendanceCounts.present + attendanceCounts.absent + attendanceCounts.late;
   const presentCount = attendanceCounts.present + attendanceCounts.late;
   const attendancePct = calculateAttendancePercentage(attendanceCounts);
-  const records = allRecords.slice(0, 15);
 
   const examScoresList = student.examScores;
   let sumPct = 0;

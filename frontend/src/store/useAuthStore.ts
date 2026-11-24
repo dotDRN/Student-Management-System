@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { API_BASE_URL } from "../utils/apiBase";
 
 export interface OrganizationInfo {
   id: string;
@@ -107,7 +108,7 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         try {
           if (typeof navigator === "undefined" || navigator.onLine) {
-            await fetch("/api/auth/logout", {
+            await fetch(`${API_BASE_URL}/auth/logout`, {
               method: "POST",
               credentials: "include",
             });

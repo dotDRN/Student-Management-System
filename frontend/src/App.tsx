@@ -30,6 +30,7 @@ import { useEffect, useState } from "react";
 import { useAuthStore } from "./store/useAuthStore";
 import { ToastContainer } from './components/toast/ToastContainer';
 import { getPendingLocalSyncCounts } from './offline/offlineDb';
+import { API_BASE_URL } from './utils/apiBase';
 
 function App() {
   const { currentUser, initializeAuth, setAuth, setOfflineSession, setNeedsReauth, logout } = useAuthStore();
@@ -47,7 +48,7 @@ function App() {
           return;
         }
 
-        const res = await fetch("/api/auth/refresh", {
+        const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
           method: "POST",
           credentials: "include",
         });

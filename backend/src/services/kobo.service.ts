@@ -1,15 +1,25 @@
 import axios from "axios";
 import prisma from "../lib/prisma.js";
+import { AppError } from "../lib/errors.js";
 
 const KOBO_API_URL = process.env.KOBO_API_URL || "https://kf.kobotoolbox.org";
-const KOBO_API_TOKEN = process.env.KOBO_API_TOKEN || "mock_token_for_dev";
 
-const koboClient = axios.create({
-  baseURL: KOBO_API_URL,
-  headers: {
-    Authorization: `Token ${KOBO_API_TOKEN}`,
-  },
-});
+function getKoboClient() {
+  const token =
+    process.env.KOBO_API_TOKEN ||
+    (process.env.NODE_ENV !== "production" ? "mock_token_for_dev" : "");
+
+  if (!token) {
+    throw new AppError("KOBO_API_TOKEN is not configured", 503);
+  }
+
+  return axios.create({
+    baseURL: KOBO_API_URL,
+    headers: {
+      Authorization: `Token ${token}`,
+    },
+  });
+}
 
 /**
  * Syncs all forms (assets) from KoboToolbox into our FormTemplate table.
@@ -23,7 +33,7 @@ export async function syncKoboForms(userId: string) {
     });
     const tenantId = creator?.tenantId || "00000000-0000-0000-0000-000000000001";
 
-    const res = await koboClient.get("/api/v2/assets/");
+    const res = await getKoboClient().get("/api/v2/assets/");
     const assets = res.data.results;
     let syncedCount = 0;
 
@@ -89,7 +99,7 @@ export async function syncKoboSubmissions(
   defaultCenterId: string
 ) {
   try {
-    const res = await koboClient.get(`/api/v2/assets/${assetUid}/data/`);
+    const res = await getKoboClient().get(`/api/v2/assets/${assetUid}/data/`);
     const submissions = res.data.results;
     let syncedCount = 0;
 

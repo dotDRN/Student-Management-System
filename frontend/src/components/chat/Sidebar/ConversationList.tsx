@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { ConversationItem } from './ConversationItem';
 import { ConversationModal } from './ConversationModal';
 import { getConversationDisplayName } from '../../../utils/chatHelpers';
-import { cn } from '../../ui/Button';
+import { cn } from '../../../utils/cn';
 
 export const ConversationList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');

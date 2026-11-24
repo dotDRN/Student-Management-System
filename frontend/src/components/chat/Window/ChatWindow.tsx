@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { MessageSquare, AlertCircle } from 'lucide-react';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { Composer } from '../Composer/Composer';
+import type { PendingAttachment } from '../Composer/AttachmentPreview';
 import { useNavigate } from 'react-router-dom';
 import { useChatStore } from '../../../store/useChatStore';
 import { useAuthStore } from '../../../store/useAuthStore';
@@ -66,7 +67,7 @@ export const ChatWindow: React.FC = () => {
   const handleOptimisticSend = (
     tempId: string,
     content: string,
-    attachments: any[],
+    attachments: PendingAttachment[],
     type: MessageType = 'text',
   ) => {
     const tempMsg: Message = {
@@ -92,12 +93,15 @@ export const ChatWindow: React.FC = () => {
       })),
     };
 
-    queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
-      if (!oldData) return { pages: [[tempMsg]], pageParams: [undefined] };
-      const newPages = [...oldData.pages];
-      newPages[0] = [tempMsg, ...newPages[0]];
-      return { ...oldData, pages: newPages };
-    });
+    queryClient.setQueryData<InfiniteData<Message[]>>(
+      ['messages', activeConversationId],
+      (oldData) => {
+        if (!oldData) return { pages: [[tempMsg]], pageParams: [undefined] };
+        const newPages = [...oldData.pages];
+        newPages[0] = [tempMsg, ...newPages[0]];
+        return { ...oldData, pages: newPages };
+      },
+    );
 
     queryClient.setQueryData<Conversation[]>(['conversations'], (old = []) => {
       const updated = old.map((c) =>
@@ -127,17 +131,20 @@ export const ChatWindow: React.FC = () => {
           },
     };
 
-    queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
-      if (!oldData?.pages) return oldData;
+    queryClient.setQueryData<InfiniteData<Message[]>>(
+      ['messages', activeConversationId],
+      (oldData) => {
+        if (!oldData?.pages) return oldData;
 
-      const newPages = oldData.pages.map((page: Message[]) => {
-        if (page.some((m) => m.id === realMessage.id)) {
-          return page.filter((m) => m.id !== tempId);
-        }
-        return page.map((m) => (m.id === tempId ? enrichedMessage : m));
-      });
-      return { ...oldData, pages: newPages };
-    });
+        const newPages = oldData.pages.map((page) => {
+          if (page.some((m) => m.id === realMessage.id)) {
+            return page.filter((m) => m.id !== tempId);
+          }
+          return page.map((m) => (m.id === tempId ? enrichedMessage : m));
+        });
+        return { ...oldData, pages: newPages };
+      },
+    );
 
     queryClient.setQueryData<Conversation[]>(['conversations'], (old = []) => {
       const updated = old.map((c) =>
@@ -152,46 +159,55 @@ export const ChatWindow: React.FC = () => {
   };
 
   const handleOptimisticError = (tempId: string) => {
-    queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
-      if (!oldData?.pages) return oldData;
-      const newPages = oldData.pages.map((page: Message[]) =>
-        page.filter((m) => m.id !== tempId),
-      );
-      return { ...oldData, pages: newPages };
-    });
+    queryClient.setQueryData<InfiniteData<Message[]>>(
+      ['messages', activeConversationId],
+      (oldData) => {
+        if (!oldData?.pages) return oldData;
+        const newPages = oldData.pages.map((page) =>
+          page.filter((m) => m.id !== tempId),
+        );
+        return { ...oldData, pages: newPages };
+      },
+    );
   };
 
   const handleEditSuccess = (messageId: string, newContent: string) => {
-    queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
-      if (!oldData?.pages) return oldData;
-      return {
-        ...oldData,
-        pages: oldData.pages.map((page: Message[]) =>
-          page.map((m) =>
-            m.id === messageId
-              ? { ...m, content: newContent, isEdited: true, updatedAt: new Date().toISOString() }
-              : m,
-          ),
-        ),
-      };
-    });
-  };
-
-  const handleDeleteMessage = async (messageId: string) => {
-    try {
-      queryClient.setQueryData(['messages', activeConversationId], (oldData: any) => {
+    queryClient.setQueryData<InfiniteData<Message[]>>(
+      ['messages', activeConversationId],
+      (oldData) => {
         if (!oldData?.pages) return oldData;
         return {
           ...oldData,
-          pages: oldData.pages.map((page: Message[]) =>
+          pages: oldData.pages.map((page) =>
             page.map((m) =>
               m.id === messageId
-                ? { ...m, isDeleted: true, content: '[This message was deleted]', attachments: [] }
+                ? { ...m, content: newContent, isEdited: true, updatedAt: new Date().toISOString() }
                 : m,
             ),
           ),
         };
-      });
+      },
+    );
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      queryClient.setQueryData<InfiniteData<Message[]>>(
+        ['messages', activeConversationId],
+        (oldData) => {
+          if (!oldData?.pages) return oldData;
+          return {
+            ...oldData,
+            pages: oldData.pages.map((page) =>
+              page.map((m) =>
+                m.id === messageId
+                  ? { ...m, isDeleted: true, content: '[This message was deleted]', attachments: [] }
+                  : m,
+              ),
+            ),
+          };
+        },
+      );
       await chatService.deleteMessage(messageId);
     } catch (error) {
       console.error('Failed to delete message:', error);

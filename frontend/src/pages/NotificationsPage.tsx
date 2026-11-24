@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
 import { Bell, CheckCheck } from 'lucide-react';
@@ -78,19 +78,22 @@ export const NotificationsPage: React.FC = () => {
               }
             : old,
       );
-      queryClient.setQueryData(['notifications', 'infinite'], (old: any) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            notifications: page.notifications.map((n: Notification) => ({
-              ...n,
-              isRead: true,
+      queryClient.setQueryData<InfiniteData<NotificationListResponse>>(
+        ['notifications', 'infinite'],
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              notifications: page.notifications.map((n) => ({
+                ...n,
+                isRead: true,
+              })),
             })),
-          })),
-        };
-      });
+          };
+        },
+      );
       queryClient.setQueryData<UnreadCountResponse>(
         ['notifications', 'unreadCount'],
         { unreadCount: 0 },
@@ -106,26 +109,29 @@ export const NotificationsPage: React.FC = () => {
     if (!notification.isRead) {
       markAsRead(notification.notificationRecipientId);
       
-      queryClient.setQueryData(['notifications', 'infinite'], (old: any) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            notifications: page.notifications.map((n: Notification) => 
-              n.notificationRecipientId === notification.notificationRecipientId
-                ? { ...n, isRead: true, readAt: new Date().toISOString() }
-                : n
-            )
-          }))
-        };
-      });
+      queryClient.setQueryData<InfiniteData<NotificationListResponse>>(
+        ['notifications', 'infinite'],
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              notifications: page.notifications.map((n) =>
+                n.notificationRecipientId === notification.notificationRecipientId
+                  ? { ...n, isRead: true, readAt: new Date().toISOString() }
+                  : n,
+              ),
+            })),
+          };
+        },
+      );
 
-      queryClient.setQueriesData<any>(
+      queryClient.setQueriesData<NotificationListResponse>(
         { predicate: (query) => query.queryKey[0] === 'notifications' && typeof query.queryKey[1] === 'number' },
-        (old: any) => old ? {
+        (old) => old ? {
           ...old,
-          notifications: old.notifications.map((n: Notification) => 
+          notifications: old.notifications.map((n) =>
             n.notificationRecipientId === notification.notificationRecipientId
               ? { ...n, isRead: true, readAt: new Date().toISOString() }
               : n
@@ -133,8 +139,9 @@ export const NotificationsPage: React.FC = () => {
         } : old
       );
 
-      queryClient.setQueryData<any>(['notifications', 'unreadCount'], (old: any) => 
-        ({ unreadCount: Math.max(0, (old?.unreadCount ?? 1) - 1) })
+      queryClient.setQueryData<UnreadCountResponse>(
+        ['notifications', 'unreadCount'],
+        (old) => ({ unreadCount: Math.max(0, (old?.unreadCount ?? 1) - 1) }),
       );
 
       notificationService.markAsRead(notification.notificationRecipientId).catch(() => {

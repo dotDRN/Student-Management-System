@@ -1,13 +1,14 @@
 import React, { useRef, useEffect, useLayoutEffect, useState } from 'react';
+import type { ReactionType } from '../../../types/chat';
 
 interface ReactionPickerProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (reaction: string) => void;
+  onSelect: (reaction: ReactionType) => void;
   position: { x: number; y: number };
 }
 
-const REACTIONS = [
+const REACTIONS: Array<{ type: ReactionType; emoji: string }> = [
   { type: 'like', emoji: '👍' },
   { type: 'love', emoji: '❤️' },
   { type: 'laugh', emoji: '😂' },

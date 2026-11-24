@@ -1,13 +1,14 @@
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../store/useAuthStore';
 import type { ClientToServerEvents, ServerToClientEvents } from '../types/socket';
+import { resolveSocketUrl } from '../utils/apiBase';
 
 class SocketService {
   private socket: Socket<
     ServerToClientEvents,
     ClientToServerEvents
   > | null = null;
-  private url: string = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+  private url: string | undefined = resolveSocketUrl();
   private connectionListeners: ((isConnected: boolean) => void)[] = [];
   private eventListeners = new Map<
     keyof ServerToClientEvents,
@@ -24,12 +25,16 @@ class SocketService {
       return;
     }
 
-    this.socket = io(this.url, {
+    const socketOptions = {
       path: '/socket.io',
       auth: { token },
       transports: ['websocket', 'polling'],
       autoConnect: false,
-    });
+    };
+
+    this.socket = this.url
+      ? io(this.url, socketOptions)
+      : io(socketOptions);
 
     this.attachEventListeners();
 

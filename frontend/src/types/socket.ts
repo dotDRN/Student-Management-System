@@ -1,4 +1,4 @@
-import type { Conversation, Message } from "./chat";
+import type { Conversation, Message, Reaction } from "./chat";
 import type { Notification } from "./notification";
 
 export type MeetingCategory = "standup" | "academic" | "operations" | "lounge";
@@ -85,7 +85,7 @@ export interface ServerToClientEvents {
   "message:reaction_updated": (data: {
     messageId: string;
     conversationId: string;
-    reactions: unknown[];
+    reactions: Reaction[];
   }) => void;
 
   "conversation:new": (data: {

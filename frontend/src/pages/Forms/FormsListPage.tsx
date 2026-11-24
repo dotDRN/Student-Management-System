@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Card } from '../../components/ui/Card';
@@ -8,6 +8,7 @@ import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../../components/ui/ErrorMessage';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useAuthStore } from '../../store/useAuthStore';
+import { getApiErrorMessage } from '../../services/api';
 import { listFormTemplates, syncKoboForms, syncKoboSubmissions, type FormTemplateListItem } from '../../services/forms.service';
 import { Inbox, RefreshCw, ExternalLink } from 'lucide-react';
 
@@ -23,7 +24,7 @@ export const FormsListPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -34,7 +35,7 @@ export const FormsListPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [formTypeFilter, isAdmin]);
 
   const handleSyncKobo = async () => {
     try {
@@ -44,8 +45,8 @@ export const FormsListPage: React.FC = () => {
       const result = await syncKoboForms();
       setSuccess(result.message);
       await load();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to sync Kobo forms.');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to sync Kobo forms.'));
       setLoading(false);
     }
   };
@@ -57,8 +58,8 @@ export const FormsListPage: React.FC = () => {
       setSuccess(null);
       const result = await syncKoboSubmissions(templateId, externalId);
       setSuccess(result.message);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to sync submissions.');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Failed to sync submissions.'));
     } finally {
       setSyncingTemplateId(null);
     }
@@ -83,7 +84,7 @@ export const FormsListPage: React.FC = () => {
 
   useEffect(() => {
     void load();
-  }, [isAdmin, formTypeFilter]);
+  }, [load]);
 
   return (
     <PageWrapper
@@ -173,11 +174,11 @@ export const FormsListPage: React.FC = () => {
                       <Button variant="ghost" size="sm" onClick={() => navigate(`/forms/${t.id}/submissions`)}>
                         <Inbox size={16} className="mr-1" /> View Submissions
                       </Button>
-                      {isAdmin && t.externalSource === 'kobo' && (
+                      {isAdmin && t.externalSource === 'kobo' && t.externalId && (
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          onClick={() => handleSyncData(t.id, (t as any).externalId)}
+                          onClick={() => handleSyncData(t.id, t.externalId!)}
                           isLoading={syncingTemplateId === t.id}
                         >
                           <RefreshCw size={16} className="mr-1" /> Pull Data

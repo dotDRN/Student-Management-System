@@ -1,77 +1,64 @@
-# SPARSHA web app (frontend)
+# EdBase Web App (`frontend`)
 
-React 19 + TypeScript + Vite + Tailwind CSS 4. Communicates with the backend over **`/api`** (proxied in development).
+**Version:** `1.4.0`
+
+React 19 + TypeScript + Vite 8 + Tailwind CSS v4 frontend for **EdBase**, featuring offline-first local storage (Dexie.js IndexedDB + sync engine), Workbox PWA caching (`vite-plugin-pwa`), real-time Socket.IO chat/notifications, and WebRTC staff meeting rooms.
 
 ## Prerequisites
 
-- **Node.js** 20+
+- **Node.js** 22+
 - **npm**
-- Backend running (default `http://localhost:5000`) when you use the dev proxy — see below.
+- Running backend API on port `5000` when using the Vite dev proxy
 
-## Environment (optional)
+## Environment Variables (Optional)
 
 ```bash
 cp .env.example .env
 ```
 
-| Variable | When to set |
-|----------|-------------|
-| `VITE_API_URL` | **Production builds** — full base URL to the API, including `/api` if that is your mount path (e.g. `https://api.example.com/api`). |
-| *(omit)* | **Local dev** — Axios defaults to `baseURL: '/api'`; Vite proxies `/api` → `http://localhost:5000` (`vite.config.ts`). |
+| Variable | Description |
+| :--- | :--- |
+| `VITE_API_URL` | Omit or set `/api` for Vite dev proxy and single-service Express deploys. Set full origin + `/api` (e.g. `https://api.example.com/api`) for split-origin deployments. |
+| `VITE_KOBO_URL` | Optional custom KoboToolbox portal URL opened from the Forms page (defaults to `https://kf.kobotoolbox.org`). |
 
-## Install
-
-```bash
-npm install
-```
-
-## Run (development)
-
-Start the **backend first** (port 5000), then:
+## Install & Run
 
 ```bash
+npm install --legacy-peer-deps
 npm run dev
 ```
 
-Open the printed URL (typically **`http://localhost:5173`**). Login uses the backend’s `/api/auth` routes.
+Opens at `http://localhost:5173`. Vite proxies `/api`, `/health`, and `/socket.io` (WebSockets) to `http://localhost:5000`.
 
-## Build and preview
+## Scripts
 
-```bash
-npm run build
-npm run preview
-```
+| Script | Command | Purpose |
+| :--- | :--- | :--- |
+| `npm run dev` | `vite` | Start Vite dev server with HMR & dev Workbox PWA |
+| `npm run build` | `tsc -b && vite build` | Type-check and build production bundle + PWA (`dist/`) |
+| `npm run lint` | `eslint .` | Lint all TypeScript/React source files |
+| `npm test` | `node --test tests/*.test.ts` | Run QR/offline queue and sync engine helper unit tests |
+| `npm run preview` | `vite preview` | Preview production build locally |
 
-For production, set `VITE_API_URL` to your deployed API base so the built static files call the correct host.
+## Implemented Architecture
 
-## Lint
+- **Auth & Multi-Tenant Session (`src/store/useAuthStore.ts`, `src/App.tsx`):** JWT access token in Zustand + 7-day HttpOnly refresh cookie (`/api/auth/refresh`), workspace slug switching, and offline startup fallback when network or database is unavailable.
+- **Offline-First Storage & Sync (`src/offline/`):** Per-tenant/per-user Dexie IndexedDB databases (`offlineDb.ts`), read-through caching + offline mutation outbox (`offlineServiceHelper.ts`), causal outbox sorting + temp ID remapping (`outboxHelpers.ts`), and bidirectional sync (`syncEngine.ts`, `useSyncStore.ts`).
+- **PWA (`vite.config.ts`):** `vite-plugin-pwa` (`generateSW`) with `NetworkOnly` rules for `/api/`, `/socket.io/`, and `/health`, plus Rolldown vendor code splitting.
+- **Real-Time Collaboration:** Socket.IO client (`src/services/socket.service.ts`), live chat & attachments (`src/pages/ChatPage.tsx`, `src/hooks/useChatSocket.ts`), notification drawer & browser notifications (`src/notifications/`), and WebRTC staff meeting rooms (`src/pages/MeetingRoomsPage.tsx`, `src/hooks/useWebRTCMeeting.ts`).
+- **AI Copilot & Intelligence (`src/components/ai/`, `src/services/ai.service.ts`, `src/store/useAiCopilotStore.ts`):** Global staff AI Copilot drawer (`AiCopilotDrawer`), 360° Student AI Briefing card (`StudentAiBriefingCard`), and Career AI Guidance panel (`CareerAiGuidancePanel`).
+- **UI & Design System:** Tailwind CSS v4 (`brand-*` indigo palette), `Inter`, `Plus Jakarta Sans`, and `JetBrains Mono` fonts, shared UI components (`src/components/ui/`), Recharts analytics, QR ID cards & scanner, and SheetJS (`xlsx`) exports.
 
-```bash
-npm run lint
-```
-
-## What is implemented
-
-- **Auth:** Login; token in `localStorage` + Zustand; protected layout with sidebar and top bar.
-- **Pages:** Dashboard, students (list, registration, **detail with charts**), attendance, skills, careers, **exams (bulk score grid)**, **forms** (list, builder, fill, submissions), reports (admin), settings.
-- **API client:** `src/services/api.ts` — Axios with `withCredentials`, Bearer token, 401 → logout.
-- **UI:** Brand palette (`brand-*`), Sora + DM Sans, shared components under `src/components/ui/`.
-- **Charts:** Recharts on student profile and exam-related views.
-- **PWA:** Manual manifest + service worker (see `public/`, `main.tsx`).
-
-## What is not / gaps
-
-- Access token is stored in **`localStorage`** (project convention); stricter XSS hygiene would use memory-only + refresh cookie flow end-to-end.
-- Some list endpoints still use loose `Record<string, unknown>` types; DTOs could be tightened.
-- `vite-plugin-pwa` is not the primary path; PWA is manual.
-
-## Project layout
+## Project Layout
 
 | Path | Role |
-|------|------|
-| `src/App.tsx` | Routes |
-| `src/services/` | API modules (`api.ts`, `students.service.ts`, …) |
-| `src/pages/` | Screens |
-| `src/components/` | Layout and UI |
-| `src/store/` | Zustand (`useAuthStore`) |
-| `vite.config.ts` | Dev proxy for `/api` |
+| :--- | :--- |
+| `src/App.tsx` | Auth bootstrap and 4-tier `RoleGuard` + `ParentPortal` route configuration |
+| `src/pages/` | Feature screens (Dashboard, Students, Attendance, Exams, Skills, Careers, Activities, Forms, Reports, Centers, Programs, Users, Settings, Announcements, Chat, Notifications, MeetingRooms, ParentPortal) |
+| `src/components/` | Feature modules and reusable UI primitives (`ui/`, `layout/`, `chat/`, `students/`, `attendance/`, `activities/`, `dashboard/`, `forms/`, `settings/`, `skills/`, `sync/`, `toast/`) |
+| `src/offline/` | Dexie schema, outbox helpers, offline service wrappers, and `SyncEngine` |
+| `src/notifications/` | Browser notification permissions, visibility filters, and dispatcher |
+| `src/services/` | Axios API client (`api.ts`), Socket.IO client (`socket.service.ts`), and domain service modules |
+| `src/store/` | Zustand stores (`useAuthStore`, `useChatStore`, `useNotificationStore`, `useSyncStore`, `useToastStore`) |
+| `src/utils/` | API URL resolution (`apiBase.ts`), `cn`, date, QR payloads, offline attendance queue, Excel export, and RBAC helpers |
+| `tests/` | Unit tests for QR payloads, offline queue coalescing, and sync outbox helpers |

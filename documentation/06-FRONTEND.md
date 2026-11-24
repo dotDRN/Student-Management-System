@@ -1,104 +1,99 @@
-# 💻 SPARSHA OMS - Frontend Development Guide
+# EdBase — Frontend Development Guide
 
-The SPARSHA Frontend is a Single Page Application (SPA) designed to be fast, responsive, and easy to maintain.
+The **EdBase** frontend (`/frontend`) is a React 19 + TypeScript + Vite 8 + Tailwind CSS v4 Single Page Application with offline-first IndexedDB persistence and real-time collaboration.
 
 ---
 
-## 🛠️ Tech Stack & Ecosystem
+## Tech Stack
 
-- **Framework:** React 19
-- **Build Tool:** Vite (replaces Webpack/CRA for faster builds)
-- **Styling:** Tailwind CSS v4 (Utility-first framework)
+- **UI & Build:** React 19, TypeScript, Vite 8 (Rolldown vendor code splitting), Tailwind CSS v4 (`@tailwindcss/vite`)
+- **Fonts:** `Inter`, `Plus Jakarta Sans`, `JetBrains Mono` (configured in `index.html` & `src/index.css`)
 - **Routing:** React Router v7
-- **State Management:** Zustand (for global Auth/User state)
-- **Data Fetching:** React Query & Axios
+- **State:** Zustand v5 (`useAuthStore`, `useSyncStore`, `useChatStore`, `useNotificationStore`, `useToastStore`, `useAiCopilotStore`)
+- **Networking & Realtime:** TanStack React Query v5, Axios (`withCredentials: true`), Socket.IO Client, native WebRTC (`RTCPeerConnection`)
+- **Offline & PWA:** Dexie.js v4 (IndexedDB), `vite-plugin-pwa` (Workbox)
+- **Utilities:** `qrcode`, Recharts, SheetJS (`xlsx`), React Hook Form, `clsx` + `tailwind-merge` (`src/utils/cn.ts`)
 
 ---
 
-## 📁 Directory Structure
+## Directory Structure (`frontend/src/`)
 
-The `/frontend/src` directory is organized as follows:
-
-- `assets/`: Static files like logos and icons.
-- `components/`: 
-  - `ui/`: Reusable, dumb components (Buttons, Inputs, Cards, Tables) styled with Tailwind.
-  - `layout/`: Structural components like the Sidebar, Navbar, and standard Page Wrappers.
-  - `forms/`: Reusable React Hook Form wrappers.
-- `hooks/`: Custom React hooks (e.g., `usePermission.ts` for frontend RBAC checks).
-- `pages/`: The actual route views (e.g., `Dashboard.tsx`, `StudentList.tsx`).
-- `services/`: API abstraction layer. All Axios calls are defined here.
-- `store/`: Zustand state definitions (e.g., `useAuthStore.ts`).
-- `utils/`: Helper functions for dates, formatting, and RBAC evaluation.
-
----
-
-## 🧠 State Management (Zustand)
-
-Instead of complex Redux boilerplates, we use **Zustand** for global state. The primary global state is the User session, managed in `useAuthStore.ts`.
-
-```typescript
-// Example usage in a component
-import { useAuthStore } from '../store/useAuthStore';
-
-const Dashboard = () => {
-  const { user, currentCenter } = useAuthStore();
-  
-  return <h1>Welcome, {user?.fullName} to {currentCenter?.name}</h1>;
-}
-```
+- `components/`:
+  - `ui/`: Shared primitives (`Button`, `Input`, `Card`, `Modal`, `ConfirmModal`, `Table`, `DataTable`, `Badge`, `EmptyState`, `ErrorMessage`, `LoadingSpinner`)
+  - `layout/`: `Sidebar`, `TopBar`, `PageWrapper`, `ProtectedRoute` (`RoleGuard`)
+  - `chat/`, `ai/` (`AiCopilotDrawer`, `StudentAiBriefingCard`, `CareerAiGuidancePanel`), `students/`, `attendance/`, `activities/`, `dashboard/`, `forms/`, `settings/`, `skills/`, `sync/`, `toast/`, `NotificationDrawer.tsx`
+- `hooks/`: `usePermission`, `useChatSocket`, `useWebRTCMeeting`, `useToast`
+- `notifications/`: Browser notification permission & visibility dispatcher (`NotificationDispatcher`, `BrowserNotificationService`, `NotificationPermission`, `NotificationRules`, `NotificationVisibility`)
+- `offline/`: `offlineDb.ts` (Dexie schema), `offlineServiceHelper.ts`, `outboxHelpers.ts`, `syncEngine.ts`, `syncTypes.ts`
+- `pages/`: Feature routes including `Forms/` (`FormsListPage`, `FormBuilderPage`, `FormRendererPage`, `FormSubmissionsPage`), `MeetingRoomsPage`, `ChatPage`, `NotificationsPage`, `ParentPortal`, `Settings`, etc.
+- `services/`: `api.ts` (Axios + 401 refresh & offline/re-auth detection), `socket.service.ts`, and domain services
+- `store/`: Zustand stores
+- `types/` & `utils/`: Type definitions, `apiBase.ts`, `cn.ts`, `date.ts`, `qrStudent.ts`, `offlineAttendanceQueue.ts`, `masterWorkbookExport.ts`, `exportSanitize.ts`, `rbac.ts`
 
 ---
 
-## 🌐 API Integration (Services)
+## State Management & Auth Flow
 
-UI Components should **never** make direct `axios` calls. All API interactions must go through the `/src/services` layer.
-
-### Why?
-If the backend endpoint changes from `/api/students` to `/api/v2/students`, you only have to update `students.service.ts`, rather than hunting down 15 different components that hardcoded the URL.
-
-```typescript
-// Good - inside src/services/students.service.ts
-export const getStudents = async () => {
-  const response = await api.get('/students');
-  return response.data;
-};
-
-// Inside your React Component
-import { getStudents } from '../services/students.service';
-// ... use getStudents() directly or via React Query
-```
-
----
-
-## 🎨 Styling & Tailwind CSS
-
-The project uses Tailwind CSS for styling. We rely on utility classes rather than custom `.css` files.
-
-- **Theme Consistency:** Stick to the predefined tailwind colors and spacing. Do not use arbitrary values (e.g., `w-[325px]`) unless absolutely necessary. Use Tailwind's grid and flexbox utilities.
-- **Dynamic Classes:** Use the `clsx` and `tailwind-merge` libraries (often wrapped in a `cn()` utility) to cleanly join conditional CSS classes.
-
----
-
-## 🔐 Frontend RBAC (Hiding UI Elements)
-
-Just because the backend protects an endpoint doesn't mean the frontend should show the button to everyone. We use custom hooks to hide UI elements from users who shouldn't see them.
-
-Use the `usePermission` hook to conditionally render UI:
+`useAuthStore` (`src/store/useAuthStore.ts`) manages the session state:
 
 ```tsx
-import { usePermission } from '../hooks/usePermission';
+import { useAuthStore } from '../store/useAuthStore';
 
-const StudentProfile = () => {
-  const { hasRole } = usePermission();
+const HeaderGreeting = () => {
+  const { currentUser, currentTenant, selectedCenterId, isOfflineSession } =
+    useAuthStore();
 
   return (
     <div>
-      <h1>Student Name</h1>
-      {/* Only admins can see the Delete button */}
-      {hasRole(['super_admin', 'center_admin']) && (
-        <button className="bg-red-500">Delete Student</button>
-      )}
+      <h1>Welcome, {currentUser?.fullName}</h1>
+      <p>{currentTenant?.name} {isOfflineSession ? '(Offline)' : ''}</p>
     </div>
   );
-}
+};
 ```
+
+On startup (`src/App.tsx`):
+- Calls `POST ${API_BASE_URL}/auth/refresh` with `credentials: "include"`.
+- If the browser is offline or the backend returns `5xx` (e.g. `503 DB_UNAVAILABLE`), `setOfflineSession(true)` keeps the persisted local workspace running using Dexie.
+- If the refresh token expired (`401`) while pending local outbox items exist, `setNeedsReauth(true)` prompts inline re-authentication without discarding queued offline edits.
+
+---
+
+## Offline Storage & Sync (`src/offline/`)
+
+- **`EdBaseOfflineDb` (`offlineDb.ts`):** Opens a separate IndexedDB database per `(tenantId, userId)` containing cached tables (`centers`, `programs`, `programSubjects`, `academicYears`, `batches`, `batchEnrollments`, `students`, `feePayments`, `attendanceSessions`, `attendanceRecords`, `exams`, `examScores`, `skillDefinitions`, `skillLogs`, `formTemplates`, `formSubmissions`) plus `syncMeta`, `syncOutbox`, and `syncConflicts`.
+- **`SyncEngine` (`syncEngine.ts`):** Checks backend health via `resolveHealthUrl()`, sorts outbox items causally (`outboxHelpers.ts`), pushes batches to `/api/sync/push`, remaps temporary client UUIDs, and stores any `FIELD_CONFLICT` / `LOCKED_VERIFIED` items in `syncConflicts` for resolution via `useSyncStore`.
+
+---
+
+## API URL Resolution & Services
+
+UI components must never call `axios` directly. Use `/src/services/` modules, which share:
+- `API_BASE_URL`, `resolveHealthUrl()`, and `resolveSocketUrl()` in `src/utils/apiBase.ts`.
+- Leaving `VITE_API_URL` unset or `/api` connects REST and Socket.IO to the current origin (`window.location.origin`), working seamlessly with both Vite's local dev proxy and Render's single-service production server.
+
+---
+
+## Frontend RBAC & Route Guards
+
+1. **Declarative Permissions (`usePermission`):**
+   ```tsx
+   import { usePermission } from '../hooks/usePermission';
+
+   const StudentActions = () => {
+     const { can, isAdminRole } = usePermission();
+
+     return (
+       <div>
+         {can('manage', 'students') && <button>Edit Student</button>}
+         {isAdminRole && <button>Manage Centers</button>}
+       </div>
+     );
+   };
+   ```
+2. **Route Hierarchy (`src/App.tsx`):**
+   - `/parent`: `parent` role only (`ParentPortal`)
+   - Level 1 (Staff/Volunteers/Admins): Students, Attendance, Skills, Careers, Exams, Reports, Forms, Activities, Announcements, Chat, Notifications
+   - Level 2 (Employees & Admins, excludes `volunteer`): Meeting Rooms (`/meetings`), Student Registration/Edit
+   - Level 3 (Admins: `super_admin`, `center_admin`, `tech_admin`): Dashboard, Users, Centers, Programs, Form Builder
+   - Level 4 (System Admins: `super_admin`, `tech_admin`): Settings (`/settings`)

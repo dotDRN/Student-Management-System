@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PageWrapper } from '../../components/layout/PageWrapper';
 import { Card } from '../../components/ui/Card';
@@ -22,21 +22,21 @@ export const FormSubmissionsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async (p = page) => {
+  const load = useCallback(async (p = 1) => {
     if (!templateId) return;
     setLoading(true);
     setError(null);
     try {
-      const [tpl, res] = (await Promise.all([
+      const [tpl, res] = await Promise.all([
         getFormTemplate(templateId),
         listFormSubmissions({
           templateId,
           page: String(p),
           limit: '25',
         }),
-      ])) as [any, any];
-      setTitle(tpl.name);
-      setExternalId(tpl.externalId);
+      ]);
+      setTitle(typeof tpl.name === 'string' ? tpl.name : '');
+      setExternalId(typeof tpl.externalId === 'string' ? tpl.externalId : undefined);
       setRows(res.submissions);
       setTotal(res.total);
       setPage(res.page);
@@ -46,7 +46,7 @@ export const FormSubmissionsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [templateId]);
 
   const handleSync = async () => {
     if (!templateId || !externalId) return;
@@ -64,7 +64,7 @@ export const FormSubmissionsPage: React.FC = () => {
       return;
     }
     void load(1);
-  }, [templateId]);
+  }, [templateId, load]);
 
   if (!templateId) return null;
 

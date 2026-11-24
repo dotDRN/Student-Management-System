@@ -1,85 +1,72 @@
-# ⚙️ SPARSHA OMS - System Architecture
+# EdBase — System Architecture
 
-Welcome to the SPARSHA Organization Management System (OMS). This document outlines the high-level architecture of the application, designed to scale across multiple NGO centers while remaining maintainable by a small technical team.
+**Version:** `1.4.0`
 
-## 🏗️ High-Level Topology
-
-The SPARSHA OMS is a **monorepo** consisting of two deeply decoupled, independent applications:
-
-1.  **Frontend (`/frontend`)**: A Single Page Application (SPA) built with React and Vite. It consumes the REST API.
-2.  **Backend (`/backend`)**: A RESTful API server built with Node.js and Express, backed by a PostgreSQL database managed via Prisma ORM.
-
-These two systems communicate exclusively over HTTP/REST using JSON payloads. They do not share code, state, or memory. This strict decoupling ensures that the frontend can be swapped or mobile apps can be introduced in the future without modifying the core backend business logic.
+**EdBase** is a multi-tenant, offline-first academic operations and student workspace platform designed for multi-center educational institutions and NGOs.
 
 ---
 
-## 🖥️ Frontend Architecture (React + Vite)
+## High-Level Topology
 
-The frontend is optimized for speed, developer experience, and maintainability.
+The repository is organized as a monorepo with two decoupled TypeScript applications that can run independently in development or as a single unified service in production:
 
-### Key Technologies
-- **Framework:** React 19
-- **Build Tool:** Vite (for rapid HMR and optimized production bundling)
-- **Styling:** Tailwind CSS (utility-first styling for consistent design)
-- **State Management:** Zustand (for global state like Auth and User Profiles)
-- **Data Fetching:** React Query & Axios (for caching, refetching, and handling async UI states)
-- **Routing:** React Router v7
+1. **Frontend (`/frontend`):** React 19 + TypeScript SPA bundled with Vite 8, Tailwind CSS v4, Dexie.js (IndexedDB), and Workbox (`vite-plugin-pwa`).
+2. **Backend (`/backend`):** Node.js 22+ + Express 5 + Socket.IO server backed by PostgreSQL 15+ (Supabase compatible) via Prisma 7 (`@prisma/adapter-pg` + `pg`).
 
-### Architectural Patterns
-- **Feature-Based Routing:** Pages are organized in `/src/pages` by feature (e.g., `Students`, `Exams`, `Forms`).
-- **Reusable UI Components:** Shared components (buttons, modals, inputs) live in `/src/components/ui`.
-- **Services Abstraction:** All API calls are abstracted into `/src/services/` (e.g., `api.ts`, `students.service.ts`). UI components **never** use `axios` directly; they call service methods. This allows the API URL or payload structure to change in one place.
+In production (`NODE_ENV=production`), if `frontend/dist/index.html` exists, Express serves the compiled frontend assets and SPA fallback directly alongside `/api/*`, `/health`, and `/socket.io/*` from a single origin.
+
+### Communication Channels
+
+- **HTTP/REST (`/api/*`):** Primary CRUD, analytics, exports, file uploads, and bidirectional offline sync (`/api/sync/pull`, `/api/sync/push`).
+- **WebSockets (`Socket.IO` on `/socket.io`):** Real-time tenant-isolated chat, typing indicators, online presence, live notification delivery, and WebRTC signaling for staff meeting rooms.
+- **Peer-to-Peer Media (`WebRTC`):** Browser-to-browser audio, video, and screen sharing orchestrated via Socket.IO signaling (`meeting:webrtc-offer`, `meeting:webrtc-answer`, `meeting:webrtc-ice`).
 
 ---
 
-## ⚙️ Backend Architecture (Express + Prisma)
+## Frontend Architecture (`/frontend`)
 
-The backend is structurally hardened to support multi-tenant center logic and strict privacy laws (PII stripping).
+### Core Stack
+- **UI & Routing:** React 19, React Router v7 (`ProtectedRoute`, 4-level `RoleGuard`, `/parent` guardian portal).
+- **State Management:** Zustand (`useAuthStore`, `useSyncStore`, `useChatStore`, `useNotificationStore`, `useToastStore`).
+- **Server & Local State:** TanStack React Query v5 paired with **Dexie.js** IndexedDB databases partitioned per `(tenantId, userId)`.
+- **Offline-First & PWA:** `vite-plugin-pwa` generates a Workbox service worker (`dist/sw.js`) with `NetworkOnly` rules for `/api/`, `/socket.io/`, and `/health`, while `SyncEngine` manages causal outbox ordering, temporary ID remapping, and conflict resolution.
+- **Visualizations, QR & Exports:** Recharts, `qrcode` (printable student ID cards & scanner modal), and SheetJS (`xlsx`) master workbooks.
 
-### Key Technologies
-- **Runtime:** Node.js
-- **Framework:** Express 5
-- **Language:** TypeScript (Strict Mode)
-- **ORM:** Prisma 7
-- **Database:** PostgreSQL 15+
-- **Validation:** Zod (for runtime type checking on HTTP payloads)
-
-### Architectural Pattern: "Fat Service, Thin Controller"
-
-To maintain scalability across the various NGO modules, we enforce a strict separation of concerns:
-
-1.  **Routes (`src/routes/`)**:
-    *   Defines the HTTP endpoint path, applies middleware (Authentication, RBAC), and mounts the Controller.
-2.  **Controllers (`src/controllers/`)**:
-    *   Exclusively responsible for HTTP layer interactions.
-    *   They accept the `req`, extract parameters, invoke the corresponding Service, and return the standard `res.json()` envelope.
-    *   **No business logic** or Prisma calls belong here.
-3.  **Services (`src/services/`)**:
-    *   House all business rules, database transactions, and secondary RBAC checks.
-    *   This makes the logic highly testable and decoupled from Express.
-    *   **All Prisma database calls live here.**
-4.  **Validators (`src/validators/`)**:
-    *   Zod schemas defining the exact shape of expected inputs.
-
-### The Standard Response Envelope
-All successful backend responses strictly adhere to this format to make frontend parsing predictable:
-```json
-{
-  "success": true,
-  "data": { ... }, // The actual payload requested
-  "message": "Optional contextual message"
-}
-```
+### Frontend Layering
+- `src/utils/apiBase.ts`: Resolves `API_BASE_URL`, `/health`, and Socket.IO URL consistently across relative (`/api`) and cross-origin deployments.
+- `src/services/`: Domain API modules using the central Axios instance (`api.ts`), wrapping reads/writes with `withOfflineRead` and `withOfflineMutation`.
+- `src/offline/`: `EdBaseOfflineDb` schema, causal outbox helpers, and `SyncEngine`.
+- `src/pages/` & `src/components/`: Feature views and reusable UI primitives (`src/components/ui/`).
 
 ---
 
-## 🗄️ Database Paradigm
+## Backend Architecture (`/backend`)
 
-We utilize PostgreSQL with Prisma ORM to guarantee data integrity.
+### Core Stack
+- **Runtime & Framework:** Node.js 22+, Express 5, 100% strict TypeScript (`"type": "module"`).
+- **Database Layer:** Prisma 7 (`prisma.config.ts`) using `@prisma/adapter-pg` and `pg.Pool` with SSL auto-detection and PgBouncer resilience.
+- **Validation & Security:** Zod v4 schemas, Helmet (with CSP for Google Fonts, Cloudinary, WebSockets, and Service Workers), `express-rate-limit` (proxy-aware via `trust proxy`), strict origin allowlists (`src/config/cors.ts`), and `bcryptjs` + JWT access/refresh tokens.
+- **Media, AI & Automation:** Multer memory storage streaming directly to Cloudinary (`src/lib/cloudinary.ts`), Universal AI Orchestrator (`src/services/ai/`) using Google Gemini (`@google/genai`) with tool calling, hybrid RAG, dual-layer memory, and `piiGuard.ts`, plus `node-cron` (`src/cron.ts`) for nightly pending-attendance auto-submission and tenant-scoped risk alert evaluation.
 
-- **UUID Primary Keys:** We explicitly avoid integer auto-increment IDs to prevent URL enumeration attacks. Every entity uses `String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid`.
-- **Soft Deletion:** Records are generally not destroyed (`DELETE`). They are deactivated using the `isActive: Boolean` flag. This preserves referential integrity for historical audit logs and reporting.
-- **Strict Relations:** Prisma enforces foreign key constraints. For example, a `StudentSkillLog` cannot exist without a valid `Student` and a valid `SkillDefinition`.
+### Layered Pattern: Routes -> Controllers -> Services
+1. **Routes (`src/routes/`):** Define endpoint paths and compose middleware (`authenticate`/`requireAuth`, `requireCenterAccess()`, `requirePermission()`, `validate(schema)`).
+2. **Controllers (`src/controllers/`):** Parse request parameters, call services, and return JSON responses (or forward errors to `errorHandler`).
+3. **Services (`src/services/`):** Encapsulate business rules, Prisma transactions, center scoping, and domain errors (`src/lib/errors.ts`).
+4. **Validators (`src/validators/`):** Zod schemas for payloads and queries.
 
-> [!TIP]
-> **Maintainer Advice:** If you are asked to "delete" a record by the NGO staff, always look for a way to mark it `isActive: false` first. Only use physical deletion for correcting immediate data entry mistakes.
+---
+
+## Multi-Tenancy & Isolation
+
+Every request runs inside an `AsyncLocalStorage` store (`src/lib/tenantContext.ts`) populated during authentication (`authenticate` / `requireAuth`) and Socket.IO handshake (`authenticateSocket`):
+
+- `src/lib/prisma.ts` wraps `PrismaClient` with `$extends` to inject `tenantId` automatically on queries/creates/upserts for direct-tenant models (`AcademicYear`, `Center`, `Program`, `User`, `FormTemplate`, `Announcement`, `AlertRule`, `AuditLog`, `Conversation`, `Notification`, `SyncOperationLog`) and via `center: { tenantId }` for center-scoped models.
+- Cross-tenant lookups (such as login discovery and slug checks) explicitly opt out via `runWithoutTenantScope`.
+
+---
+
+## Resilience & Offline Sync Architecture
+
+- **Optimistic Locking & Tombstones:** Core synced models carry `version` counters and `deletedAt` timestamps so incremental pulls (`GET /api/sync/pull`) and conflict detection work deterministically.
+- **Hybrid Conflict Resolution (`src/services/syncConflictResolver.ts`):** Uses field-level 3-way merge on students, definitive-wins arbitration on pending attendance, and `LOCKED_VERIFIED` protection for verified exam scores.
+- **Database Outage Detection (`errorHandler.ts` & `/health`):** When PostgreSQL is unreachable, backend returns HTTP `503` with `code: "DB_UNAVAILABLE"`, signaling the frontend to preserve local offline sessions and queue mutations in IndexedDB.

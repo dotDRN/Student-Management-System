@@ -1,10 +1,37 @@
-import { Request, Response, NextFunction } from "express";
+import { CookieOptions, Request, Response, NextFunction } from "express";
 import * as authService from "../services/auth.service.js";
 import { AppError } from "../lib/errors.js";
 import {
   registerInstanceSchema,
   loginSchema,
 } from "../validators/auth.schema.js";
+
+const REFRESH_COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+function getRefreshCookieOptions(): CookieOptions {
+  const isProd = process.env.NODE_ENV === "production";
+  const configuredSameSite = process.env.COOKIE_SAME_SITE?.toLowerCase();
+  let sameSite: "strict" | "lax" | "none" = "lax";
+
+  if (configuredSameSite === "strict" || configuredSameSite === "lax" || configuredSameSite === "none") {
+    sameSite = configuredSameSite;
+  } else if (process.env.COOKIE_CROSS_SITE === "true") {
+    sameSite = "none";
+  }
+
+  return {
+    httpOnly: true,
+    secure: isProd || sameSite === "none",
+    sameSite,
+    path: "/",
+    maxAge: REFRESH_COOKIE_MAX_AGE,
+  };
+}
+
+function getClearRefreshCookieOptions(): CookieOptions {
+  const { httpOnly, secure, sameSite, path } = getRefreshCookieOptions();
+  return { httpOnly, secure, sameSite, path };
+}
 
 /**
  * GET /api/auth/check-slug?slug=...
@@ -56,12 +83,7 @@ export const registerInstance = async (
     const { accessToken, refreshToken, user, organization } =
       await authService.registerInstance(parsed.data);
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("refreshToken", refreshToken, getRefreshCookieOptions());
 
     return res.status(201).json({
       success: true,
@@ -111,12 +133,7 @@ export const register = async (
       password,
     });
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("refreshToken", refreshToken, getRefreshCookieOptions());
 
     return res.status(201).json({
       success: true,
@@ -157,12 +174,7 @@ export const login = async (
 
     const { accessToken, refreshToken, user, organization } = result;
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("refreshToken", refreshToken, getRefreshCookieOptions());
 
     return res.json({
       accessToken,
@@ -186,7 +198,7 @@ export const refresh = async (req: Request, res: Response, next: NextFunction) =
     const result = await authService.refreshAccessToken(token);
     return res.json(result);
   } catch (err) {
-    res.clearCookie("refreshToken");
+    res.clearCookie("refreshToken", getClearRefreshCookieOptions());
     next(err);
   }
 };
@@ -195,7 +207,7 @@ export const refresh = async (req: Request, res: Response, next: NextFunction) =
  * POST /api/auth/logout
  */
 export const logout = (_req: Request, res: Response) => {
-  res.clearCookie("refreshToken");
+  res.clearCookie("refreshToken", getClearRefreshCookieOptions());
 
   return res.json({
     success: true,

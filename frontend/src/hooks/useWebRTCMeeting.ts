@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type SetStateAction } from "react";
 import { socketService } from "../services/socket.service";
 import { useToast } from "./useToast";
 import type {
@@ -68,12 +68,15 @@ export function useWebRTCMeeting() {
     activeRoomRef.current = activeRoom;
   }, [activeRoom]);
 
-  useEffect(() => {
-    isChatOpenRef.current = isChatOpen;
-    if (isChatOpen) {
+  const handleSetIsChatOpen = useCallback((value: SetStateAction<boolean>) => {
+    const next =
+      typeof value === "function" ? value(isChatOpenRef.current) : value;
+    isChatOpenRef.current = next;
+    setIsChatOpen(next);
+    if (next) {
       setUnreadChatCount(0);
     }
-  }, [isChatOpen]);
+  }, []);
 
   useEffect(() => {
     mediaStateRef.current = mediaState;
@@ -156,7 +159,9 @@ export function useWebRTCMeeting() {
     for (const pc of peerConnectionsRef.current.values()) {
       try {
         pc.close();
-      } catch {}
+      } catch {
+        // Ignore already-closed peer connections during cleanup
+      }
     }
     peerConnectionsRef.current.clear();
     pendingCandidatesRef.current.clear();
@@ -432,7 +437,9 @@ export function useWebRTCMeeting() {
       if (pc) {
         try {
           pc.close();
-        } catch {}
+        } catch {
+          // Ignore already-closed peer connections on participant leave
+        }
         peerConnectionsRef.current.delete(data.socketId);
       }
       pendingCandidatesRef.current.delete(data.socketId);
@@ -467,6 +474,7 @@ export function useWebRTCMeeting() {
         cleanupMediaAndPeers();
         setActiveRoom(null);
         setChatMessages([]);
+        isChatOpenRef.current = false;
         setIsChatOpen(false);
         showToast(
           data.reason === "idle_timeout"
@@ -491,6 +499,7 @@ export function useWebRTCMeeting() {
       cleanupMediaAndPeers();
       setActiveRoom(null);
       setChatMessages([]);
+      isChatOpenRef.current = false;
       setIsChatOpen(false);
       showToast(`You were removed from the meeting by ${data.kickedBy}.`, "error");
     };
@@ -683,6 +692,7 @@ export function useWebRTCMeeting() {
     cleanupMediaAndPeers();
     setActiveRoom(null);
     setChatMessages([]);
+    isChatOpenRef.current = false;
     setIsChatOpen(false);
   }, [cleanupMediaAndPeers]);
 
@@ -890,7 +900,7 @@ export function useWebRTCMeeting() {
     chatMessages,
     unreadChatCount,
     isChatOpen,
-    setIsChatOpen,
+    setIsChatOpen: handleSetIsChatOpen,
     localStream,
     remoteStreams,
     reactions,

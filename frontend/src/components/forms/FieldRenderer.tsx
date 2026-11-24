@@ -1,7 +1,7 @@
 import React from 'react';
 import type { FieldErrors, UseFormRegister } from 'react-hook-form';
 import { Input } from '../ui/Input';
-import { cn } from '../ui/Button';
+import { cn } from '../../utils/cn';
 import type { DynamicFormValues, FormFieldDefinition } from '../../types/forms';
 
 type Props = {

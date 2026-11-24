@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { Table } from "dexie";
 import api from "../services/api";
 import { socketService } from "../services/socket.service";
+import { resolveHealthUrl } from "../utils/apiBase";
 import { useAuthStore } from "../store/useAuthStore";
 import { useSyncStore } from "../store/useSyncStore";
 import {
@@ -260,10 +261,7 @@ class SyncEngine {
       return false;
     }
     try {
-      const baseURL = import.meta.env.VITE_API_URL || "/api";
-      const healthUrl = baseURL.endsWith("/api")
-        ? `${baseURL.slice(0, -4)}/health`
-        : "/health";
+      const healthUrl = resolveHealthUrl();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
       const res = await fetch(healthUrl, {

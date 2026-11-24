@@ -1,120 +1,139 @@
-# 🚀 SPARSHA OMS - Deployment & Infrastructure
+# EdBase — Deployment & Infrastructure
 
-The SPARSHA OMS is fully containerized using Docker, allowing it to be deployed consistently on any Linux, macOS, or Windows host that supports Docker Compose.
-
----
-
-## 🐋 Docker Architecture
-
-We utilize a multi-stage `Dockerfile` and a `docker-compose.yml` file to manage the stack.
-
-The stack consists of three services:
-1. **`db`**: A PostgreSQL 15 container holding the persistent data.
-2. **`backend`**: The Node.js Express API.
-3. **`frontend`**: The statically built React frontend served via a lightweight Node `serve` process.
-
-Both `backend` and `frontend` services are built from the same multi-stage Dockerfile (`sparsha-app:latest`) but run different start commands based on the `docker-compose.yml`.
-
-### The `Dockerfile` Build Process
-The multi-stage build works as follows:
-- **`backend-builder`**: Installs dependencies and runs `npx prisma generate` and `tsc` to compile TypeScript to JavaScript in `/dist`.
-- **`frontend-builder`**: Installs legacy-peer dependencies and runs `vite build` to generate static assets in `/dist`. *Note: The API URL is injected at this stage via the `VITE_API_URL` build argument.*
-- **`production`**: Copies the built `/dist` folders from both builders. It installs `serve` globally.
+This guide covers deploying **EdBase** (`v1.4.0`) to **Render + Supabase** for production, running via **Docker Compose**, and setting up **local development**.
 
 ---
 
-## ⚙️ Environment Variables
+## 1. Production Deployment: Render + Supabase
 
-Before starting the application, ensure you have your `.env` files correctly set up. 
+EdBase is designed to deploy cleanly as a **single Render Web Service** (Express 5 API + Socket.IO + static `frontend/dist` SPA) backed by a **Supabase PostgreSQL** database.
 
-### Backend (`backend/.env`)
-Create this file based on `backend/.env.example`.
-```env
-NODE_ENV=production
-PORT=5000
-DATABASE_URL=postgresql://sparsha:sparsha@db:5432/sparsha
-JWT_ACCESS_SECRET=your_super_secret_access_key
-JWT_REFRESH_SECRET=your_super_secret_refresh_key
-CLIENT_URL=http://localhost:5173
-```
-*Note:* The `DATABASE_URL` in production points to the `db` service defined in `docker-compose.yml`.
+### Step A: Prepare Supabase PostgreSQL
 
-### Frontend (`frontend/.env`)
-Create this file based on `frontend/.env.example`.
-```env
-VITE_API_URL=http://localhost:5000/api
-```
-*Note:* In Docker, the `VITE_API_URL` is typically passed via `docker-compose.yml` `args`, but having the `.env` file is good practice for local development.
+1. Create a new project in [Supabase](https://supabase.com/).
+2. Open **Project Settings -> Database** (or the **Connect** button) and copy **both** connection strings:
+   - **Transaction Pooler (Port `6543`) -> `DATABASE_URL`:**
+     Used at runtime by `pg.Pool` + `@prisma/adapter-pg`. Append `?pgbouncer=true&sslmode=require` (replace `[YOUR-PASSWORD]` with your database password).
+     ```text
+     postgresql://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?pgbouncer=true&sslmode=require
+     ```
+   - **Session Pooler or Direct Connection (Port `5432`) -> `DIRECT_URL`:**
+     Used by `backend/prisma.config.ts` during `prisma migrate deploy` (Prisma migrations require a direct/session connection rather than PgBouncer transaction mode).
+     ```text
+     postgresql://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres?sslmode=require
+     ```
+   *(Note: If your Render region/network uses IPv4 only and Supabase Direct `db.<ref>.supabase.co` resolves to IPv6, use Supabase's **Session Pooler** URI on port `5432` for `DIRECT_URL`.)*
+
+### Step B: Prepare Cloudinary (Recommended for Uploads)
+
+Chat file/image attachments (`POST /api/chat/attachments`) and Student Document Vault uploads (`POST /api/students/:id/documents`) stream directly from memory to **Cloudinary** (Render's local filesystem is ephemeral):
+
+1. Create a free Cloudinary account and copy **Cloud Name**, **API Key**, and **API Secret**.
+2. Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` (or `CLOUDINARY_URL`).
+
+### Step C: Deploy to Render (Blueprint or Manual)
+
+#### Option 1: Render Blueprint (`render.yaml`)
+The repository includes a ready-to-use [`render.yaml`](../render.yaml):
+
+1. Push your branch (`main` after merging `dev`) to GitHub.
+2. In Render, choose **New -> Blueprint**, connect the repository, and let Render read `render.yaml`.
+3. Fill in the prompted `sync: false` secrets (`DATABASE_URL`, `DIRECT_URL`, `CLIENT_URL`, `CLOUDINARY_*`, and optionally `KOBO_API_TOKEN`).
+
+#### Option 2: Manual Render Web Service
+Create a **Web Service** on Render with:
+- **Runtime:** `Node` (Node 22+)
+- **Root Directory:** *(leave blank / repo root)*
+- **Build Command:** `npm run build`
+- **Start Command:** `npm run db:deploy && npm start`
+- **Health Check Path:** `/health`
+
+*(Tip: On paid Render plans, you can move `npm run db:deploy` into Render's **Pre-Deploy Command** and keep **Start Command** as `npm start`. On the Render Free plan, `preDeployCommand` is not supported, so chaining `npm run db:deploy && npm start` applies migrations automatically on boot.)*
+
+### Step D: Production Environment Variables (Render)
+
+| Variable | Required | Value / Notes |
+| :--- | :--- | :--- |
+| `NODE_ENV` | Yes | `production` |
+| `DATABASE_URL` | Yes | Supabase Pooler URI (`:6543`) with `?pgbouncer=true&sslmode=require` |
+| `DIRECT_URL` | Yes | Supabase Direct or Session Pooler URI (`:5432`) for migrations |
+| `JWT_ACCESS_SECRET` | Yes | 64-byte random hex string |
+| `JWT_REFRESH_SECRET` | Yes | Different 64-byte random hex string |
+| `CLIENT_URL` | Yes | Your live Render URL, e.g. `https://edbase.onrender.com` (no trailing slash) |
+| `APP_TIMEZONE` | Recommended | e.g. `Asia/Kolkata` (controls UTC date-only boundaries & nightly cron time) |
+| `CLOUDINARY_CLOUD_NAME` | Media | Cloudinary cloud name |
+| `CLOUDINARY_API_KEY` | Media | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | Media | Cloudinary API secret |
+| `COOKIE_SAME_SITE` | Optional | Defaults to `lax` (ideal for single Render service). Set `none` if frontend is hosted on a separate domain |
+| `DB_POOL_MAX` | Optional | Max `pg.Pool` connections per instance (default `10`) |
+| `KOBO_API_URL`, `KOBO_API_TOKEN` | Optional | KoboToolbox API endpoint and token |
+| `GEMINI_API_KEY` | Optional (AI) | Google Gemini API key for `/api/ai/*` Universal AI Orchestrator |
+| `GEMINI_MODEL` | Optional | Gemini chat model (default `gemini-2.5-flash`) |
+| `GEMINI_EMBEDDING_MODEL` | Optional | Gemini embedding model for hybrid RAG (default `text-embedding-004`) |
+
+### Step E: First-Time Admin Provisioning
+
+Once live on Render:
+- **Recommended for production:** Open the login page and use **Create New Workspace / Register Instance** (`POST /api/auth/register-instance`) to provision your organization, default center, current academic year, and `super_admin` user cleanly without demo clutter.
+- **Demo seeding (optional/testing only):**
+  > **Warning:** `prisma db seed` wipes all existing tables before inserting demo records. Never run it on a database containing live data.
+
+### Render Operational Notes
+
+- **Trust Proxy & Rate Limiting:** `backend/src/app.ts` enables `app.set("trust proxy", 1)` so `express-rate-limit` tracks real client IPs behind Render's TLS proxy.
+- **Socket.IO & WebRTC:** Render supports WebSockets natively on Web Services. In `frontend/.env.production`, `VITE_API_URL=/api`, and `socket.service.ts` automatically connects to `window.location.origin` over `wss://`.
+- **Render Free Tier Spin-Down & Cron:** Free Render services sleep after 15 minutes of inactivity, which pauses the in-process `node-cron` scheduler (`23:59` nightly attendance auto-submit & risk alerts). Upgrade to an always-on instance or trigger evaluation via an external scheduler if guaranteed nightly cron execution is required.
 
 ---
 
-## 🏃‍♂️ Booting the Application (Production)
+## 2. Docker Compose Deployment
 
-To start the full stack, run the following command from the repository root:
+A multi-stage `Dockerfile` (Node 22 + OpenSSL + Prisma 7 `prisma.config.ts`) and `docker-compose.yml` are provided for containerized hosting:
 
 ```bash
 docker compose build --no-cache
 docker compose up -d
 ```
 
-### What happens on boot?
-1. The `db` container starts.
-2. The `backend` container waits for the `db` to be healthy.
-3. Once healthy, the backend runs its startup command:
-   ```bash
-   sh -c "cd backend && npx prisma migrate deploy && node dist/server.js"
-   ```
-   **This ensures that the database schema is automatically created or updated to the latest version before the server accepts traffic.**
-4. The `frontend` container starts serving the compiled assets on port `5173`.
+The `app` container serves both the Express API and static `frontend/dist` on port `5000`, waits for Postgres (`db`) health, runs `npx prisma migrate deploy`, and starts `node dist/server.js`.
 
-### Verifying Logs
-To ensure everything started smoothly, inspect the logs:
+Check health and logs:
 ```bash
-docker compose logs -f backend
+docker compose logs -f app
+curl http://localhost:5000/health
+```
+
+Optional dev/demo database seed inside container (empty DB only):
+```bash
+docker compose exec app sh -c "cd backend && npx prisma db seed"
 ```
 
 ---
 
-## 💾 Database Setup & Seeding
+## 3. Local Development (Without Docker)
 
-When deploying for the very first time on a fresh server, the database will be empty (though the tables will exist thanks to `migrate deploy`). 
-
-You must seed the database with the initial `super_admin` account to be able to log in.
-
-**To seed the database inside the running Docker container:**
-```bash
-docker compose exec backend npx prisma db seed
-```
-This will run the script located at `backend/prisma/seed.ts`. 
-
-> [!IMPORTANT]
-> The seed script will generate a root user with the credentials:
-> **Email:** `admin@sparsha.org`
-> **Password:** `Admin@123`
-> You should immediately log in and change this password in a production environment.
-
----
-
-## 🛠️ Local Development (Without Docker)
-
-If you are writing code and want to run the stack locally for development with Hot Module Replacement (HMR):
-
-1. **Install everything:**
+1. **Install dependencies:**
    ```bash
    npm run install:all
    ```
-2. **Start a local Postgres database** (e.g., using Postgres.app on Mac or a local Docker Postgres container mapping to port 5432).
-3. **Update your `backend/.env`** to point `DATABASE_URL` to your `localhost` postgres instance.
-4. **Run migrations and seed:**
+2. **Configure environment:**
+   Copy `backend/.env.example` to `backend/.env` and set `DATABASE_URL`, `DIRECT_URL` (can match `DATABASE_URL` locally), `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `CLIENT_URL=http://localhost:5173`.
+   *(Leave `frontend/.env` unset or `VITE_API_URL=/api` so Vite proxies `/api`, `/health`, and `/socket.io` to `http://localhost:5000` without CORS issues.)*
+3. **Migrate & optionally seed:**
    ```bash
    cd backend
    npx prisma generate
    npx prisma migrate dev
-   npx prisma db seed
+   npx prisma db seed   # Optional dev demo data only
    cd ..
    ```
-5. **Start both servers concurrently:**
+   Demo seeded credentials (workspace slug `default`):
+   - `super_admin@edbase.org` / `SuperAdmin@123`
+   - `tech_admin@edbase.org` / `SuperAdmin@123`
+   - `center_admin_1@edbase.org`, `teacher_1@edbase.org`, `staff_1@edbase.org` / `Staff@123`
+4. **Run dev servers concurrently:**
    ```bash
    npm run dev
    ```
-   *Frontend will run on `http://localhost:5173` and backend on `http://localhost:5000`.*
+   - Frontend: `http://localhost:5173`
+   - Backend: `http://localhost:5000`

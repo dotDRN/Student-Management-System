@@ -3,16 +3,16 @@ import { Send, Paperclip, Smile, Loader2 } from 'lucide-react';
 import { useChatStore } from '../../../store/useChatStore';
 import { socketService } from '../../../services/socket.service';
 import { chatService } from '../../../services/chat.service';
-import type { MessageType, SendMessageDto, UploadedAttachmentDto } from '../../../types/chat';
+import type { Message, MessageType, SendMessageDto, UploadedAttachmentDto } from '../../../types/chat';
 import { ReplyPreview } from './ReplyPreview';
 import { AttachmentPreview } from './AttachmentPreview';
 import type { PendingAttachment } from './AttachmentPreview';
-import { cn } from '../../ui/Button';
+import { cn } from '../../../utils/cn';
 
 interface ComposerProps {
   conversationId: string;
-  onOptimisticSend?: (tempId: string, content: string, attachments: any[], type?: MessageType) => void;
-  onOptimisticSuccess?: (tempId: string, realMessage: any) => void;
+  onOptimisticSend?: (tempId: string, content: string, attachments: PendingAttachment[], type?: MessageType) => void;
+  onOptimisticSuccess?: (tempId: string, realMessage: Message) => void;
   onOptimisticError?: (tempId: string) => void;
   onEditSuccess?: (messageId: string, newContent: string) => void;
 }
