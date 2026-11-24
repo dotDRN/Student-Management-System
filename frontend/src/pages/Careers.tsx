@@ -4,12 +4,16 @@ import { Card } from '../components/ui/Card';
 import { LoadingSpinner } from '../components/ui/LoadingSpinner';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { EmptyState } from '../components/ui/EmptyState';
+import { getApiErrorMessage } from '../services/api';
+import { ConfirmModal } from '../components/ui/ConfirmModal';
+import type { CareerRecord } from '../types';
 import { getStudents } from '../services/students.service';
 import { getCareersByStudent, addCareer, updateCareer, deleteCareer } from '../services/career.service';
 import type { Student } from '../types';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
+import { CareerAiGuidancePanel } from '../components/ai/CareerAiGuidancePanel';
 import { Plus } from 'lucide-react';
 
 export const Careers: React.FC = () => {
@@ -22,6 +26,7 @@ export const Careers: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     id: '',
     careerGoal: '',
@@ -95,13 +100,13 @@ export const Careers: React.FC = () => {
       const data = await getCareersByStudent(selectedId);
       setCareers(data);
     } catch (err) {
-      setError('Failed to save career record. Check API payload constraints.');
+      setError(getApiErrorMessage(err, 'Failed to save career record.'));
     } finally {
       setSaveLoading(false);
     }
   };
 
-  const handleEdit = (career: any) => {
+  const handleEdit = (career: CareerRecord) => {
     setFormData({
       id: career.id,
       careerGoal: career.careerGoal || career.stage || career.title || '',
@@ -113,16 +118,40 @@ export const Careers: React.FC = () => {
   };
 
   const handleDelete = async (careerId: string) => {
-    if (!window.confirm('Are you sure you want to delete this career record?')) return;
+    setDeleteTargetId(careerId);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTargetId) return;
     setDetailLoading(true);
     try {
-      await deleteCareer(careerId);
+      await deleteCareer(deleteTargetId);
+      setDeleteTargetId(null);
       const data = await getCareersByStudent(selectedId);
       setCareers(data);
     } catch (err) {
-      setError('Failed to delete career record.');
+      setError(getApiErrorMessage(err, 'Failed to delete career record.'));
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const selectedStudent = students.find((s) => s.id === selectedId);
+
+  const handleApplyAiPathway = async (pathway: {
+    careerGoal: string;
+    industry: string;
+    notes: string;
+    milestones: string[];
+  }) => {
+    if (!selectedId) return;
+    setError(null);
+    try {
+      await addCareer(selectedId, pathway);
+      const data = await getCareersByStudent(selectedId);
+      setCareers(data);
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to apply AI career pathway.'));
     }
   };
 
@@ -177,7 +206,7 @@ export const Careers: React.FC = () => {
                 <LoadingSpinner label="Loading careers…" />
               ) : Array.isArray(careers) && careers.length > 0 ? (
                 <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                  {careers.map((career: any, i: number) => (
+                  {careers.map((career, i: number) => (
                     <div key={i} className="p-4 bg-white border border-neutral-200 rounded-xl shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
                       <div className="absolute top-0 left-0 w-1 h-full bg-primary/80 rounded-l-xl group-hover:bg-primary transition-colors"></div>
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
@@ -216,6 +245,23 @@ export const Careers: React.FC = () => {
           </div>
         )}
       </Card>
+
+      {selectedId && selectedStudent && (
+        <CareerAiGuidancePanel
+          studentId={selectedId}
+          studentName={selectedStudent.fullName}
+          onApplyPathway={handleApplyAiPathway}
+        />
+      )}
+
+      <ConfirmModal
+        open={Boolean(deleteTargetId)}
+        title="Delete career record?"
+        message="This will permanently remove the selected career record."
+        confirmLabel="Delete"
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setDeleteTargetId(null)}
+      />
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={formData.id ? "Edit Career Record" : "Add Career Record"}>
         <form onSubmit={handleSaveCareer} className="space-y-4">

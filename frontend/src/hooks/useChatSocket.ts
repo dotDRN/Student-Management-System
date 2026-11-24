@@ -1,11 +1,11 @@
 import { useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { socketService } from "../services/socket.service";
 import { chatService } from "../services/chat.service";
 import { useChatStore } from "../store/useChatStore";
 import { useAuthStore } from "../store/useAuthStore";
-import type { Message, Conversation } from "../types/chat";
+import type { Message, Conversation, Reaction } from "../types/chat";
 import type {
   Notification,
   NotificationListResponse,
@@ -70,9 +70,9 @@ export const useChatSocket = () => {
       };
 
       // 1. Update messages infinite query cache
-      queryClient.setQueryData(
+      queryClient.setQueryData<InfiniteData<Message[]>>(
         ["messages", message.conversationId],
-        (old: any) => {
+        (old) => {
           if (!old?.pages) return old;
 
           const newPages = [...old.pages];
@@ -80,7 +80,7 @@ export const useChatSocket = () => {
           if (newPages.length > 0) {
             const exists = newPages.some((page) =>
               page.find(
-                (m: Message) =>
+                (m) =>
                   m.id === message.id || m.clientMsgId === message.id,
               ),
             );
@@ -134,14 +134,14 @@ export const useChatSocket = () => {
       content: string;
       updatedAt: string;
     }) => {
-      queryClient.setQueryData(
+      queryClient.setQueryData<InfiniteData<Message[]>>(
         ["messages", data.conversationId],
-        (old: any) => {
+        (old) => {
           if (!old?.pages) return old;
 
           return {
             ...old,
-            pages: old.pages.map((page: Message[]) =>
+            pages: old.pages.map((page) =>
               page.map((m) =>
                 m.id === data.id
                   ? {
@@ -183,14 +183,14 @@ export const useChatSocket = () => {
       id: string;
       conversationId: string;
     }) => {
-      queryClient.setQueryData(
+      queryClient.setQueryData<InfiniteData<Message[]>>(
         ["messages", data.conversationId],
-        (old: any) => {
+        (old) => {
           if (!old?.pages) return old;
 
           return {
             ...old,
-            pages: old.pages.map((page: Message[]) =>
+            pages: old.pages.map((page) =>
               page.map((m) =>
                 m.id === data.id
                   ? {
@@ -229,16 +229,16 @@ export const useChatSocket = () => {
     const handleReactionUpdated = (data: {
       messageId: string;
       conversationId: string;
-      reactions: any[];
+      reactions: Reaction[];
     }) => {
-      queryClient.setQueryData(
+      queryClient.setQueryData<InfiniteData<Message[]>>(
         ["messages", data.conversationId],
-        (old: any) => {
+        (old) => {
           if (!old?.pages) return old;
 
           return {
             ...old,
-            pages: old.pages.map((page: Message[]) =>
+            pages: old.pages.map((page) =>
               page.map((m) =>
                 m.id === data.messageId
                   ? { ...m, reactions: data.reactions }
@@ -317,19 +317,22 @@ export const useChatSocket = () => {
             : old,
       );
 
-      queryClient.setQueryData(["notifications", "infinite"], (old: any) => {
-        if (!old || !old.pages || old.pages.length === 0) return old;
-        const newPages = [...old.pages];
-        newPages[0] = {
-          ...newPages[0],
-          notifications: [notification, ...newPages[0].notifications],
-          pagination: {
-            ...newPages[0].pagination,
-            total: newPages[0].pagination.total + 1,
-          },
-        };
-        return { ...old, pages: newPages };
-      });
+      queryClient.setQueryData<InfiniteData<NotificationListResponse>>(
+        ["notifications", "infinite"],
+        (old) => {
+          if (!old || !old.pages || old.pages.length === 0) return old;
+          const newPages = [...old.pages];
+          newPages[0] = {
+            ...newPages[0],
+            notifications: [notification, ...newPages[0].notifications],
+            pagination: {
+              ...newPages[0].pagination,
+              total: newPages[0].pagination.total + 1,
+            },
+          };
+          return { ...old, pages: newPages };
+        },
+      );
 
       queryClient.setQueryData<UnreadCountResponse>(
         ["notifications", "unreadCount"],
@@ -359,20 +362,23 @@ export const useChatSocket = () => {
             : old,
       );
 
-      queryClient.setQueryData(["notifications", "infinite"], (old: any) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            notifications: page.notifications.map((item: Notification) =>
-              item.notificationRecipientId === data.notificationRecipientId
-                ? { ...item, isRead: true, readAt: new Date().toISOString() }
-                : item,
-            ),
-          })),
-        };
-      });
+      queryClient.setQueryData<InfiniteData<NotificationListResponse>>(
+        ["notifications", "infinite"],
+        (old) => {
+          if (!old?.pages) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              notifications: page.notifications.map((item) =>
+                item.notificationRecipientId === data.notificationRecipientId
+                  ? { ...item, isRead: true, readAt: new Date().toISOString() }
+                  : item,
+              ),
+            })),
+          };
+        },
+      );
 
       queryClient.invalidateQueries({ queryKey: ["notifications", "unreadCount"] });
     };
@@ -398,19 +404,22 @@ export const useChatSocket = () => {
             : old,
       );
 
-      queryClient.setQueryData(["notifications", "infinite"], (old: any) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            notifications: page.notifications.map((item: Notification) => ({
-              ...item,
-              isRead: true,
+      queryClient.setQueryData<InfiniteData<NotificationListResponse>>(
+        ["notifications", "infinite"],
+        (old) => {
+          if (!old?.pages) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              notifications: page.notifications.map((item) => ({
+                ...item,
+                isRead: true,
+              })),
             })),
-          })),
-        };
-      });
+          };
+        },
+      );
 
       queryClient.setQueryData<UnreadCountResponse>(
         ["notifications", "unreadCount"],
@@ -448,20 +457,23 @@ export const useChatSocket = () => {
             : old,
       );
 
-      queryClient.setQueryData(["notifications", "infinite"], (old: any) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            notifications: page.notifications.map((item: Notification) =>
-              idSet.has(item.notificationRecipientId)
-                ? { ...item, isRead: true, readAt: new Date().toISOString() }
-                : item,
-            ),
-          })),
-        };
-      });
+      queryClient.setQueryData<InfiniteData<NotificationListResponse>>(
+        ["notifications", "infinite"],
+        (old) => {
+          if (!old?.pages) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              notifications: page.notifications.map((item) =>
+                idSet.has(item.notificationRecipientId)
+                  ? { ...item, isRead: true, readAt: new Date().toISOString() }
+                  : item,
+              ),
+            })),
+          };
+        },
+      );
 
       queryClient.setQueryData<UnreadCountResponse>(
         ["notifications", "unreadCount"],
@@ -498,19 +510,22 @@ export const useChatSocket = () => {
             : old,
       );
 
-      queryClient.setQueryData(["notifications", "infinite"], (old: any) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            notifications: page.notifications.filter(
-              (n: Notification) =>
-                n.notificationRecipientId !== data.notificationRecipientId,
-            ),
-          })),
-        };
-      });
+      queryClient.setQueryData<InfiniteData<NotificationListResponse>>(
+        ["notifications", "infinite"],
+        (old) => {
+          if (!old?.pages) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              notifications: page.notifications.filter(
+                (n) =>
+                  n.notificationRecipientId !== data.notificationRecipientId,
+              ),
+            })),
+          };
+        },
+      );
 
       queryClient.setQueryData<UnreadCountResponse>(
         ["notifications", "unreadCount"],

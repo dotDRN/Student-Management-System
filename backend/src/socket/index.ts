@@ -5,6 +5,7 @@ import { authenticateSocket } from "./auth.js";
 import { SocketRoomManager } from "./socketRooms.js";
 import { activeConversationTracker } from "./activeConversationTracker.js";
 import { DEFAULT_TENANT_ID } from "../lib/tenantContext.js";
+import { isOriginAllowed } from "../config/cors.js";
 import {
   meetingRoomManager,
   type MeetingCategory,
@@ -15,17 +16,10 @@ import {
 let io: Server;
 
 export function initializeSocket(server: HttpServer): Server {
-  const allowedOrigin = process.env.FRONTEND_URL || process.env.CLIENT_URL;
-
   io = new Server(server, {
     cors: {
       origin: (origin, callback) => {
-        if (
-          !origin ||
-          process.env.NODE_ENV === "production" ||
-          origin.startsWith("http://localhost:") ||
-          (allowedOrigin && origin === allowedOrigin)
-        ) {
+        if (isOriginAllowed(origin)) {
           callback(null, true);
         } else {
           callback(new Error("Not allowed by Socket.IO CORS"));
@@ -137,7 +131,7 @@ export function initializeSocket(server: HttpServer): Server {
     });
 
     // =========================================================================
-    // EDUSPACE STAFF HUDDLES & MEETING ROOMS (Voice / Video / Screen / Chat)
+    // EDBASE STAFF HUDDLES & MEETING ROOMS (Voice / Video / Screen / Chat)
     // =========================================================================
     const socketUser: SocketUserContext = {
       id: userId,

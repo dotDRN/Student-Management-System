@@ -4,7 +4,20 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const connectionString = process.env.DATABASE_URL || "";
+const isLocalDb =
+  connectionString.includes("localhost") ||
+  connectionString.includes("127.0.0.1") ||
+  connectionString.includes("@db:") ||
+  connectionString.includes("sslmode=disable");
+
+const pool = new Pool({
+  connectionString,
+  ssl:
+    !isLocalDb && connectionString.length > 0
+      ? { rejectUnauthorized: false }
+      : undefined,
+});
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -16,6 +29,7 @@ async function main() {
 
   // Tier 1: Leaf nodes (No dependencies)
 
+  await prisma.syncOperationLog.deleteMany();
   await prisma.notificationRecipient.deleteMany();
   await prisma.notification.deleteMany();
   await prisma.pushSubscription.deleteMany();
@@ -65,12 +79,12 @@ async function main() {
   const defaultOrg = await prisma.organization.upsert({
     where: { slug: "default" },
     update: {
-      name: "EduSpace Default Workspace",
+      name: "EdBase Default Workspace",
       isActive: true,
     },
     create: {
       id: "00000000-0000-0000-0000-000000000001",
-      name: "EduSpace Default Workspace",
+      name: "EdBase Default Workspace",
       slug: "default",
       plan: "starter",
       isActive: true,
@@ -152,7 +166,7 @@ async function main() {
   const superAdmin = await prisma.user.create({
     data: {
       tenantId: defaultOrg.id,
-      email: "super_admin@sparsha.org",
+      email: "super_admin@edbase.org",
       fullName: "System Super Admin",
       passwordHash: superPassword,
       role: "super_admin",
@@ -163,7 +177,7 @@ async function main() {
   const techAdmin = await prisma.user.create({
     data: {
       tenantId: defaultOrg.id,
-      email: "tech_admin@sparsha.org",
+      email: "tech_admin@edbase.org",
       fullName: "Technical Support Admin",
       passwordHash: superPassword,
       role: "tech_admin",
@@ -177,7 +191,8 @@ async function main() {
   for (let i = 0; i < centers.length; i++) {
     const ca = await prisma.user.create({
       data: {
-        email: `center_admin_${i + 1}@sparsha.org`,
+        tenantId: defaultOrg.id,
+        email: `center_admin_${i + 1}@edbase.org`,
         fullName: `Admin - ${centers[i].name}`,
         passwordHash: staffPassword,
         role: "center_admin",
@@ -198,7 +213,8 @@ async function main() {
     for (let j = 0; j < 2; j++) {
       const t = await prisma.user.create({
         data: {
-          email: `teacher_${i * 2 + j + 1}@sparsha.org`,
+          tenantId: defaultOrg.id,
+          email: `teacher_${i * 2 + j + 1}@edbase.org`,
           fullName: `Teacher ${j + 1} - ${centers[i].name}`,
           passwordHash: staffPassword,
           role: "teacher",
@@ -220,7 +236,8 @@ async function main() {
     // Add a staff member for each center
     const st = await prisma.user.create({
       data: {
-        email: `staff_${i + 1}@sparsha.org`,
+        tenantId: defaultOrg.id,
+        email: `staff_${i + 1}@edbase.org`,
         fullName: `Staff - ${centers[i].name}`,
         passwordHash: staffPassword,
         role: "staff",
@@ -237,38 +254,6 @@ async function main() {
       },
     });
   }
-
-  // 🔥 ADDING VANSH'S TEST USERS
-  console.log("💎 Adding Vansh's Test Users...");
-  const vanshAdmin = await prisma.user.create({
-    data: {
-      email: "center_admin_1",
-      fullName: "Vansh - Center Head",
-      passwordHash: superPassword,
-      role: "center_admin",
-      createdBy: superAdmin.id,
-      isActive: true,
-    },
-  });
-  await prisma.userCenterAssignment.create({
-    data: {
-      userId: vanshAdmin.id,
-      centerId: centers[0].id,
-      createdBy: superAdmin.id,
-      validFrom: new Date(),
-    },
-  });
-
-  await prisma.user.create({
-    data: {
-      email: "teacher_1",
-      fullName: "Teacher One (Vansh)",
-      passwordHash: staffPassword,
-      role: "teacher",
-      createdBy: vanshAdmin.id,
-      isActive: true,
-    },
-  });
 
   // 5. Students
   console.log("🧑‍🎓 Seeding 100 Students...");
@@ -393,7 +378,6 @@ async function main() {
 
   // 9. Equipment
   console.log("💻 Seeding Equipment...");
-  const categories = ["Electronics", "Furniture", "Stationery"];
   const equipNames = [
     { name: "Dell Optiplex", cat: "Electronics" },
     { name: "Lenovo Thinkpad", cat: "Electronics" },

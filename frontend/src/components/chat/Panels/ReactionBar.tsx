@@ -1,10 +1,10 @@
 import React from 'react';
-import type { Reaction, Message } from '../../../types/chat';
+import type { Reaction, ReactionType, Message } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useChatStore } from '../../../store/useChatStore';
 import { chatService } from '../../../services/chat.service';
-import { cn } from '../../ui/Button'; 
-import { useQueryClient } from '@tanstack/react-query';
+import { cn } from '../../../utils/cn';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 
 interface ReactionBarProps {
   messageId: string;
@@ -40,38 +40,44 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({ messageId, reactions }
     return acc;
   }, {} as Record<string, { count: number; hasReacted: boolean; userReactionId: string | null }>);
 
-  const handleToggle = async (reactionType: string, hasReacted: boolean) => {
+  const handleToggle = async (reactionType: ReactionType, hasReacted: boolean) => {
     if (!activeConversationId || !currentUserId) return;
 
-    const previousMessages = queryClient.getQueryData(['messages', activeConversationId]);
+    const previousMessages = queryClient.getQueryData<InfiniteData<Message[]>>([
+      'messages',
+      activeConversationId,
+    ]);
 
     // Optimistic Update
-    queryClient.setQueryData(['messages', activeConversationId], (old: any) => {
-      if (!old?.pages) return old;
-      return {
-        ...old,
-        pages: old.pages.map((page: Message[]) =>
-          page.map((m) => {
-            if (m.id === messageId) {
-              const newReactions = hasReacted
-                ? m.reactions.filter((r) => !(r.userId === currentUserId && r.reaction === reactionType))
-                : [
-                    ...m.reactions,
-                    {
-                      id: `temp-${Date.now()}`,
-                      messageId,
-                      userId: currentUserId,
-                      reaction: reactionType as any,
-                      createdAt: new Date().toISOString(),
-                    },
-                  ];
-              return { ...m, reactions: newReactions };
-            }
-            return m;
-          })
-        ),
-      };
-    });
+    queryClient.setQueryData<InfiniteData<Message[]>>(
+      ['messages', activeConversationId],
+      (old) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page) =>
+            page.map((m) => {
+              if (m.id === messageId) {
+                const newReactions = hasReacted
+                  ? m.reactions.filter((r) => !(r.userId === currentUserId && r.reaction === reactionType))
+                  : [
+                      ...m.reactions,
+                      {
+                        id: `temp-${Date.now()}`,
+                        messageId,
+                        userId: currentUserId,
+                        reaction: reactionType,
+                        createdAt: new Date().toISOString(),
+                      },
+                    ];
+                return { ...m, reactions: newReactions };
+              }
+              return m;
+            })
+          ),
+        };
+      },
+    );
 
     try {
       if (hasReacted) {
@@ -95,7 +101,7 @@ export const ReactionBar: React.FC<ReactionBarProps> = ({ messageId, reactions }
         return (
           <button
             key={reactionName}
-            onClick={() => handleToggle(reactionName, data.hasReacted)}
+            onClick={() => handleToggle(reactionName as ReactionType, data.hasReacted)}
             className={cn(
               "flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium border transition-colors",
               data.hasReacted 

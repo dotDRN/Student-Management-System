@@ -1,7 +1,10 @@
 import React from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
-import { Menu, LogOut, Building2, ShieldCheck } from 'lucide-react';
+import { useSyncStore } from '../../store/useSyncStore';
+import { useAiCopilotStore } from '../../store/useAiCopilotStore';
+import { Menu, LogOut, Building2, ShieldCheck, Sparkles } from 'lucide-react';
 import { NotificationBell } from '../NotificationBell';
+import { SyncStatusBadge } from '../sync/SyncStatusBadge';
 
 interface TopBarProps {
   onMenuClick: () => void;
@@ -15,13 +18,18 @@ function formatWorkspaceName(rawName?: string | null): string {
     rawName === 'SPARSHA Workspace' ||
     rawName === 'VantageEd Workspace'
   ) {
-    return 'EduSpace Workspace';
+    return 'EdBase Workspace';
   }
   return rawName;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
   const { currentUser, currentTenant, logout } = useAuthStore();
+  const { pendingCount, conflictCount } = useSyncStore();
+  const toggleAiDrawer = useAiCopilotStore((state) => state.toggleDrawer);
+  const canUseAiCopilot = Boolean(
+    currentUser?.role && !['parent', 'student'].includes(currentUser.role),
+  );
 
   const instanceName = formatWorkspaceName(
     currentTenant?.name || currentUser?.tenantName,
@@ -39,6 +47,13 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
     .toUpperCase();
 
   const handleLogout = async () => {
+    const unsynced = pendingCount + conflictCount;
+    if (unsynced > 0) {
+      const proceed = window.confirm(
+        `You have ${unsynced} unsynced offline change(s) stored on this device. They will remain saved for your account when you sign back in, but won't upload until you reconnect. Sign out anyway?`,
+      );
+      if (!proceed) return;
+    }
     await logout();
     window.location.href = '/login';
   };
@@ -69,6 +84,17 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
       </div>
 
       <div className="flex items-center gap-3">
+        {canUseAiCopilot && (
+          <button
+            onClick={toggleAiDrawer}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-brand-600 to-violet-600 hover:from-brand-700 hover:to-violet-700 shadow-xs transition-all cursor-pointer"
+            title="Open Universal AI Orchestrator & Memory Copilot"
+          >
+            <Sparkles size={14} />
+            <span className="hidden sm:inline">Ask EdBase AI</span>
+          </button>
+        )}
+        <SyncStatusBadge />
         <NotificationBell />
 
         <div className="h-5 w-px bg-neutral-200 hidden sm:block" />

@@ -196,9 +196,9 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ conversation }) => {
           </button>
 
           <div className="relative shrink-0">
-            {getConversationAvatar(conversation, currentUserId) ? (
+            {getConversationAvatar(conversation) ? (
               <img
-                src={getConversationAvatar(conversation, currentUserId)}
+                src={getConversationAvatar(conversation)}
                 alt="Avatar"
                 className="w-10 h-10 rounded-full object-cover"
               />

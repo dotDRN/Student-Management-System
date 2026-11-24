@@ -1,91 +1,135 @@
-# 🌐 SPARSHA OMS - API Reference
+# EdBase — API Reference
 
-This document outlines the API architecture, conventions, and key endpoints for the SPARSHA Organization Management System. All endpoints are prefixed with `/api`.
-
----
-
-## 🛡️ The "Golden Middleware Chain"
-
-Every protected endpoint in this system is enforced by a strict middleware pipeline designed to prevent security breaches, validate data types, and prevent PII leakage:
-
-1.  **`authenticate`**: Validates the JWT (either via `Authorization: Bearer <token>` or `HttpOnly` cookies) and attaches the `req.user` object.
-2.  **`requireRole(roles)`**: Hard-blocks users who do not hold the specific `UserRole` enum required for the mutation.
-3.  **`attachAllowedCenters`**: Automatically queries the user's active Center assignments from the database. It attaches `req.allowedCenterIds` to the request, which the Service layer uses to automatically restrict `findMany` queries. (Super Admins naturally bypass this).
-4.  **`validate(schema)`**: Uses **Zod** schemas (located in `src/validators/`) to rigorously validate `req.body`, `req.query`, and `req.params`. UUID formats, email formats, and string lengths are strictly enforced before the Controller is even executed.
-
-### Standard Response Envelope
-All successful requests MUST return the following standard JSON structure:
-```json
-{
-  "success": true,
-  "data": { ... }, // Payload
-  "message": "Optional contextual message"
-}
-```
-Errors return a similar envelope, handled automatically by the global error handler (`src/middleware/errorHandler.ts`):
-```json
-{
-  "success": false,
-  "error": "Descriptive error message",
-  "issues": [] // Optional array of Zod validation issues
-}
-```
+All REST endpoints are mounted under `/api` in [`backend/src/app.ts`](../backend/src/app.ts), except health probes mounted at `/health` and `/health/live`. Real-time communication runs over Socket.IO at `/socket.io`.
 
 ---
 
-## 🔑 Authentication (`/api/auth`)
+## Middleware Pipeline
 
-| Method | Endpoint | Access | Purpose |
+Protected endpoints compose:
+1. **`authenticate` / `requireAuth`:** Validates `Authorization: Bearer <token>` JWT, checks `isActive`, verifies center assignment (bypassed for `ADMIN_ROLES` and `parent`), and establishes `AsyncLocalStorage` tenant context (`tenantId` from JWT or `x-tenant-id`).
+2. **`requireCenterAccess()` (`src/middleware/center.middleware.ts`):** Extracts any `centerId`/`centerIds` in `params`, `body`, or `query`, verifies those centers belong to `req.user.tenantId` in PostgreSQL, and requires non-global roles (`center_admin`, `supervisor`, `teacher`, `staff`, `volunteer`) to hold every targeted center in `req.user.centerIds`.
+3. **`requirePermission(PERMISSIONS.*)` (`src/middleware/permission.middleware.ts`):** Enforces role-to-permission grants from `src/config/rbac.ts`.
+4. **`validate(schema)`:** Validates `req.body` / `req.query` / `req.params` using Zod schemas (`src/validators/`).
+
+### Rate Limiting & Error Envelopes
+- Global API limiter: `100` requests per 15 minutes in production (`5000` in dev), with `/api/sync` given a higher quota (`300` per 15 min in production).
+- **Error Response (`src/middleware/errorHandler.ts`):**
+  ```json
+  {
+    "success": false,
+    "error": "Descriptive error message",
+    "details": {}
+  }
+  ```
+- **Database Unavailable (`503`):**
+  ```json
+  {
+    "success": false,
+    "code": "DB_UNAVAILABLE",
+    "error": "Database is currently offline. Using local device storage."
+  }
+  ```
+
+---
+
+## Health Probes
+
+| Method | Path | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/login` | Public | Authenticate via email/password and retrieve tokens |
-| `POST` | `/refresh` | Public | Refresh expired access tokens |
-| `POST` | `/logout` | Auth | Invalidate current session tokens |
-| `GET` | `/me` | Auth | Retrieve current user profile, roles, and allowed centers |
+| `GET` | `/health` | Public | Executes `SELECT 1` with 5s timeout (`200 ok` or `503 DB_UNAVAILABLE`) |
+| `GET` | `/health/live` | Public | Fast process liveness probe (`200 alive`) |
 
 ---
 
-## 🏫 Core Management (`/api/students` & `/api/centers`)
+## Authentication & Tenancy (`/api/auth`)
 
-| Method | Endpoint | Access | Purpose |
+| Method | Path | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/students` | `teacher`, `admin`, etc | List students (Filtered by allowed centers) |
-| `GET` | `/students/:id/profile` | Auth | Deep fetch of student, skills, and form submissions |
-| `POST` | `/students` | `admin` | Register a new student |
-| `GET` | `/centers` | Auth | Fetch all centers assigned to current user |
+| `GET` | `/check-slug?slug=...` | Public | Check workspace slug availability |
+| `POST` | `/register-instance` | Public | Provision new `Organization`, academic year, default center & `super_admin` |
+| `POST` | `/register` | Public | Register a basic user account |
+| `POST` | `/login` | Public | Authenticate (supports multi-workspace selection if `slug` omitted) |
+| `POST` | `/refresh` | Public (Cookie) | Exchange `HttpOnly` `refreshToken` cookie for new access token |
+| `POST` | `/logout` | Public | Clear `refreshToken` cookie |
+| `GET` | `/me` | Auth | Current user profile, tenant metadata & `centerIds` |
+| `POST` | `/change-password` | Auth | Update current user's password |
 
 ---
 
-## 📊 Academics & Activities (`/api/attendance`, `/api/exams`, `/api/activities`)
+## Offline Sync (`/api/sync`)
 
-| Method | Endpoint | Access | Purpose |
+| Method | Path | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/attendance/bulk` | `teacher`, `admin` | Submit attendance for a classroom session |
-| `GET` | `/attendance/stats` | Auth | Fetch attendance metrics for dashboard |
-| `POST` | `/exams/bulk` | `teacher`, `admin` | Submit bulk grades for a specific subject |
-| `GET` | `/exams/:id/scores` | Auth | Retrieve all scores for an exam |
-| `POST` | `/activities` | `admin`, `teacher`| Create a new class, camp, or visit |
+| `GET` | `/pull` | Auth + Center | Delta pull (`?since=...`) of scoped offline tables + tombstones |
+| `POST` | `/push` | Auth + Center | Causal batch push of outbox mutations with conflict detection & idempotency |
 
 ---
 
-## 🏗️ Dynamic Forms & Skills (`/api/forms`, `/api/skills`)
+## Students, Dossier, Fees, Transfers & Guardians (`/api/students`)
 
-*SPARSHA uses a dynamic JSON-schema builder to avoid hardcoding complex surveys or medical forms.*
-
-| Method | Endpoint | Access | Purpose |
+| Method | Path | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/forms/templates` | Auth | Fetch active form schemas |
-| `POST` | `/forms/submissions` | Auth | Submit dynamic JSON payload linked to a student |
-| `POST` | `/skills/log` | `teacher` | Log a qualitative skill assessment (1-5) for a student |
+| `GET` | `/` & `/filter` & `/dashboard` | Auth + Center | Paginated list, filtered queries, student summary counts |
+| `POST` | `/` | `MANAGE_STUDENTS` | Create student |
+| `GET` / `PUT` / `DELETE` | `/:id` | Auth / `MANAGE_STUDENTS` | Read, update, or soft-deactivate student |
+| `GET` | `/:id/summary` & `/:id/profile` | Auth + Center | Profile stats, attendance trend, exam comparison, skills, careers |
+| `GET` | `/:id/dossier` | Auth + Center | 360° longitudinal dossier timeline + vault documents |
+| `GET` / `POST` / `DELETE` | `/:id/documents` (`/:documentId`) | Auth / `MANAGE_STUDENTS` | List, upload (Multer -> Cloudinary, 10MB max), or delete vault documents |
+| `POST` | `/bulk-import` | `MANAGE_STUDENTS` | Atomic batch student import |
+| `POST` | `/promote-cohort` | `MANAGE_STUDENTS` | Academic year cohort promotion / alumni / discontinued transition |
+| `POST` / `GET` / `POST` | `/transfers/request`, `/transfers/pending`, `/transfers/complete` | `MANAGE_TRANSFERS` | Center transfer workflow |
+| `POST` / `GET` / `PUT` | `/:studentId/fees`, `/:studentId/fees/update` | `MANAGE_FEES` / Auth | Record payments, list ledger, update total fees |
+| `POST` / `DELETE` | `/:studentId/guardians` (`/:parentUserId`) | `MANAGE_STUDENTS` | Link or unlink `parent` user accounts |
+| `POST`/`GET`/`PUT`/`DELETE` | `/:studentId/skills`, `/skills/matrix`, `/skills/bulk`, `/:studentId/careers` | `MANAGE_SKILLS` / `MANAGE_CAREERS` | Student skill logs, class skill matrix, and career records |
 
 ---
 
-## 🏢 Organizational Tools (`/api/equipment`, `/api/announcements`)
+## Attendance, Exams, Skills & Activities
 
-| Method | Endpoint | Access | Purpose |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/equipment` | Auth | List center equipment |
-| `POST` | `/equipment/log` | `staff`, `admin` | Record an equipment checkout/checkin |
-| `POST` | `/announcements` | `super_admin` | Broadcast pinned messages across multiple centers |
+- **`/api/attendance`:** `POST /sessions`, `GET /sessions`, `GET /sessions/:sessionId`, `GET /sessions/:sessionId/records`, `PUT /sessions/:sessionId/records`, `PUT /sessions/:sessionId/holiday`, `GET /fresh-sheet`, `GET /register`, `GET /summary`, `GET /pending`, `GET /absentees`, `GET /students/:studentId`.
+- **`/api/exams`:** `POST /`, `GET /`, `GET /comparison`, `GET /students/:studentId`, `GET /:examId/sheet`, `GET /:examId`, `POST /:examId/scores`, `GET /:examId/pending`.
+- **`/api/skills`:** `GET /definitions`, `GET /student/:studentId`, `POST /`, `PUT /:skillLogId`, `DELETE /:skillLogId`.
+- **`/api/activities`:** `GET /`, `POST /`, `GET /:activityId`, `PUT /:activityId`, `DELETE /:activityId`, `POST /:activityId/assign`, `DELETE /:activityId/assign/:userId`, `GET /:activityId/enrollments`, `GET /students/:studentId`, `POST /:activityId/enrollments`, `PATCH /:activityId/enrollments/:enrollmentId`, `DELETE /:activityId/enrollments/:enrollmentId`.
+- **`/api/batches`:** `GET /`, `GET /:batchId`, `POST /`, `PUT /:batchId`, `DELETE /:batchId`, `POST /:batchId/enroll`, `DELETE /:batchId/enroll/:studentId`.
 
-> [!TIP]
-> **API Development Rule:** When creating a new endpoint, always define the Zod schema in `/src/validators/` first. Do not manually check `if (!req.body.name)` in the controller. Let Zod handle the validation and reject bad requests automatically.
+---
+
+## Forms, Kobo, Organizations, Users, Alerts & Reporting
+
+- **`/api/forms`:** Templates CRUD (`/templates`, `/templates/:templateId`), submissions (`/submissions`, `/submissions/:submissionId`, `/submissions/student/:studentId`), `/pending`.
+- **`/api/kobo`:** `POST /sync/templates`, `POST /sync/submissions` (`MANAGE_FORMS`).
+- **`/api/centers` & `/api/programs`:** Centers CRUD, center-program/user assignments, Programs CRUD, `/:programId/subjects`, `/:programId/skills`.
+- **`/api/users`:** `GET /me/centers`, Users CRUD, `/:userId/reset-password`, `/:userId/centers`.
+- **`/api/academic-years`:** `GET /`, `POST /`, `PATCH /:yearId/set-current`.
+- **`/api/alerts`:** `GET /rules`, `POST /rules`, `PUT /rules/:ruleId`, `POST /evaluate`, `GET /`, `PATCH /:alertId/read`.
+- **`/api/announcements`:** `GET /`, `POST /`, `PUT /:id`, `DELETE /:id`.
+- **`/api/parent`:** `GET /children`, `GET /children/:studentId/progress` (`parent` role only).
+- **`/api/dashboard`:** `GET /summary` (operational metrics & widgets).
+- **`/api/reports`:** `GET /dashboard`, `GET /attendance`, `GET /skills`, `GET /exams`, `GET /students`, `GET /export` (CSV), `GET /workbook` (6-sheet Excel JSON payload).
+
+---
+
+## Real-Time Collaboration (`/api/chat/*`, `/api/notifications` & Socket.IO)
+
+- **`/api/chat/conversations`:** Search chat users (`GET /users`), CRUD conversations, archive, members, read receipts, plus `/:conversationId/messages` (`POST`, `GET`, `GET /search`).
+- **`/api/chat/messages`:** `GET /:messageId`, `PATCH /:messageId`, `DELETE /:messageId`, `POST/DELETE /:messageId/reactions`.
+- **`/api/chat/attachments`:** `POST /` & `POST /:messageId` (Multer memory -> Cloudinary, 15MB max), `DELETE /:attachmentId`.
+- **`/api/notifications`:** `GET /`, `GET /unread-count`, `PATCH /read-all`, `PATCH /:id/read`, `PATCH /:id/archive`.
+- **Socket.IO Events (`/socket.io`):** Authenticated via `socket.handshake.auth.token`; supports `conversation:join/leave/focus/blur`, `typing:start/stop`, `presence:update`, `message:*`, `notification:*`, and `meeting:*` (`list`, `create`, `join`, `leave`, `end`, `lock-toggle`, `media-state`, `admin-mute`, `admin-kick`, `chat-send`, `reaction`, `webrtc-offer`, `webrtc-answer`, `webrtc-ice`).
+
+---
+
+## Universal AI Orchestrator (`/api/ai`)
+
+All AI endpoints require `authenticate` and `requireCenterAccess()`, enforce tenant/center isolation, block `parent` accounts from staff global copilot/unlinked students, and apply vertical PII redaction (`src/services/ai/piiGuard.ts`).
+
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| `GET` | `/status` | Check Gemini configuration & AI availability |
+| `POST` | `/chat` | Universal orchestrator chat with tool calling and episodic thread memory |
+| `GET` / `DELETE` | `/threads`, `/threads/:threadId` | List, retrieve, or delete episodic AI threads |
+| `POST` | `/rag/search` | Hybrid semantic + lexical RAG search over remarks, career notes, and documents |
+| `POST` | `/students/:studentId/briefing` | Generate 360° student academic & risk briefing |
+| `POST` | `/students/:studentId/career-playbook` | Generate 30-60-90 day student career guidance playbook |
+| `GET` / `POST` | `/memories/:entityType/:entityId`, `/memories` | Read or persist long-term institutional entity memory |

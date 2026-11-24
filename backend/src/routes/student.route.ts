@@ -1,4 +1,10 @@
 import { Router } from "express";
+import multer from "multer";
+import {
+  ALLOWED_DOCUMENT_MIME_TYPES,
+  MAX_DOCUMENT_SIZE_BYTES,
+} from "../services/studentDossierService.js";
+import { ValidationError } from "../lib/errors.js";
 import {
   createStudent,
   getAllStudents,
@@ -6,6 +12,10 @@ import {
   getStudentById,
   getStudentSummary,
   getStudentProfile,
+  getStudentDossier,
+  listStudentDocuments,
+  addStudentDocument,
+  deleteStudentDocument,
   updateStudent,
   deleteStudent,
   addAttendance,
@@ -14,6 +24,8 @@ import {
   addSkill,
   getSkillsByStudent,
   updateSkill,
+  getSkillMatrix,
+  bulkUpsertSkills,
   addCareer,
   getCareersByStudent,
   updateCareer,
@@ -26,15 +38,48 @@ import {
   addFeePayment,
   getFeePayments,
   updateStudentFees,
+  bulkImportStudents,
+  linkGuardian,
+  unlinkGuardian,
+  promoteStudentCohort,
 } from '../controllers/student.controller.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { requirePermission } from '../middleware/permission.middleware.js';
 import { requireCenterAccess } from '../middleware/center.middleware.js';
 import { PERMISSIONS } from '../config/rbac.js';
 import { validate } from '../middleware/validate.js';
-import { createStudentSchema, updateStudentSchema, createSkillSchema, createCareerSchema } from '../validators/schemas.js';
+import {
+  addFeePaymentSchema,
+  bulkImportStudentsSchema,
+  bulkUpsertSkillLogsSchema,
+  completeTransferSchema,
+  createCareerSchema,
+  createSkillSchema,
+  createStudentSchema,
+  linkGuardianSchema,
+  promoteStudentCohortSchema,
+  requestTransferSchema,
+  updateSkillSchema,
+  updateStudentFeesSchema,
+  updateStudentSchema,
+} from '../validators/schemas.js';
 
 const router = Router();
+
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_DOCUMENT_SIZE_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_DOCUMENT_MIME_TYPES.has((file.mimetype || "").toLowerCase())) {
+      return cb(
+        new ValidationError(
+          "Unsupported file type. Allowed formats: PDF, JPG, PNG, WEBP, DOC, DOCX, TXT, CSV."
+        )
+      );
+    }
+    cb(null, true);
+  },
+});
 
 // 1. All student routes are protected
 router.use(authenticate);
@@ -43,11 +88,31 @@ router.use(requireCenterAccess());
 // 2. Dashboards & Filters (Admins/CEO can view these)
 router.get("/filter", filterStudents);
 router.get("/dashboard", getDashboardStats);
+router.post(
+  "/bulk-import",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  validate(bulkImportStudentsSchema),
+  bulkImportStudents
+);
+router.post(
+  "/promote-cohort",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  validate(promoteStudentCohortSchema),
+  promoteStudentCohort
+);
+router.get("/skills/matrix", getSkillMatrix);
+router.post(
+  "/skills/bulk",
+  requirePermission(PERMISSIONS.MANAGE_SKILLS),
+  validate(bulkUpsertSkillLogsSchema),
+  bulkUpsertSkills
+);
 
-// 3. Transfer Workflow (NEW FROM VANSH)
+// 3. Transfer Workflow
 router.post(
   "/transfers/request",
   requirePermission(PERMISSIONS.MANAGE_TRANSFERS),
+  validate(requestTransferSchema),
   requestTransfer
 );
 router.get(
@@ -58,6 +123,7 @@ router.get(
 router.post(
   "/transfers/complete",
   requirePermission(PERMISSIONS.MANAGE_TRANSFERS),
+  validate(completeTransferSchema),
   completeTransfer
 );
 
@@ -73,6 +139,19 @@ router.post(
 router.get("/", getAllStudents);
 router.get("/:id/summary", getStudentSummary);
 router.get("/:id/profile", getStudentProfile);
+router.get("/:id/dossier", getStudentDossier);
+router.get("/:id/documents", listStudentDocuments);
+router.post(
+  "/:id/documents",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  documentUpload.single("file"),
+  addStudentDocument
+);
+router.delete(
+  "/:id/documents/:documentId",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  deleteStudentDocument
+);
 router.get("/:id", getStudentById);
 
 router.put(
@@ -93,7 +172,7 @@ router.put("/attendance/:id", requirePermission(PERMISSIONS.MANAGE_ATTENDANCE), 
 // 6. Skills
 router.post("/:studentId/skills", requirePermission(PERMISSIONS.MANAGE_SKILLS), validate(createSkillSchema), addSkill);
 router.get("/:studentId/skills", getSkillsByStudent);
-router.put("/skills/:id", requirePermission(PERMISSIONS.MANAGE_SKILLS), validate(createSkillSchema), updateSkill);
+router.put("/skills/:id", requirePermission(PERMISSIONS.MANAGE_SKILLS), validate(updateSkillSchema), updateSkill);
 router.delete("/skills/:id", requirePermission(PERMISSIONS.MANAGE_SKILLS), deleteSkill);
 
 // 7. Careers
@@ -102,17 +181,32 @@ router.get("/:studentId/careers", getCareersByStudent);
 router.put("/careers/:id", requirePermission(PERMISSIONS.MANAGE_CAREERS), validate(createCareerSchema), updateCareer);
 router.delete("/careers/:id", requirePermission(PERMISSIONS.MANAGE_CAREERS), deleteCareer);
 
-// 8. Fee Management (NEW FROM VANSH)
+// 8. Fee Management
 router.post(
   "/:studentId/fees",
   requirePermission(PERMISSIONS.MANAGE_FEES),
+  validate(addFeePaymentSchema),
   addFeePayment
 );
 router.get("/:studentId/fees", getFeePayments);
 router.put(
   "/:studentId/fees/update",
   requirePermission(PERMISSIONS.MANAGE_FEES),
+  validate(updateStudentFeesSchema),
   updateStudentFees
+);
+
+// 9. Parent / Guardian Linking
+router.post(
+  "/:studentId/guardians",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  validate(linkGuardianSchema),
+  linkGuardian
+);
+router.delete(
+  "/:studentId/guardians/:parentUserId",
+  requirePermission(PERMISSIONS.MANAGE_STUDENTS),
+  unlinkGuardian
 );
 
 export default router;

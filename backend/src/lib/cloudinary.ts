@@ -5,8 +5,7 @@ function configureCloudinary() {
   const cloudinaryUrl = process.env.CLOUDINARY_URL;
   let cloudName = process.env.CLOUDINARY_CLOUD_NAME;
   let apiKey = process.env.CLOUDINARY_API_KEY;
-  let apiSecret =
-    process.env.CLOUDINARY_API_SECRET || process.env.CLOUDINARY_API_SECCRET;
+  let apiSecret = process.env.CLOUDINARY_API_SECRET;
 
   if (cloudinaryUrl && cloudinaryUrl.startsWith("cloudinary://")) {
     try {
@@ -63,7 +62,7 @@ export async function uploadBufferToCloudinary(
   return new Promise<CloudinaryUploadResult>((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
-        folder: "sparsha/chat_attachments",
+        folder: "edbase/chat_attachments",
         resource_type: "auto",
         public_id: `${sanitizedBaseName || "attachment"}_${Date.now()}`,
         use_filename: true,

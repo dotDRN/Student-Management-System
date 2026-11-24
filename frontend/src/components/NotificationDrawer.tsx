@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { X, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { notificationService } from '../services/notification.service';
@@ -11,15 +11,12 @@ import { notificationPermission } from '../notifications/NotificationPermission'
 function BrowserNotificationPrompt() {
   const browserNotificationsEnabled = useNotificationStore(state => state.browserNotificationsEnabled);
   const setBrowserNotificationsEnabled = useNotificationStore(state => state.setBrowserNotificationsEnabled);
-  const [permission, setPermission] = useState<NotificationPermission>('default');
-  const [isSupported, setIsSupported] = useState(false);
+  const [isSupported] = useState(() => notificationPermission.isSupported());
+  const [permission, setPermission] = useState<NotificationPermission>(() =>
+    notificationPermission.isSupported() ? notificationPermission.getPermission() : 'default',
+  );
 
   useEffect(() => {
-    setIsSupported(notificationPermission.isSupported());
-    if (notificationPermission.isSupported()) {
-      setPermission(notificationPermission.getPermission());
-    }
-
     const handleFocus = () => {
       if (notificationPermission.isSupported()) {
         setPermission(notificationPermission.getPermission());
@@ -111,19 +108,22 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
             }
           : old,
       );
-      queryClient.setQueryData(['notifications', 'infinite'], (old: any) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            notifications: page.notifications.map((n: Notification) => ({
-              ...n,
-              isRead: true
-            }))
-          }))
-        };
-      });
+      queryClient.setQueryData<InfiniteData<NotificationListResponse>>(
+        ['notifications', 'infinite'],
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              notifications: page.notifications.map((n) => ({
+                ...n,
+                isRead: true,
+              })),
+            })),
+          };
+        },
+      );
       queryClient.setQueryData<UnreadCountResponse>(
         ['notifications', 'unreadCount'],
         { unreadCount: 0 },
@@ -161,20 +161,23 @@ export const NotificationDrawer = ({ page = 1 }: NotificationDrawerProps) => {
             }
           : old,
       );
-      queryClient.setQueryData(['notifications', 'infinite'], (old: any) => {
-        if (!old) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            notifications: page.notifications.map((n: Notification) =>
-              n.notificationRecipientId === notification.notificationRecipientId
-                ? { ...n, isRead: true, readAt: new Date().toISOString() }
-                : n
-            )
-          }))
-        };
-      });
+      queryClient.setQueryData<InfiniteData<NotificationListResponse>>(
+        ['notifications', 'infinite'],
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              notifications: page.notifications.map((n) =>
+                n.notificationRecipientId === notification.notificationRecipientId
+                  ? { ...n, isRead: true, readAt: new Date().toISOString() }
+                  : n,
+              ),
+            })),
+          };
+        },
+      );
       queryClient.setQueryData<UnreadCountResponse>(
         ['notifications', 'unreadCount'],
         (old) => ({ unreadCount: Math.max(0, (old?.unreadCount ?? 1) - 1) }),

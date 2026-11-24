@@ -3,11 +3,5 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ],
-  "compilerOptions": {
-    "noEmit": true, 
-  "noUnusedLocals": true,
-  "noUnusedParameters": true,
-  "skipLibCheck": true
-}
+  ]
 }

@@ -1,47 +1,45 @@
-# Multi-stage Dockerfile for Sparsha OMS
+# Multi-stage Dockerfile for EdBase
 
 # --- Base Stage ---
-FROM node:20-slim AS base
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+FROM node:22-slim AS base
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # --- Backend Build Stage ---
 FROM base AS backend-builder
 WORKDIR /app/backend
 COPY backend/package*.json ./
-RUN npm install
+RUN npm ci --include=dev
 COPY backend/ ./
-RUN npx prisma generate
 RUN npm run build
 
 # --- Frontend Build Stage ---
 FROM base AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm ci --include=dev --legacy-peer-deps
 COPY frontend/ ./
-ARG VITE_API_URL
+ARG VITE_API_URL=/api
 ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
 # --- Final Production Image ---
 FROM base AS production
 WORKDIR /app
+ENV NODE_ENV=production
 
-# Backend setup
+# Backend runtime & Prisma 7 migration config
 COPY --from=backend-builder /app/backend/dist /app/backend/dist
 COPY --from=backend-builder /app/backend/node_modules /app/backend/node_modules
 COPY --from=backend-builder /app/backend/package*.json /app/backend/
 COPY --from=backend-builder /app/backend/prisma /app/backend/prisma
+COPY --from=backend-builder /app/backend/prisma.config.ts /app/backend/prisma.config.ts
 
-# Frontend setup
+# Frontend build (served by Express in production)
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 
-# Install serve for frontend
-RUN npm install -g serve
+EXPOSE 5000
 
-EXPOSE 5000 5173
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 5000) + '/health/live').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-# We will use docker-compose to override the CMD for different services
 CMD ["sh", "-c", "cd backend && npx prisma migrate deploy && node dist/server.js"]

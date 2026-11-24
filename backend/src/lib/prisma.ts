@@ -14,6 +14,7 @@ const DIRECT_TENANT_MODELS = new Set([
   "AuditLog",
   "Conversation",
   "Notification",
+  "SyncOperationLog",
 ]);
 
 const CENTER_SCOPED_MODELS = new Set([
@@ -47,8 +48,37 @@ const WHERE_SCOPED_OPS = new Set([
   "deleteMany",
 ]);
 
-function createExtendedPrismaClient() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+function shouldUseSsl(connectionString: string): boolean {
+  if (process.env.DATABASE_SSL === "true") return true;
+  if (process.env.DATABASE_SSL === "false") return false;
+  if (!connectionString) return false;
+
+  const isLocal =
+    connectionString.includes("localhost") ||
+    connectionString.includes("127.0.0.1") ||
+    connectionString.includes("@db:") ||
+    connectionString.includes("sslmode=disable");
+
+  return !isLocal;
+}
+
+function createExtendedPrismaClient(): { prisma: PrismaClient; pool: Pool } {
+  const connectionString = process.env.DATABASE_URL || "";
+  const poolMax = Number(process.env.DB_POOL_MAX);
+  const pool = new Pool({
+    connectionString,
+    ssl: shouldUseSsl(connectionString)
+      ? { rejectUnauthorized: false }
+      : undefined,
+    max: Number.isFinite(poolMax) && poolMax > 0 ? poolMax : 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+  });
+
+  pool.on("error", (err) => {
+    console.error("[PG Pool] Unexpected error on idle client:", err);
+  });
+
   const adapter = new PrismaPg(pool);
   const basePrisma = new PrismaClient({ adapter });
 
@@ -125,17 +155,31 @@ function createExtendedPrismaClient() {
     },
   });
 
-  return extended as unknown as PrismaClient;
+  return {
+    prisma: extended as unknown as PrismaClient,
+    pool,
+  };
 }
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
+  pgPool?: Pool;
 };
 
-const prisma = globalForPrisma.prisma ?? createExtendedPrismaClient();
+const clientBundle = globalForPrisma.prisma && globalForPrisma.pgPool
+  ? { prisma: globalForPrisma.prisma, pool: globalForPrisma.pgPool }
+  : createExtendedPrismaClient();
+
+const prisma = clientBundle.prisma;
+const pgPool = clientBundle.pool;
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
+  globalForPrisma.pgPool = pgPool;
+}
+
+export async function closeDatabaseConnections(): Promise<void> {
+  await Promise.allSettled([prisma.$disconnect(), pgPool.end()]);
 }
 
 export default prisma;

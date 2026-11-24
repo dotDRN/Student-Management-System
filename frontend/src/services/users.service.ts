@@ -1,5 +1,6 @@
 import api from './api';
 import type { UserRole } from '../types';
+import { withOfflineRead } from '../offline/offlineServiceHelper';
 
 export type UserAdminItem = {
   id: string;
@@ -35,13 +36,44 @@ export type UpdateUserPayload = {
   isActive?: boolean;
 };
 
+const USERS_CACHE_KEY = 'edbase_users_cache_v1';
+
 export const listUsers = (params?: {
   page?: number;
   limit?: number;
   search?: string;
   role?: UserRole;
   isActive?: boolean;
-}) => api.get<UsersListResponse>('/users', { params }).then((r) => r.data);
+}) =>
+  withOfflineRead<UsersListResponse>(
+    () => api.get<UsersListResponse>('/users', { params }).then((r) => r.data),
+    async () => {
+      try {
+        const raw = localStorage.getItem(USERS_CACHE_KEY);
+        let users: UserAdminItem[] = raw ? JSON.parse(raw) : [];
+        if (params?.role) users = users.filter((u) => u.role === params.role);
+        if (params?.isActive !== undefined) users = users.filter((u) => u.isActive === params.isActive);
+        if (params?.search) {
+          const q = params.search.toLowerCase();
+          users = users.filter(
+            (u) => u.fullName?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q),
+          );
+        }
+        return { users, total: users.length, page: 1, totalPages: 1 };
+      } catch {
+        return { users: [], total: 0, page: 1, totalPages: 1 };
+      }
+    },
+    async (res) => {
+      try {
+        if (Array.isArray(res.users) && res.users.length > 0 && !params?.search && !params?.role) {
+          localStorage.setItem(USERS_CACHE_KEY, JSON.stringify(res.users));
+        }
+      } catch {
+        // Ignore
+      }
+    },
+  );
 
 export const createUser = (payload: CreateUserPayload) =>
   api.post<UserAdminItem>('/users', payload).then((r) => r.data);

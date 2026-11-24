@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { Button, cn } from './Button';
+import { Button } from './Button';
+import { cn } from '../../utils/cn';
 
 interface ConfirmModalProps {
   open: boolean;

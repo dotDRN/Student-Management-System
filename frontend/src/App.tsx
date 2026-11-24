@@ -23,38 +23,69 @@ import { Activities } from './pages/Activities';
 import { ChatPage } from './pages/ChatPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { MeetingRoomsPage } from './pages/MeetingRoomsPage';
+import { ParentPortal } from './pages/ParentPortal';
+import { getHomeRouteForRole } from './utils/rbac';
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "./store/useAuthStore";
 import { ToastContainer } from './components/toast/ToastContainer';
+import { getPendingLocalSyncCounts } from './offline/offlineDb';
+import { API_BASE_URL } from './utils/apiBase';
 
 function App() {
-  const { currentUser, initializeAuth, setAuth, logout } = useAuthStore();
+  const { currentUser, initializeAuth, setAuth, setOfflineSession, setNeedsReauth, logout } = useAuthStore();
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const initAuth = async () => {
       try {
         initializeAuth();
-        const res = await fetch("/api/auth/refresh", {
+        const persisted = useAuthStore.getState();
+
+        // If browser is clearly offline and we have a persisted local user, boot straight into offline mode
+        if (typeof navigator !== "undefined" && navigator.onLine === false && persisted.currentUser) {
+          setOfflineSession(true);
+          return;
+        }
+
+        const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
           method: "POST",
           credentials: "include",
         });
         if (res.ok) {
           const data = await res.json();
           setAuth(data.user, data.accessToken, data.organization || null);
+        } else if (res.status >= 500 && persisted.currentUser) {
+          // Backend or database is temporarily unreachable (500/502/503/504) -> boot into offline mode
+          setOfflineSession(true);
         } else {
-          logout();
+          // Explicit 401/403 from server: preserve local session + prompt re-auth if unsynced local work exists
+          if (persisted.currentUser) {
+            const tenantId = persisted.currentTenant?.id || persisted.currentUser.tenantId;
+            const counts = await getPendingLocalSyncCounts(tenantId, persisted.currentUser.id);
+            if (counts.pending > 0 || counts.conflicts > 0) {
+              setNeedsReauth(true);
+              return;
+            }
+          }
+          await logout();
         }
-      } catch (err) {
-        console.log("No active session");
-        logout();
+      } catch {
+        // Network error / offline reload: keep persisted session active in offline mode
+        const persisted = useAuthStore.getState();
+        if (persisted.currentUser) {
+          console.log("Offline startup detected — preserving persisted session.");
+          setOfflineSession(true);
+        } else {
+          console.log("No active session");
+          await logout();
+        }
       } finally {
         setLoading(false);
       }
     };
     initAuth();
-  }, [initializeAuth, setAuth, logout]);
+  }, [initializeAuth, setAuth, setOfflineSession, setNeedsReauth, logout]);
 
   if (loading) {
     return (
@@ -64,7 +95,7 @@ function App() {
     );
   }
 
-  const isAdmin = ['super_admin', 'center_admin', 'tech_admin'].includes(currentUser?.role || '');
+  const homeRoute = getHomeRouteForRole(currentUser?.role);
 
   return (
     <BrowserRouter>
@@ -74,23 +105,30 @@ function App() {
 
         {/* Single persistent authenticated layout & Socket.IO connection */}
         <Route element={<ProtectedRoute />}>
-          {/* --- LEVEL 1: SHARED ACCESS (Teachers & Admins) --- */}
-          <Route path="/" element={<Navigate to={isAdmin ? "/dashboard" : "/students"} replace />} />
+          <Route path="/" element={<Navigate to={homeRoute} replace />} />
 
-          <Route path="/students" element={<StudentList />} />
-          <Route path="/students/:id" element={<StudentDetails />} />
-          <Route path="/attendance" element={<Attendance />} />
-          <Route path="/skills" element={<Skills />} />
-          <Route path="/careers" element={<Careers />} />
-          <Route path="/exams" element={<Exams />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/forms" element={<FormsListPage />} />
-          <Route path="/forms/:templateId/fill" element={<FormRendererPage />} />
-          <Route path="/forms/:templateId/submissions" element={<FormSubmissionsPage />} />
-          <Route path="/activities" element={<Activities />} />
-          <Route path="/announcements" element={<Announcements />} />
-          <Route path="/chat/:conversationId?" element={<ChatPage />} />
-          <Route path="/notifications" element={<NotificationsPage />} />
+          {/* --- PARENT / GUARDIAN READ-ONLY PORTAL --- */}
+          <Route element={<RoleGuard allowedRoles={['parent']} />}>
+            <Route path="/parent" element={<ParentPortal />} />
+          </Route>
+
+          {/* --- LEVEL 1: STAFF & ADMIN SHARED ACCESS --- */}
+          <Route element={<RoleGuard allowedRoles={['teacher', 'staff', 'supervisor', 'volunteer', 'super_admin', 'center_admin', 'tech_admin']} />}>
+            <Route path="/students" element={<StudentList />} />
+            <Route path="/students/:id" element={<StudentDetails />} />
+            <Route path="/attendance" element={<Attendance />} />
+            <Route path="/skills" element={<Skills />} />
+            <Route path="/careers" element={<Careers />} />
+            <Route path="/exams" element={<Exams />} />
+            <Route path="/reports" element={<Reports />} />
+            <Route path="/forms" element={<FormsListPage />} />
+            <Route path="/forms/:templateId/fill" element={<FormRendererPage />} />
+            <Route path="/forms/:templateId/submissions" element={<FormSubmissionsPage />} />
+            <Route path="/activities" element={<Activities />} />
+            <Route path="/announcements" element={<Announcements />} />
+            <Route path="/chat/:conversationId?" element={<ChatPage />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
+          </Route>
 
           {/* --- LEVEL 2: DATA ENTRY & STAFF COLLABORATION (Employees & Admins Only) --- */}
           <Route element={<RoleGuard allowedRoles={['teacher', 'staff', 'supervisor', 'super_admin', 'center_admin', 'tech_admin']} />}>

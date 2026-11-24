@@ -1,13 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/useAuthStore';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NotificationDrawer } from '../NotificationDrawer';
+import { AiCopilotDrawer } from '../ai/AiCopilotDrawer';
+import { ConflictResolutionModal } from '../sync/ConflictResolutionModal';
+import { ReauthModal } from '../sync/ReauthModal';
 import { socketService } from '../../services/socket.service';
+import { syncEngine } from '../../offline/syncEngine';
 import { useChatStore } from '../../store/useChatStore';
 import { useNotificationStore } from '../../store/useNotificationStore';
 import { useChatSocket } from '../../hooks/useChatSocket';
+import { getHomeRouteForRole } from '../../utils/rbac';
 
 // Define the roles based on your Prisma Schema
 export type UserRole = 'super_admin' | 'center_admin' | 'supervisor' | 'teacher' | 'staff' | 'volunteer' | 'student' | 'parent' | 'shareholder' | 'tech_admin';
@@ -26,7 +32,7 @@ export const RoleGuard: React.FC<{ allowedRoles: UserRole[] }> = ({ allowedRoles
 
   if (!allowedRoles.includes(currentUser.role as UserRole)) {
     console.log(`BOUNCE: Role mismatch! Redirecting to a safe page. ${currentUser.role} tried to access ${location.pathname}`);
-    return <Navigate to="/students" replace />;
+    return <Navigate to={getHomeRouteForRole(currentUser.role)} replace />;
   }
 
   return <Outlet />;
@@ -35,15 +41,27 @@ export const RoleGuard: React.FC<{ allowedRoles: UserRole[] }> = ({ allowedRoles
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) => {
   const accessToken = useAuthStore((state) => state.accessToken);
   const currentUser = useAuthStore((state) => state.currentUser);
+  const isOfflineSession = useAuthStore((state) => state.isOfflineSession);
+  const needsReauth = useAuthStore((state) => state.needsReauth);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
+  const queryClient = useQueryClient();
   const resetChatState = useChatStore((state) => state.resetChatState);
   const clearNotifications = useNotificationStore((state) => state.clear);
 
   useChatSocket();
 
   useEffect(() => {
-    if (accessToken) {
+    if (currentUser) {
+      syncEngine.start(queryClient);
+    }
+    return () => {
+      syncEngine.stop();
+    };
+  }, [currentUser, queryClient]);
+
+  useEffect(() => {
+    if (accessToken && !isOfflineSession) {
       socketService.connect();
     }
 
@@ -52,10 +70,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
       resetChatState();
       clearNotifications();
     };
-  }, [accessToken, resetChatState, clearNotifications]);
+  }, [accessToken, isOfflineSession, resetChatState, clearNotifications]);
 
-  // 1. Authentication Check
-  if (!accessToken || !currentUser) {
+  // 1. Authentication Check (allow persisted offline session or pending re-auth so local work is preserved)
+  if (!currentUser || (!accessToken && !isOfflineSession && !needsReauth)) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
@@ -63,8 +81,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
   if (allowedRoles && !allowedRoles.includes(currentUser.role as UserRole)) {
     console.log(`BOUNCE: Role mismatch! Redirecting to a safe page. ${currentUser.role} tried to access ${location.pathname}`);
     
-    // Redirect to /students instead, which is accessible to everyone authenticated.
-    return <Navigate to="/students" replace />;
+    // Redirect to role-safe home route.
+    return <Navigate to={getHomeRouteForRole(currentUser.role)} replace />;
   }
 
   // 3. Layout Rendering
@@ -72,6 +90,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
     <div className="flex h-screen overflow-hidden bg-neutral-50">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <NotificationDrawer />
+      <AiCopilotDrawer />
+      <ConflictResolutionModal />
+      <ReauthModal />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <TopBar onMenuClick={() => setIsSidebarOpen(true)} />

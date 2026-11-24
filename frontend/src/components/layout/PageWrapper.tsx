@@ -20,7 +20,7 @@ export const PageWrapper: React.FC<PageWrapperProps> = ({ title, children, actio
                 {title}
               </h1>
             </div>
-            {actions && <div className="flex items-center gap-2.5">{actions}</div>}
+            {actions && <div className="flex items-center gap-2.5 no-print">{actions}</div>}
           </div>
           
           <div className="w-full">

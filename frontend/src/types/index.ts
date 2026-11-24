@@ -29,42 +29,37 @@ export interface Student {
   id: string;
   centerId: string;
   programId: string;
+  academicYearId?: string | null;
   createdById?: string;
   fullName: string;
   rollNumber?: string | null;
-  dob?: string | Date;
-  gender?: Gender;
-  guardianName?: string;
-  guardianPhone?: string;
+  dob?: string | Date | null;
+  gender?: Gender | null;
+  guardianName?: string | null;
+  guardianPhone?: string | null;
+  address?: string | null;
+  stream?: string | null;
+  post12thChoice?: string | null;
+  collegeName?: string | null;
+  educationDiscontinued?: boolean;
   enrollmentDate: string | Date;
   isActive: boolean;
   transferStatus?: TransferStatus;
   totalFees?: number | null;
   feesPaid?: number;
   isFullyPaid?: boolean;
+  version?: number;
+  updatedAt?: string | Date;
   createdAt: string | Date;
   center?: Center;
   program?: Program;
   createdByUser?: { id: string; fullName: string } | null;
-}
-
-export interface User {
-  id: string;
-  email: string;
-  fullName: string;
-  phone?: string;
-  role: UserRole;
-  isActive: boolean;
-  createdAt: string | Date;
-}
-
-export interface AttendanceSession {
-  id: string;
-  centerId: string;
-  programId: string;
-  activityId?: string;
-  sessionDate: string | Date;
-  createdAt: string | Date;
+  batchEnrollments?: Array<{
+    id?: string;
+    batchId: string;
+    enrolledOn?: string;
+    batch?: { id: string; name: string };
+  }>;
 }
 
 export interface AttendanceRecord {
@@ -76,15 +71,6 @@ export interface AttendanceRecord {
   remarks?: string;
 }
 
-export interface Exam {
-  id: string;
-  centerId: string;
-  programId: string;
-  examType: ExamType;
-  academicYear: string;
-  examDate?: string | Date;
-}
-
 export interface ExamScore {
   id: string;
   examId: string;
@@ -94,65 +80,6 @@ export interface ExamScore {
   marks?: number;
   maxMarks: number;
   remarks?: string;
-}
-
-export interface FormTemplate {
-  id: string;
-  formType: string;
-  name: string;
-  schema: FormSchema;
-  isActive: boolean;
-  createdAt: string | Date;
-}
-
-export interface FormSchema {
-  fields: FormField[];
-}
-
-export type FormFieldType = 'text' | 'number' | 'dropdown' | 'checkbox' | 'date' | 'textarea';
-
-export interface FormField {
-  id: string;
-  type: FormFieldType;
-  label: string;
-  required: boolean;
-  placeholder?: string;
-  options?: string[];
-}
-
-export interface FormSubmission {
-  id: string;
-  templateId: string;
-  studentId: string;
-  centerId: string;
-  submittedBy?: string;
-  data: Record<string, unknown>;
-  createdAt: string | Date;
-}
-
-export interface ApiResponse<T> {
-  data: T;
-  message?: string;
-}
-
-export interface ApiError {
-  message: string;
-  errors?: Record<string, string[]>;
-}
-
-export interface AuthUser extends User {
-  allowedCenterIds: string[];
-  centerIds?: string[];
-}
-
-export interface LoginPayload {
-  email: string;
-  password: string;
-}
-
-export interface AuthResponse {
-  token: string;
-  user: AuthUser;
 }
 
 export interface CenterSummary {
@@ -171,18 +98,42 @@ export interface ProgramSummary {
   studentCount?: number;
 }
 
+export interface SkillDefinition {
+  id: string;
+  programId: string;
+  name: string;
+  description?: string | null;
+  maxLevel: number;
+  isActive: boolean;
+  program?: { id: string; name: string; code?: string };
+}
+
 export interface SkillRecord {
   id: string;
   studentId: string;
-  skillName: string;
-  proficiencyLevel: string;
+  centerId?: string;
+  skillId?: string;
+  level?: number;
+  assessedOn?: string | Date;
+  remarks?: string | null;
+  skill?: SkillDefinition;
+  assessedByUser?: { id?: string; fullName: string } | null;
+  skillName?: string;
+  proficiencyLevel?: string;
   createdAt?: string | Date;
 }
 
 export interface CareerRecord {
   id: string;
   studentId: string;
-  careerInterest: string;
+  careerInterest?: string;
+  careerGoal?: string;
+  industry?: string;
+  milestones?: string[];
+  stage?: string;
+  title?: string;
+  description?: string;
+  date?: string | Date;
   counselingNotes?: string;
   notes?: string;
   createdAt?: string | Date;
@@ -190,12 +141,41 @@ export interface CareerRecord {
 
 export interface StudentProfilePayload {
   student: Student;
-  stats?: Record<string, any>;
-  attendanceTrend?: any[];
-  examComparison?: any[];
-  formSubmissions?: any[];
-  parents?: any[];
-  skillRadar?: any[];
+  stats?: {
+    attendancePct?: number;
+    totalSessions?: number;
+    presentCount?: number;
+    avgExamPct?: number | null;
+    skillScore?: number | null;
+    careerEntriesCount?: number;
+  };
+  attendanceTrend?: { date: string; present: number }[];
+  examComparison?: {
+    subject: string;
+    maxMarks?: number;
+    baseline: number | null;
+    baselineMarks?: number | null;
+    baselineAbsent?: boolean;
+    midline?: number | null;
+    midlineMarks?: number | null;
+    midlineAbsent?: boolean;
+    endline: number | null;
+    endlineMarks?: number | null;
+    endlineAbsent?: boolean;
+  }[];
+  academicYearLabel?: string | null;
+  formSubmissions?: {
+    id: string;
+    templateId?: string;
+    createdAt?: string;
+    template?: { id?: string; name?: string; formType?: string };
+  }[];
+  parents?: {
+    id?: string;
+    parentUserId?: string;
+    parent?: { id?: string; fullName?: string; email?: string; phone?: string | null };
+  }[];
+  skillRadar?: { skill: string; score: number; maxLevel?: number }[];
   skills?: SkillRecord[];
   careerRecords?: CareerRecord[];
   attendance?: AttendanceRecord[];
@@ -206,20 +186,20 @@ export interface StudentCreatePayload {
   centerId: string;
   programId: string;
   fullName: string;
-  rollNumber?: string;
-  dob?: string | Date;
-  gender?: Gender;
-  guardianName?: string;
-  guardianPhone?: string;
+  rollNumber?: string | null;
+  dob?: string | Date | null;
+  gender?: Gender | null;
+  guardianName?: string | null;
+  guardianPhone?: string | null;
   enrollmentDate?: string | Date;
   isActive?: boolean;
-  stream?: string;
-  post12thChoice?: string;
-  collegeName?: string;
+  stream?: string | null;
+  post12thChoice?: string | null;
+  collegeName?: string | null;
   educationDiscontinued?: boolean;
 }
 
-export interface StudentUpdatePayload extends Partial<StudentCreatePayload> { }
+export type StudentUpdatePayload = Partial<StudentCreatePayload>;
 
 export interface StudentsListResult {
   students: Student[];

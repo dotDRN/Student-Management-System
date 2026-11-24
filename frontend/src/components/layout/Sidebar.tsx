@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
-import { cn } from '../ui/Button';
+import { cn } from '../../utils/cn';
 import {
   LayoutDashboard,
   Users,
@@ -49,7 +49,7 @@ function formatWorkspaceName(rawName?: string | null): string {
     rawName === 'SPARSHA Workspace' ||
     rawName === 'VantageEd Workspace'
   ) {
-    return 'EduSpace Workspace';
+    return 'EdBase Workspace';
   }
   return rawName;
 }
@@ -88,6 +88,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         { name: 'Messages', path: '/chat', icon: <MessageSquare size={18} />, viewRoles: ['super_admin', 'center_admin', 'tech_admin', 'teacher', 'staff'] },
         { name: 'Announcements', path: '/announcements', icon: <Megaphone size={18} />, viewRoles: ['super_admin', 'center_admin', 'tech_admin', 'teacher', 'staff'] },
         { name: 'Notifications', path: '/notifications', icon: <Bell size={18} />, viewRoles: ['super_admin', 'center_admin', 'tech_admin', 'teacher', 'staff'] },
+      ],
+    },
+    {
+      label: 'Family Portal',
+      items: [
+        { name: 'My Child Progress', path: '/parent', icon: <GraduationCap size={18} />, viewRoles: ['parent'] },
       ],
     },
     {
@@ -136,7 +142,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 className="font-bold text-base text-white tracking-tight truncate"
                 style={{ fontFamily: 'var(--font-heading)' }}
               >
-                EduSpace
+                EdBase
               </span>
               <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded bg-brand-500/15 text-brand-300 border border-brand-500/25">
                 Workspace

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { API_BASE_URL } from "../utils/apiBase";
 
 export interface OrganizationInfo {
   id: string;
@@ -26,6 +27,8 @@ interface AuthState {
   currentTenant: OrganizationInfo | null;
   accessToken: string | null;
   selectedCenterId: string | null;
+  isOfflineSession: boolean;
+  needsReauth: boolean;
 
   setAuth: (
     user: User,
@@ -34,8 +37,10 @@ interface AuthState {
   ) => void;
   setAccessToken: (token: string) => void;
   setSelectedCenterId: (id: string | null) => void;
+  setOfflineSession: (offline: boolean) => void;
+  setNeedsReauth: (needsReauth: boolean) => void;
   initializeAuth: () => void;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -45,6 +50,8 @@ export const useAuthStore = create<AuthState>()(
       currentTenant: null,
       accessToken: null,
       selectedCenterId: null,
+      isOfflineSession: false,
+      needsReauth: false,
 
       setAuth: (user, token, tenant) => {
         const normalizeName = (raw?: string | null) =>
@@ -52,7 +59,7 @@ export const useAuthStore = create<AuthState>()(
           raw === "SPARSHA Default Organization" ||
           raw === "SPARSHA Workspace" ||
           raw === "VantageEd Workspace"
-            ? "EduSpace Workspace"
+            ? "EdBase Workspace"
             : raw;
 
         const resolvedTenant: OrganizationInfo | null = tenant
@@ -79,14 +86,20 @@ export const useAuthStore = create<AuthState>()(
             user.centerIds && user.centerIds.length > 0
               ? user.centerIds[0]
               : null,
+          isOfflineSession: false,
+          needsReauth: false,
         });
       },
 
       setAccessToken: (token) => {
-        set({ accessToken: token });
+        set({ accessToken: token, isOfflineSession: false, needsReauth: false });
       },
 
       setSelectedCenterId: (id) => set({ selectedCenterId: id }),
+
+      setOfflineSession: (offline) => set({ isOfflineSession: offline }),
+
+      setNeedsReauth: (needsReauth) => set({ needsReauth }),
 
       initializeAuth: () => {
         // Hydration via persist happens automatically.
@@ -94,10 +107,12 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try {
-          await fetch("/api/auth/logout", {
-            method: "POST",
-            credentials: "include",
-          });
+          if (typeof navigator === "undefined" || navigator.onLine) {
+            await fetch(`${API_BASE_URL}/auth/logout`, {
+              method: "POST",
+              credentials: "include",
+            });
+          }
         } catch (err) {
           console.error("Logout API failed", err);
         }
@@ -107,11 +122,19 @@ export const useAuthStore = create<AuthState>()(
           currentTenant: null,
           accessToken: null,
           selectedCenterId: null,
+          isOfflineSession: false,
+          needsReauth: false,
         });
       },
     }),
     {
       name: "auth-storage",
+      partialize: (state) => ({
+        currentUser: state.currentUser,
+        currentTenant: state.currentTenant,
+        accessToken: state.accessToken,
+        selectedCenterId: state.selectedCenterId,
+      }),
     },
   ),
 );

@@ -1,54 +1,88 @@
-import { Response, NextFunction } from "express";
-import { ADMIN_ROLES, Role } from "../config/rbac.js";
+import { Request, Response, NextFunction } from "express";
+import { isGlobalAdmin } from "../config/rbac.js";
 import prisma from "../lib/prisma.js";
 
+function collectTargetCenterIds(req: Request): string[] | null {
+  const candidates: string[] = [];
+  const params = req.params as Record<string, unknown> | undefined;
+  const body = req.body as Record<string, unknown> | undefined;
+  const query = req.query as Record<string, unknown> | undefined;
+
+  for (const raw of [params?.centerId, body?.centerId, query?.centerId]) {
+    if (typeof raw === "string" && raw.trim()) {
+      candidates.push(raw.trim());
+    }
+  }
+
+  if (body && "centerIds" in body && body.centerIds !== undefined) {
+    if (!Array.isArray(body.centerIds)) {
+      return null;
+    }
+    for (const item of body.centerIds) {
+      if (typeof item !== "string" || !item.trim()) {
+        return null;
+      }
+      candidates.push(item.trim());
+    }
+  }
+
+  return Array.from(new Set(candidates));
+}
+
 export const requireCenterAccess = () => {
-  return async (req: any, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // 1. Check if user exists (Safety Check)
       if (!req.user) {
         return res
           .status(401)
           .json({ success: false, message: "Authentication is required" });
       }
 
-      const userRole = req.user.role as Role;
-      const targetCenterId =
-        req.params?.centerId || req.body?.centerId || req.query?.centerId;
+      const targetCenterIds = collectTargetCenterIds(req);
+      if (targetCenterIds === null) {
+        return res.status(400).json({
+          success: false,
+          message: "centerIds must be an array of valid center IDs.",
+        });
+      }
 
-      // 2. If no specific centerId is targeted in the request, allow through
-      // (Downstream queries remain scoped by tenantId / user.centerIds)
-      if (!targetCenterId || typeof targetCenterId !== "string") {
+      // If no specific centerId/centerIds targeted, allow through
+      // (downstream services scope queries by tenantId and user.centerIds)
+      if (targetCenterIds.length === 0) {
         return next();
       }
 
-      // 3. Admin roles bypass individual center assignment check,
-      // but MUST still own the center within their tenant boundary.
-      if (ADMIN_ROLES.includes(userRole)) {
-        if (req.user.tenantId) {
-          const center = await prisma.center.findFirst({
-            where: {
-              id: targetCenterId,
-              tenantId: req.user.tenantId,
-            },
-            select: { id: true },
+      // Tenant boundary check for every targeted center
+      if (req.user.tenantId) {
+        const ownedCenters = await prisma.center.findMany({
+          where: {
+            id: { in: targetCenterIds },
+            tenantId: req.user.tenantId,
+          },
+          select: { id: true },
+        });
+
+        if (ownedCenters.length !== targetCenterIds.length) {
+          return res.status(403).json({
+            success: false,
+            message: "Forbidden: You do not have access to this center.",
           });
-
-          if (!center) {
-            return res.status(403).json({
-              success: false,
-              message: "Forbidden: You do not have access to this center.",
-            });
-          }
         }
+      }
+
+      // Global admins (super_admin, tech_admin) can access all centers in their tenant.
+      if (isGlobalAdmin(req.user.role)) {
         return next();
       }
 
-      // 4. Non-admin roles must have targetCenterId in their assigned centerIds
-      const userCenters =
-        req.user.centerIds || (req.user.centerId ? [req.user.centerId] : []);
+      // Center-scoped roles (including center_admin, supervisor, teacher, staff, volunteer)
+      // must have every targeted center in their assigned centerIds.
+      const userCenters = Array.isArray(req.user.centerIds)
+        ? req.user.centerIds
+        : [];
+      const hasAllTargets = targetCenterIds.every((id) => userCenters.includes(id));
 
-      if (!userCenters.includes(targetCenterId)) {
+      if (!hasAllTargets) {
         return res.status(403).json({
           success: false,
           message: "Forbidden: You do not have access to this center.",

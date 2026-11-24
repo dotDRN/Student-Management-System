@@ -1,7 +1,7 @@
 import React from 'react';
-import { cn } from './Button';
+import { cn } from '../../utils/cn';
 
-interface TableProps extends React.TableHTMLAttributes<HTMLTableElement> {}
+type TableProps = React.TableHTMLAttributes<HTMLTableElement>;
 
 export const Table = React.forwardRef<HTMLTableElement, TableProps>(
   ({ className, ...props }, ref) => (
@@ -31,14 +31,6 @@ export const TableBody = React.forwardRef<
   <tbody ref={ref} className={cn("[&_tr:last-child]:border-0", className)} {...props} />
 ));
 TableBody.displayName = "TableBody";
-
-export const TableFooter = React.forwardRef<
-  HTMLTableSectionElement,
-  React.HTMLAttributes<HTMLTableSectionElement>
->(({ className, ...props }, ref) => (
-  <tfoot ref={ref} className={cn("border-t bg-neutral-50/50 font-medium", className)} {...props} />
-));
-TableFooter.displayName = "TableFooter";
 
 export const TableRow = React.forwardRef<
   HTMLTableRowElement,

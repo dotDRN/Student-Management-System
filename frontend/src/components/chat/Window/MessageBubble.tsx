@@ -11,14 +11,14 @@ import {
   X,
   ExternalLink,
 } from 'lucide-react';
-import type { Attachment, Conversation, Message } from '../../../types/chat';
+import type { Attachment, Conversation, Message, ReactionType } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useChatStore } from '../../../store/useChatStore';
 import { MessageMenu } from '../ContextMenus/MessageMenu';
 import { ReactionBar } from '../Panels/ReactionBar';
 import { ReactionPicker } from '../ContextMenus/ReactionPicker';
-import { cn } from '../../ui/Button';
-import { useQueryClient } from '@tanstack/react-query';
+import { cn } from '../../../utils/cn';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { chatService } from '../../../services/chat.service';
 
 interface MessageBubbleProps {
@@ -53,10 +53,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
     // Locate the replied message in cache
     let repliedMessage: Message | undefined;
     if (message.replyToId && activeConversationId) {
-      const messagesData = queryClient.getQueryData<any>(['messages', activeConversationId]);
+      const messagesData = queryClient.getQueryData<InfiniteData<Message[]>>([
+        'messages',
+        activeConversationId,
+      ]);
       if (messagesData?.pages) {
         for (const page of messagesData.pages) {
-          repliedMessage = page.find((m: Message) => m.id === message.replyToId);
+          repliedMessage = page.find((m) => m.id === message.replyToId);
           if (repliedMessage) break;
         }
       }
@@ -85,7 +88,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
       setPickerOpen((prev) => !prev);
     };
 
-    const handleSelectReaction = async (reactionType: string) => {
+    const handleSelectReaction = async (reactionType: ReactionType) => {
       if (!activeConversationId || !currentUserId) return;
 
       const hasReacted = message.reactions?.some(
@@ -93,32 +96,38 @@ export const MessageBubble: React.FC<MessageBubbleProps> = React.memo(
       );
       if (hasReacted) return;
 
-      const previousMessages = queryClient.getQueryData(['messages', activeConversationId]);
+      const previousMessages = queryClient.getQueryData<InfiniteData<Message[]>>([
+        'messages',
+        activeConversationId,
+      ]);
 
-      queryClient.setQueryData(['messages', activeConversationId], (old: any) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: Message[]) =>
-            page.map((m) => {
-              if (m.id === message.id) {
-                const newReactions = [
-                  ...(m.reactions || []),
-                  {
-                    id: `temp-${Date.now()}`,
-                    messageId: message.id,
-                    userId: currentUserId,
-                    reaction: reactionType as any,
-                    createdAt: new Date().toISOString(),
-                  },
-                ];
-                return { ...m, reactions: newReactions };
-              }
-              return m;
-            }),
-          ),
-        };
-      });
+      queryClient.setQueryData<InfiniteData<Message[]>>(
+        ['messages', activeConversationId],
+        (old) => {
+          if (!old?.pages) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) =>
+              page.map((m) => {
+                if (m.id === message.id) {
+                  const newReactions = [
+                    ...(m.reactions || []),
+                    {
+                      id: `temp-${Date.now()}`,
+                      messageId: message.id,
+                      userId: currentUserId,
+                      reaction: reactionType,
+                      createdAt: new Date().toISOString(),
+                    },
+                  ];
+                  return { ...m, reactions: newReactions };
+                }
+                return m;
+              }),
+            ),
+          };
+        },
+      );
 
       try {
         await chatService.addReaction(message.id, reactionType);

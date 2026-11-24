@@ -9,18 +9,30 @@ import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmModal } from '../components/ui/ConfirmModal';
 import { DataTable, type DataTableColumn } from '../components/ui/DataTable';
-import { Search, Download, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square } from 'lucide-react';
+import { Search, Download, Upload, Plus, Eye, Edit2, Trash2, ArrowUp, ArrowDown, Building2, ArrowRightLeft, CheckSquare, Square, GraduationCap, QrCode } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { useAuthStore } from '../store/useAuthStore';
+import { useToast } from '../hooks/useToast';
+import { usePermission } from '../hooks/usePermission';
+import { CohortPromotionModal } from '../components/students/CohortPromotionModal';
+import { StudentBulkImportModal } from '../components/students/StudentBulkImportModal';
+import { StudentIdCardModal } from '../components/students/StudentIdCardModal';
 import { deleteStudent, getStudents, requestTransfer, getTransferRequests, completeTransfer, type StudentListQuery } from '../services/students.service';
+import { getApiErrorMessage } from '../services/api';
 import { listCenters, listPrograms } from '../services/centers.service';
+import { listBatches, type BatchSummary } from '../services/batches.service';
 import { listUsers, type UserAdminItem } from '../services/users.service';
 import type { Student, CenterSummary, ProgramSummary } from '../types';
+import { formatDate } from '../utils/date';
+import { sanitizeSpreadsheetCell } from '../utils/exportSanitize';
 
 type Row = Student & { _programName: string; _centerName: string; _addedBy: string };
 
 export const StudentList: React.FC = () => {
   const navigate = useNavigate();
+  const toast = useToast();
+  const { can } = usePermission();
+  const canManageStudents = can('manage', 'students');
   const currentUser = useAuthStore((s) => s.currentUser);
   const selectedCenterId = useAuthStore((s) => s.selectedCenterId);
 
@@ -29,14 +41,21 @@ export const StudentList: React.FC = () => {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [showBulkImport, setShowBulkImport] = useState(false);
+  const [showCohortPromotion, setShowCohortPromotion] = useState(false);
+  const [showIdCardsModal, setShowIdCardsModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCenterId, setFilterCenterId] = useState('');
   const [filterProgramId, setFilterProgramId] = useState('');
+  const [filterBatchId, setFilterBatchId] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [sortOrder, setSortOrder] = useState<'name_asc' | 'name_desc' | 'roll_asc' | 'roll_desc' | 'class_asc' | 'class_desc' | ''>('');
   
   const [centers, setCenters] = useState<CenterSummary[]>([]);
   const [programs, setPrograms] = useState<ProgramSummary[]>([]);
+  const [batches, setBatches] = useState<BatchSummary[]>([]);
 
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -75,40 +94,76 @@ export const StudentList: React.FC = () => {
       })
       .catch(console.error);
     
-    // Admin: load teachers list for transfer completion
+    // Admin: load teachers list and pending transfer count on mount
     if (isAdmin) {
-      listUsers({ role: 'teacher' as any, limit: 200 })
+      listUsers({ role: 'teacher', limit: 200 })
         .then((res) => setTeachers(res.users))
+        .catch(console.error);
+      getTransferRequests()
+        .then((students) => {
+          setTransferRequests(
+            (students || []).map((s: Student) => ({
+              ...s,
+              _programName: s.program?.name ?? s.programId,
+              _centerName: s.center?.name ?? s.centerId,
+              _addedBy: s.createdByUser?.fullName ?? '—',
+            }))
+          );
+        })
         .catch(console.error);
     }
   }, [isTeacher, isAdmin, currentUser?.centerIds]);
+
+  useEffect(() => {
+    const effectiveCenter = filterCenterId || (!isAdmin && selectedCenterId ? selectedCenterId : '');
+    listBatches({
+      ...(effectiveCenter ? { centerId: effectiveCenter } : {}),
+      ...(filterProgramId ? { programId: filterProgramId } : {}),
+    })
+      .then((list) => {
+        const safeList = Array.isArray(list) ? list : [];
+        setBatches(safeList);
+        setFilterBatchId((prev) => (prev && !safeList.some((b) => b.id === prev) ? '' : prev));
+      })
+      .catch(() => setBatches([]));
+  }, [filterCenterId, filterProgramId, isAdmin, selectedCenterId]);
+
+  const buildListQueryParams = useCallback(
+    (pageNum: number, pageLimit: number): StudentListQuery => {
+      const params: StudentListQuery = {
+        page: pageNum,
+        limit: pageLimit,
+        ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
+        ...(filterProgramId ? { programId: filterProgramId } : {}),
+        ...(filterBatchId ? { batchId: filterBatchId } : {}),
+        ...(sortOrder ? { sortOrder } : {}),
+        ...(statusFilter === 'active'
+          ? { isActive: true }
+          : statusFilter === 'inactive'
+          ? { isActive: false }
+          : { isActive: 'all' }),
+      };
+
+      if (isAdmin) {
+        if (filterCenterId) {
+          params.centerId = filterCenterId;
+        }
+      } else if (filterCenterId) {
+        params.centerId = filterCenterId;
+      } else if (selectedCenterId) {
+        params.centerId = selectedCenterId;
+      }
+
+      return params;
+    },
+    [searchQuery, isAdmin, selectedCenterId, filterCenterId, filterProgramId, filterBatchId, statusFilter, sortOrder],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params: StudentListQuery = {
-        page,
-        limit: 50,
-        ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
-        ...(filterProgramId ? { programId: filterProgramId } : {}),
-        ...(sortOrder ? { sortOrder } : {}),
-      };
-
-      // Center filtering logic:
-      if (isAdmin) {
-        if (filterCenterId) {
-          params.centerId = filterCenterId;
-        }
-      } else {
-        if (filterCenterId) {
-          params.centerId = filterCenterId;
-        } else if (selectedCenterId) {
-          params.centerId = selectedCenterId;
-        }
-      }
-
-      const res = await getStudents(params);
+      const res = await getStudents(buildListQueryParams(page, 50));
       setTotalPages(res.totalPages);
       setTotalCount(res.total);
       setRows(
@@ -119,13 +174,13 @@ export const StudentList: React.FC = () => {
           _addedBy: s.createdByUser?.fullName ?? '—',
         })),
       );
-    } catch {
-      setError('Failed to load students.');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to load students.'));
       setRows([]);
     } finally {
       setLoading(false);
     }
-  }, [page, searchQuery, isAdmin, selectedCenterId, filterCenterId, filterProgramId, sortOrder]);
+  }, [page, buildListQueryParams]);
 
   useEffect(() => {
     if (!showTransferTab) {
@@ -171,27 +226,51 @@ export const StudentList: React.FC = () => {
     }
   };
 
-  const handleExport = () => {
-    const dataToExport = rows.map((student) => ({
-      ID: student.id,
-      Name: student.fullName,
-      'Roll Number': student.rollNumber || '—',
-      Program: student._programName,
-      Center: student._centerName,
-      'Date of Birth': student.dob ? new Date(student.dob).toLocaleDateString() : '—',
-      Gender: student.gender || '—',
-      'Guardian Name': student.guardianName || '—',
-      'Guardian Phone': student.guardianPhone || '—',
-      'Enrollment Date': student.enrollmentDate ? new Date(student.enrollmentDate).toLocaleDateString() : '—',
-      'Total Fees': student.totalFees || 0,
-      'Fees Paid': student.feesPaid || 0,
-      ...(isAdmin ? { 'Added By': student._addedBy } : {}),
-      Status: student.isActive ? 'active' : 'inactive',
-    }));
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
-    XLSX.writeFile(workbook, 'EduSpace_Students_Export.xlsx', { compression: true });
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const firstPage = await getStudents(buildListQueryParams(1, 200));
+      const allStudents = [...firstPage.students];
+      for (let p = 2; p <= firstPage.totalPages; p += 1) {
+        const nextPage = await getStudents(buildListQueryParams(p, 200));
+        allStudents.push(...nextPage.students);
+      }
+
+      const dataToExport = allStudents.map((student) => ({
+        ID: sanitizeSpreadsheetCell(student.id),
+        Name: sanitizeSpreadsheetCell(student.fullName),
+        'Roll Number': sanitizeSpreadsheetCell(student.rollNumber || '—'),
+        Program: sanitizeSpreadsheetCell(student.program?.name ?? student.programId),
+        Center: sanitizeSpreadsheetCell(student.center?.name ?? student.centerId),
+        'Date of Birth': student.dob ? formatDate(student.dob, 'yyyy-MM-dd') : '—',
+        Gender: sanitizeSpreadsheetCell(student.gender || '—'),
+        'Guardian Name': sanitizeSpreadsheetCell(student.guardianName || '—'),
+        'Guardian Phone': sanitizeSpreadsheetCell(student.guardianPhone || '—'),
+        'Enrollment Date': student.enrollmentDate ? formatDate(student.enrollmentDate, 'yyyy-MM-dd') : '—',
+        'Total Fees': student.totalFees ?? 0,
+        'Fees Paid': student.feesPaid ?? 0,
+        ...(isAdmin
+          ? { 'Added By': sanitizeSpreadsheetCell(student.createdByUser?.fullName ?? '—') }
+          : {}),
+        Status: student.isActive ? 'active' : 'inactive',
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Students');
+      XLSX.writeFile(workbook, 'EdBase_Students_Export.xlsx', { compression: true });
+      toast.success({
+        title: 'Export complete',
+        description: `Exported ${allStudents.length} student record${allStudents.length === 1 ? '' : 's'}.`,
+      });
+    } catch (err) {
+      toast.error({
+        title: 'Export failed',
+        description: getApiErrorMessage(err, 'Could not export student directory.'),
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   // Teacher: toggle transfer selection
@@ -274,6 +353,18 @@ export const StudentList: React.FC = () => {
       cell: (s) => (
         <div>
           <div className="font-medium text-neutral-900">{s.fullName}</div>
+          {s.batchEnrollments && s.batchEnrollments.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-0.5">
+              {s.batchEnrollments.map((be) => (
+                <span
+                  key={be.batchId}
+                  className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 border border-brand-200"
+                >
+                  {be.batch?.name ?? 'Batch'}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="text-xs text-neutral-500 md:hidden mt-1">
             {s._centerName} · {s._programName}
           </div>
@@ -395,10 +486,23 @@ export const StudentList: React.FC = () => {
     <PageWrapper
       title="Student Directory"
       actions={
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          <Button variant="secondary" onClick={handleExport}>
-            <Download size={16} className="mr-2" /> Export XLS
+        <div className="flex flex-wrap gap-2 w-full md:w-auto no-print">
+          <Button variant="secondary" onClick={() => setShowIdCardsModal(true)} disabled={rows.length === 0}>
+            <QrCode size={16} className="mr-2" /> ID Cards
           </Button>
+          <Button variant="secondary" onClick={() => void handleExport()} disabled={exporting || loading}>
+            <Download size={16} className="mr-2" /> {exporting ? 'Exporting...' : 'Export XLS'}
+          </Button>
+          {canManageStudents && (
+            <>
+              <Button variant="secondary" onClick={() => setShowCohortPromotion(true)}>
+                <GraduationCap size={16} className="mr-2" /> Promote Cohort
+              </Button>
+              <Button variant="secondary" onClick={() => setShowBulkImport(true)}>
+                <Upload size={16} className="mr-2" /> Import Excel
+              </Button>
+            </>
+          )}
           <Button variant="primary" onClick={() => navigate('/students/new')}>
             <Plus size={16} className="mr-2" /> Add Student
           </Button>
@@ -527,7 +631,7 @@ export const StudentList: React.FC = () => {
         </Card>
       ) : (
         /* Main Student List */
-        <Card className="mb-6">
+        <Card className={showIdCardsModal ? 'mb-6 no-print' : 'mb-6'}>
           <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-neutral-50 p-3 rounded-lg border border-neutral-100 mb-4">
             <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
               <div className="relative w-full md:w-64">
@@ -606,9 +710,36 @@ export const StudentList: React.FC = () => {
                   ))}
                 </select>
 
-              <div className="hidden">
-                {/* Program dropdown hidden as requested in favor of quick filters */}
-              </div>
+                <select
+                  aria-label="Filter by student status"
+                  className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:border-brand-500 focus:outline-none"
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value as 'active' | 'inactive' | 'all');
+                    setPage(1);
+                  }}
+                >
+                  <option value="active">Active Students</option>
+                  <option value="inactive">Inactive Students</option>
+                  <option value="all">All Statuses</option>
+                </select>
+
+                <select
+                  aria-label="Filter by batch"
+                  className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:border-brand-500 focus:outline-none"
+                  value={filterBatchId}
+                  onChange={(e) => {
+                    setFilterBatchId(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="">All Batches</option>
+                  {batches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
             </div>
             <div className="flex gap-2">
               {/* Transfer mode toggle for teachers */}
@@ -628,51 +759,34 @@ export const StudentList: React.FC = () => {
               )}
             </div>
           </div>
-          
+
           <div className="flex flex-wrap gap-2 mb-4 px-1">
-            <span className="text-xs font-semibold text-neutral-500 uppercase flex items-center mr-2">Quick Filters:</span>
-            <Button 
-              variant={filterProgramId === '' ? 'primary' : 'secondary'} 
-              size="sm" 
+            <span className="text-xs font-semibold text-neutral-500 uppercase flex items-center mr-2">Programs:</span>
+            <Button
+              variant={filterProgramId === '' ? 'primary' : 'secondary'}
+              size="sm"
               className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(''); setPage(1); void load(); }}
-            >All Classes</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('shiksha'))?.id || 'shiksha') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('shiksha'))?.id || 'shiksha'); setPage(1); void load(); }}
-            >Shiksha (jr, sr)</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('sanskar 1') || p.name.toLowerCase().includes('sanskar1'))?.id || 'sanskar1') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('sanskar 1') || p.name.toLowerCase().includes('sanskar1'))?.id || 'sanskar1'); setPage(1); void load(); }}
-            >Sanskar 1 (1-4)</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('sanskar 2') || p.name.toLowerCase().includes('sanskar2'))?.id || 'sanskar2') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('sanskar 2') || p.name.toLowerCase().includes('sanskar2'))?.id || 'sanskar2'); setPage(1); void load(); }}
-            >Sanskar 2 (4-6)</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('swayam 1') || p.name.toLowerCase().includes('swayam1') || p.name.toLowerCase().includes('swayam youth'))?.id || 'swayam1') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('swayam 1') || p.name.toLowerCase().includes('swayam1') || p.name.toLowerCase().includes('swayam youth'))?.id || 'swayam1'); setPage(1); void load(); }}
-            >Swayam 1 (7-10)</Button>
-            <Button 
-              variant={filterProgramId === (programs.find(p => p.name.toLowerCase().includes('swayam 2') || p.name.toLowerCase().includes('swayam2'))?.id || 'swayam2') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId(programs.find(p => p.name.toLowerCase().includes('swayam 2') || p.name.toLowerCase().includes('swayam2'))?.id || 'swayam2'); setPage(1); void load(); }}
-            >Swayam 2 (10-12)</Button>
-            <Button 
-              variant={filterProgramId === ([programs.find(p => p.name.toLowerCase().includes('kusum'))?.id, programs.find(p => p.name.toLowerCase().includes('uday'))?.id].filter(Boolean).join(',') || 'kusum,uday') ? 'primary' : 'secondary'} 
-              size="sm" 
-              className="text-xs rounded-full"
-              onClick={() => { setFilterProgramId([programs.find(p => p.name.toLowerCase().includes('kusum'))?.id, programs.find(p => p.name.toLowerCase().includes('uday'))?.id].filter(Boolean).join(',') || 'kusum,uday'); setPage(1); void load(); }}
-            >Kusum & Uday</Button>
+              onClick={() => {
+                setFilterProgramId('');
+                setPage(1);
+              }}
+            >
+              All Programs
+            </Button>
+            {programs.map((program) => (
+              <Button
+                key={program.id}
+                variant={filterProgramId === program.id ? 'primary' : 'secondary'}
+                size="sm"
+                className="text-xs rounded-full"
+                onClick={() => {
+                  setFilterProgramId(program.id);
+                  setPage(1);
+                }}
+              >
+                {program.name}
+              </Button>
+            ))}
           </div>
 
           {/* Transfer request banner */}
@@ -763,6 +877,46 @@ export const StudentList: React.FC = () => {
           )}
         </Card>
       )}
+
+      <StudentBulkImportModal
+        isOpen={showBulkImport}
+        onClose={() => setShowBulkImport(false)}
+        centers={centers}
+        programs={programs}
+        defaultCenterId={filterCenterId || selectedCenterId || ''}
+        onImported={() => {
+          setPage(1);
+          void load();
+        }}
+      />
+
+      <CohortPromotionModal
+        isOpen={showCohortPromotion}
+        onClose={() => setShowCohortPromotion(false)}
+        centers={centers}
+        programs={programs}
+        defaultCenterId={filterCenterId || selectedCenterId || ''}
+        onCompleted={() => {
+          setPage(1);
+          void load();
+        }}
+      />
+
+      <StudentIdCardModal
+        isOpen={showIdCardsModal}
+        onClose={() => setShowIdCardsModal(false)}
+        students={rows.map((r) => ({
+          id: r.id,
+          fullName: r.fullName,
+          rollNumber: r.rollNumber,
+          centerName: r._centerName,
+          programName: r._programName,
+          stream: r.stream,
+          guardianPhone: r.guardianPhone,
+          enrollmentDate: r.enrollmentDate,
+        }))}
+        title={`Printable Student QR ID Cards (${rows.length})`}
+      />
     </PageWrapper>
   );
 };
