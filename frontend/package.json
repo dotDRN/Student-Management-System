@@ -2,6 +2,14 @@
   "name": "edbase-frontend",
   "private": true,
   "version": "2.0.0",
+  "description": "EdBase offline-first academic operations and student workspace web application",
+  "author": "dotDRN",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dotDRN/edbase.git",
+    "directory": "frontend"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

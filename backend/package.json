@@ -13,9 +13,23 @@
     "db:backup": "./scripts/db-backup.sh",
     "db:restore": "./scripts/db-restore.sh"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "edbase",
+    "express",
+    "prisma",
+    "postgresql",
+    "multi-tenant",
+    "socketio",
+    "gemini-ai",
+    "typescript"
+  ],
+  "author": "dotDRN",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dotDRN/edbase.git",
+    "directory": "backend"
+  },
   "type": "module",
   "dependencies": {
     "@google/genai": "^3.6.1",

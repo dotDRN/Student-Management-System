@@ -1,7 +1,35 @@
 {
-  "name": "edbase-root",
+  "name": "edbase",
   "version": "2.0.0",
   "private": true,
+  "description": "Multi-tenant, offline-first academic operations and student workspace platform with real-time collaboration and Gemini AI intelligence.",
+  "keywords": [
+    "edtech",
+    "student-management-system",
+    "multi-tenant",
+    "offline-first",
+    "pwa",
+    "dexie",
+    "react",
+    "typescript",
+    "express",
+    "prisma",
+    "postgresql",
+    "supabase",
+    "socketio",
+    "webrtc",
+    "gemini-ai"
+  ],
+  "author": "dotDRN",
+  "license": "MIT",
+  "homepage": "https://github.com/dotDRN/edbase#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dotDRN/edbase.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dotDRN/edbase/issues"
+  },
   "scripts": {
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
