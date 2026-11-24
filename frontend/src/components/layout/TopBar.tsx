@@ -1,7 +1,8 @@
 import React from 'react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useSyncStore } from '../../store/useSyncStore';
-import { Menu, LogOut, Building2, ShieldCheck } from 'lucide-react';
+import { useAiCopilotStore } from '../../store/useAiCopilotStore';
+import { Menu, LogOut, Building2, ShieldCheck, Sparkles } from 'lucide-react';
 import { NotificationBell } from '../NotificationBell';
 import { SyncStatusBadge } from '../sync/SyncStatusBadge';
 
@@ -25,6 +26,10 @@ function formatWorkspaceName(rawName?: string | null): string {
 export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
   const { currentUser, currentTenant, logout } = useAuthStore();
   const { pendingCount, conflictCount } = useSyncStore();
+  const toggleAiDrawer = useAiCopilotStore((state) => state.toggleDrawer);
+  const canUseAiCopilot = Boolean(
+    currentUser?.role && !['parent', 'student'].includes(currentUser.role),
+  );
 
   const instanceName = formatWorkspaceName(
     currentTenant?.name || currentUser?.tenantName,
@@ -79,6 +84,16 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
       </div>
 
       <div className="flex items-center gap-3">
+        {canUseAiCopilot && (
+          <button
+            onClick={toggleAiDrawer}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-brand-600 to-violet-600 hover:from-brand-700 hover:to-violet-700 shadow-xs transition-all cursor-pointer"
+            title="Open Universal AI Orchestrator & Memory Copilot"
+          >
+            <Sparkles size={14} />
+            <span className="hidden sm:inline">Ask EdBase AI</span>
+          </button>
+        )}
         <SyncStatusBadge />
         <NotificationBell />
 

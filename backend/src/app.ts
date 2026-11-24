@@ -26,6 +26,7 @@ import koboRoutes from './routes/kobo.routes.js';
 
 import notificationRoutes from './routes/notification.routes.js';
 import syncRoutes from './routes/syncRoutes.js';
+import aiRoutes from './routes/aiRoutes.js';
 
 import fs from "node:fs";
 import path from "path";
@@ -141,6 +142,7 @@ app.use("/api/chat/messages", messageItemRoutes);
 app.use("/api/chat/messages", reactionRoutes);
 app.use("/api/chat/attachments", attachmentRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/ai", aiRoutes);
 
 // Resolve __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
