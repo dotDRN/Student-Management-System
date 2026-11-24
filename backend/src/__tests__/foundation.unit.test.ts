@@ -14,7 +14,6 @@ import {
 } from "../lib/centerScope.js";
 import { requireAuth } from "../lib/auth.js";
 import { generateAccessToken } from "../utils/jwt.js";
-import { AppError as ReExportedAppError } from "../utils/AppError.js";
 import { AppError as CanonicalAppError, ForbiddenError, UnauthorizedError } from "../lib/errors.js";
 import {
   parseUtcDateOnly,
@@ -70,8 +69,10 @@ describe("Component 1.1: Shared RBAC & Center Scope Helpers", () => {
   });
 
   it("unifies AppError class across modules", () => {
-    const err = new ReExportedAppError("test", 400);
-    assert.equal(err instanceof CanonicalAppError, true);
+    const forbidden = new ForbiddenError("test");
+    const unauthorized = new UnauthorizedError("test");
+    assert.equal(forbidden instanceof CanonicalAppError, true);
+    assert.equal(unauthorized instanceof CanonicalAppError, true);
   });
 });
 

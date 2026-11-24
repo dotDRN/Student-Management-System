@@ -18,6 +18,10 @@ dist-ssr
 .env.*
 !.env.example
 
+# Backups & scratch files
+backend/backups/
+backend/scratch/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
