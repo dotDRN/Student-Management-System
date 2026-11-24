@@ -1,49 +1,47 @@
-version: '3.8'
-
 services:
-  backend:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        - VITE_API_URL=http://localhost:5000/api
-    image: sparsha-app:latest
-    container_name: sparsha-backend
-    restart: always
+        - VITE_API_URL=/api
+    image: edbase-app:latest
+    container_name: edbase-app
+    restart: unless-stopped
     environment:
-      - NODE_ENV=production
-      - PORT=5000
-      - DATABASE_URL=postgresql://sparsha:sparsha@db:5432/sparsha
+      NODE_ENV: production
+      PORT: 5000
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Kolkata}
+      DATABASE_URL: postgresql://edbase:edbase@db:5432/edbase?sslmode=disable
+      DIRECT_URL: postgresql://edbase:edbase@db:5432/edbase?sslmode=disable
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5000}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev_only_change_access_secret_32chars_min}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev_only_change_refresh_secret_32chars_min}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      KOBO_API_URL: ${KOBO_API_URL:-https://kf.kobotoolbox.org}
+      KOBO_API_TOKEN: ${KOBO_API_TOKEN:-}
     ports:
       - "5000:5000"
     depends_on:
       db:
         condition: service_healthy
 
-  frontend:
-    image: sparsha-app:latest
-    container_name: sparsha-frontend
-    working_dir: /app/frontend
-    command: ["serve", "-s", "dist", "-l", "5173"]
-    ports:
-      - "5173:5173"
-    depends_on:
-      - backend
-
   db:
     image: postgres:15-alpine
-    container_name: sparsha-db
-    restart: always
+    container_name: edbase-db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: sparsha
-      POSTGRES_PASSWORD: sparsha
-      POSTGRES_DB: sparsha
+      POSTGRES_USER: edbase
+      POSTGRES_PASSWORD: edbase
+      POSTGRES_DB: edbase
     ports:
       - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sparsha"]
+      test: ["CMD-SHELL", "pg_isready -U edbase -d edbase"]
       interval: 5s
       timeout: 5s
       retries: 5

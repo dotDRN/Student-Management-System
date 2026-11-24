@@ -273,10 +273,12 @@ export const registerUser = async ({
       isActive: user.isActive,
     };
 
+    const { passwordHash: _passwordHash, ...safeUser } = user;
+
     return {
       accessToken: generateAccessToken(payload),
       refreshToken: generateRefreshToken(payload),
-      user: { ...user, centerIds },
+      user: { ...safeUser, centerIds },
     };
   } catch (err) {
     console.error("Register Service Error:", err);
@@ -492,8 +494,10 @@ export const getMe = async (userId: string) => {
 
     const centerIds = await getCenterIdsByUserId(userId);
 
+    const { passwordHash: _passwordHash, ...safeUser } = user;
+
     return {
-      ...user,
+      ...safeUser,
       tenantSlug: user.organization?.slug,
       tenantName: user.organization?.name,
       centerIds,

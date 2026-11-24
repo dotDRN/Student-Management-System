@@ -15,8 +15,6 @@ export async function authenticateSocket(
 
         const payload = verifyAccessToken(token);
 
-        console.log("Socket JWT Payload:", payload);
-
         // Kill-switch support
         if (!payload.isActive) {
             return next(new Error("User account is inactive."));

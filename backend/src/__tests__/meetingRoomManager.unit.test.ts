@@ -1,3 +1,4 @@
+import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   MeetingRoomManager,
@@ -61,11 +62,8 @@ const otherTenantStaff: SocketUserContext = {
   centerIds: ["center-a"],
 };
 
-async function runTests() {
-  console.log("🧪 Running MeetingRoomManager Verification Suite...\n");
-
-  // 1. Role Guard: Students cannot create or list rooms
-  {
+describe("MeetingRoomManager", () => {
+  it("blocks non-employees (students) from creating, listing, or joining rooms", () => {
     const mgr = new MeetingRoomManager(5000);
     assert.throws(
       () => mgr.createRoom(studentUser, { name: "Student Room" }, () => {}),
@@ -77,11 +75,9 @@ async function runTests() {
       () => mgr.joinRoom("sock-stu", studentUser, created.id, undefined, () => {}),
       /You do not have permission/,
     );
-    console.log("✅ 1. Employee-only RBAC verified (students blocked from create/list/join)");
-  }
+  });
 
-  // 2. Tenant Isolation & Center Scoping
-  {
+  it("enforces multi-tenant isolation and center scoping", () => {
     const mgr = new MeetingRoomManager(5000);
     const centerARoom = mgr.createRoom(
       teacherCenterA,
@@ -94,7 +90,6 @@ async function runTests() {
       () => {},
     );
 
-    // Teacher in Center A & Super Admin see it; Teacher in Center B & Tenant B Staff do not
     assert.equal(mgr.listRoomsForUser(teacherCenterA).length, 1);
     assert.equal(mgr.listRoomsForUser(superAdminA).length, 1);
     assert.equal(mgr.listRoomsForUser(teacherCenterB).length, 0);
@@ -104,11 +99,9 @@ async function runTests() {
       () => mgr.joinRoom("sock-b", teacherCenterB, centerARoom.id, undefined, () => {}),
       /You do not have permission/,
     );
-    console.log("✅ 2. Multi-tenant isolation & Center-scoping verified");
-  }
+  });
 
-  // 3. Room Admin privileges, Lock/Unlock, Mute, Kick & Ephemeral Chat Erasure
-  {
+  it("supports room admin moderation (lock, mute, kick) and destroys room chat on end", () => {
     const mgr = new MeetingRoomManager(5000);
     const room = mgr.createRoom(
       staffCenterA,
@@ -123,39 +116,31 @@ async function runTests() {
     const joinPeer = mgr.joinRoom("sock-peer", teacherCenterA, room.id, undefined, () => {});
     assert.equal(joinPeer.participant.isRoomAdmin, false);
 
-    // Ephemeral Chat
     const msg = mgr.appendChatMessage("sock-peer", teacherCenterA, room.id, "Hello team!");
     assert.equal(msg.content, "Hello team!");
 
-    // Room Lock by Host (staffCenterA is Room Admin)
     const locked = mgr.toggleLock(staffCenterA, room.id);
     assert.equal(locked.room.isLocked, true);
 
-    // Remote Mute by Host
     const muted = mgr.adminMuteParticipant(staffCenterA, room.id, "sock-peer");
     assert.equal(muted.targetParticipant.mediaState.isMuted, true);
 
-    // Kick by Host
     const kicked = mgr.adminKickParticipant(staffCenterA, room.id, "sock-peer", () => {});
     assert.equal(kicked.room.participants.length, 1);
 
-    // Non-admin cannot end room
     assert.throws(
       () => mgr.endRoom(teacherCenterA, room.id),
       /Only the Room Admin/,
     );
 
-    // Host ends room -> room and ephemeral chat are permanently destroyed
     const ended = mgr.endRoom(staffCenterA, room.id);
     assert.equal(ended.endedRoomId, room.id);
     assert.equal(mgr.hasRoom(TENANT_A, room.id), false);
-    console.log("✅ 3. Room Admin moderation (lock, mute, kick) & ephemeral chat erasure verified");
-  }
+  });
 
-  // 4. Automatic Idle Expiration When Room Becomes Empty
-  {
+  it("auto-expires empty rooms after the inactivity timeout", async () => {
     let expiredRoomId: string | null = null;
-    const mgr = new MeetingRoomManager(80); // 80ms idle timeout for test
+    const mgr = new MeetingRoomManager(80);
 
     const room = mgr.createRoom(
       teacherCenterA,
@@ -165,27 +150,16 @@ async function runTests() {
       },
     );
 
-    // Join clears the idle timer
     const joined = mgr.joinRoom("sock-1", teacherCenterA, room.id, undefined, () => {});
     assert.equal(joined.room.idleExpiresAt, null);
 
-    // Leaving sets the idle timer because 0 participants remain
     const left = mgr.leaveRoom("sock-1", TENANT_A, room.id, (rId) => {
       expiredRoomId = rId;
     });
     assert.ok(left.room?.idleExpiresAt, "Expected idleExpiresAt to be set when room is empty");
 
-    // Wait 140ms for idle timeout to trigger
     await new Promise((resolve) => setTimeout(resolve, 140));
     assert.equal(expiredRoomId, room.id);
     assert.equal(mgr.hasRoom(TENANT_A, room.id), false);
-    console.log("✅ 4. Empty room inactivity timer & auto-expiration verified");
-  }
-
-  console.log("\n🎉 All MeetingRoomManager tests passed!");
-}
-
-runTests().catch((err) => {
-  console.error("❌ Test failed:", err);
-  process.exit(1);
+  });
 });

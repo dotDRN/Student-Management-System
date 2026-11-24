@@ -65,5 +65,3 @@ export const authenticate = (req: Request, res: Response, next: NextFunction) =>
     });
   }
 };
-
-export const protect = authenticate;
