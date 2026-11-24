@@ -1,6 +1,6 @@
 # EdBase API (`backend`)
 
-**Version:** `1.4.0`
+**Version:** `2.0.0`
 
 Express 5 + TypeScript backend for the **EdBase** multi-tenant academic operations and student workspace platform. Uses Prisma 7 (`@prisma/adapter-pg` + `pg`), PostgreSQL 15+ (Supabase compatible), Zod v4 validation, Socket.IO real-time messaging/WebRTC signaling, Cloudinary storage, and `node-cron`.
 

@@ -1,6 +1,6 @@
 {
   "name": "edbase-backend",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "description": "EdBase Student & Academic Management Platform API",
   "main": "dist/server.js",
   "scripts": {

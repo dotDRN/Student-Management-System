@@ -1,6 +1,6 @@
 # EdBase Web App (`frontend`)
 
-**Version:** `1.4.0`
+**Version:** `2.0.0`
 
 React 19 + TypeScript + Vite 8 + Tailwind CSS v4 frontend for **EdBase**, featuring offline-first local storage (Dexie.js IndexedDB + sync engine), Workbox PWA caching (`vite-plugin-pwa`), real-time Socket.IO chat/notifications, and WebRTC staff meeting rooms.
 

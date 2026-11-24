@@ -1,6 +1,6 @@
 # EdBase — System Architecture
 
-**Version:** `1.4.0`
+**Version:** `2.0.0`
 
 **EdBase** is a multi-tenant, offline-first academic operations and student workspace platform designed for multi-center educational institutions and NGOs.
 

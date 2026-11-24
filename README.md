@@ -1,6 +1,6 @@
 # EdBase — Multi-Tenant Academic Operations & Student Workspace Platform
 
-**Version:** `1.4.0`
+**Version:** `2.0.0`
 
 **EdBase** is an offline-capable, multi-tenant institutional operations and learner intelligence platform built to manage distributed centers, academic lifecycles, student progress, dynamic form workflows, real-time staff communication, and guardian engagement.
 

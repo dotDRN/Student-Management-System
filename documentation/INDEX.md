@@ -1,6 +1,6 @@
 # EdBase — Documentation Index
 
-Welcome to the official maintainer and operator documentation for **EdBase** (`v1.4.0`), a multi-tenant, offline-first academic operations and student workspace platform.
+Welcome to the official maintainer and operator documentation for **EdBase** (`v2.0.0`), a multi-tenant, offline-first academic operations and student workspace platform.
 
 Read the guides in order for a complete picture of the system:
 

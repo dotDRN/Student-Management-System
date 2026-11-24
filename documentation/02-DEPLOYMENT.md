@@ -1,6 +1,6 @@
 # EdBase — Deployment & Infrastructure
 
-This guide covers deploying **EdBase** (`v1.4.0`) to **Render + Supabase** for production, running via **Docker Compose**, and setting up **local development**.
+This guide covers deploying **EdBase** (`v2.0.0`) to **Render + Supabase** for production, running via **Docker Compose**, and setting up **local development**.
 
 ---
 
