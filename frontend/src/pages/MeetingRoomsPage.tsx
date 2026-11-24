@@ -371,24 +371,22 @@ export const MeetingRoomsPage: React.FC = () => {
     }
   }, [chatMessages.length, isChatOpen, sidePanelTab]);
 
-  // Automatically spotlight anyone who starts sharing their screen
-  useEffect(() => {
-    if (!activeRoom) {
-      setPinnedSocketId(null);
-      return;
-    }
-    const screenSharer = activeRoom.participants.find(
-      (p) => p.mediaState.isScreenSharing,
-    );
-    if (screenSharer) {
-      setPinnedSocketId(screenSharer.socketId);
-    } else if (
+  // Automatically spotlight anyone who starts sharing their screen, or keep valid manual pin
+  const screenSharerSocketId =
+    activeRoom?.participants.find((p) => p.mediaState.isScreenSharing)
+      ?.socketId ?? null;
+
+  const effectivePinnedSocketId = useMemo(() => {
+    if (!activeRoom) return null;
+    if (screenSharerSocketId) return screenSharerSocketId;
+    if (
       pinnedSocketId &&
-      !activeRoom.participants.some((p) => p.socketId === pinnedSocketId)
+      activeRoom.participants.some((p) => p.socketId === pinnedSocketId)
     ) {
-      setPinnedSocketId(null);
+      return pinnedSocketId;
     }
-  }, [activeRoom, pinnedSocketId]);
+    return null;
+  }, [activeRoom, pinnedSocketId, screenSharerSocketId]);
 
   const isCurrentUserRoomAdmin = useMemo(() => {
     if (!activeRoom || !currentUser) return false;
@@ -429,9 +427,10 @@ export const MeetingRoomsPage: React.FC = () => {
   // VIEW 1: ACTIVE MEETING ROOM STAGE (Discord / Teams Style Dark Canvas)
   // ===========================================================================
   if (activeRoom) {
-    const spotlightParticipant = pinnedSocketId
-      ? activeRoom.participants.find((p) => p.socketId === pinnedSocketId) ||
-        null
+    const spotlightParticipant = effectivePinnedSocketId
+      ? activeRoom.participants.find(
+          (p) => p.socketId === effectivePinnedSocketId,
+        ) || null
       : null;
 
     const otherParticipants = spotlightParticipant

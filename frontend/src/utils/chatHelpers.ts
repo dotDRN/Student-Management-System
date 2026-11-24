@@ -42,13 +42,11 @@ export const getConversationDisplayName = (
 };
 
 export const getConversationAvatar = (
-  conversation: Conversation,
-  _currentUserId?: string
+  conversation: Conversation
 ): string | undefined => {
   if (conversation.avatarUrl) {
     return conversation.avatarUrl;
   }
-  // No fallback logic for DM avatar yet (could return other member's avatar if users had avatars)
   return undefined;
 };
 

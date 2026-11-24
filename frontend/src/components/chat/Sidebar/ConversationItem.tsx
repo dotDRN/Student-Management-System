@@ -4,7 +4,7 @@ import { Check, CheckCheck, Users } from 'lucide-react';
 import type { Conversation, Message } from '../../../types/chat';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { useChatStore } from '../../../store/useChatStore';
-import { cn } from '../../ui/Button';
+import { cn } from '../../../utils/cn';
 import {
   getConversationDisplayName,
   getConversationInitials,
@@ -89,9 +89,9 @@ export const ConversationItem: React.FC<ConversationItemProps> = React.memo(
         )}
       >
         <div className="relative shrink-0">
-          {getConversationAvatar(conversation, currentUserId) ? (
+          {getConversationAvatar(conversation) ? (
             <img
-              src={getConversationAvatar(conversation, currentUserId)}
+              src={getConversationAvatar(conversation)}
               alt="Avatar"
               className="w-12 h-12 rounded-full object-cover shadow-sm"
             />

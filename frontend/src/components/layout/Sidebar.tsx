@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
-import { cn } from '../ui/Button';
+import { cn } from '../../utils/cn';
 import {
   LayoutDashboard,
   Users,

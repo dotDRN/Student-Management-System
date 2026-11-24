@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { cn } from './Button';
+import { cn } from '../../utils/cn';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './Table';
 
 export type DataTableColumn<T> = {

@@ -30,7 +30,6 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'auto',
-        includeAssets: ['favicon.svg', 'icons.svg'],
         manifest: {
           name: 'EdBase Student Management System',
           short_name: 'EdBase',
@@ -86,7 +85,6 @@ export default defineConfig(({ mode }) => {
                         url.pathname.startsWith('/node_modules/') ||
                         url.pathname === '/manifest.webmanifest' ||
                         url.pathname === '/favicon.svg' ||
-                        url.pathname === '/icons.svg' ||
                         request.destination === 'script' ||
                         request.destination === 'style' ||
                         request.destination === 'manifest'),
@@ -116,8 +114,7 @@ export default defineConfig(({ mode }) => {
                 request.destination === 'image' ||
                 request.destination === 'manifest' ||
                 url.pathname === '/manifest.webmanifest' ||
-                url.pathname === '/favicon.svg' ||
-                url.pathname === '/icons.svg',
+                url.pathname === '/favicon.svg',
               handler: 'StaleWhileRevalidate',
               options: {
                 cacheName: 'edbase-static-assets',
@@ -137,6 +134,46 @@ export default defineConfig(({ mode }) => {
         },
       }),
     ],
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              {
+                name: 'xlsx',
+                test: /node_modules[\\/]xlsx/,
+                priority: 10,
+              },
+              {
+                name: 'charts',
+                test: /node_modules[\\/](recharts|d3-|victory-vendor)/,
+                priority: 9,
+              },
+              {
+                name: 'offline',
+                test: /node_modules[\\/]dexie/,
+                priority: 8,
+              },
+              {
+                name: 'icons',
+                test: /node_modules[\\/]lucide-react/,
+                priority: 7,
+              },
+              {
+                name: 'socket',
+                test: /node_modules[\\/](socket\.io-client|engine\.io-client)/,
+                priority: 6,
+              },
+              {
+                name: 'react-vendor',
+                test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|@tanstack|zustand)/,
+                priority: 5,
+              },
+            ],
+          },
+        },
+      },
+    },
     server: {
       proxy: apiProxy,
     },

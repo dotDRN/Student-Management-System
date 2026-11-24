@@ -3,9 +3,10 @@ import { useAuthStore } from "../store/useAuthStore";
 import { socketService } from "./socket.service";
 import { isLikelyNetworkError } from "../utils/offlineAttendanceQueue";
 import { getPendingLocalSyncCounts } from "../offline/offlineDb";
+import { API_BASE_URL } from "../utils/apiBase";
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "/api",
+  baseURL: API_BASE_URL,
   withCredentials: true, // required for cookies
 });
 
@@ -67,9 +68,8 @@ api.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const baseURL = import.meta.env.VITE_API_URL || "/api";
         const res = await axios.post(
-          `${baseURL}/auth/refresh`,
+          `${API_BASE_URL}/auth/refresh`,
           {},
           { withCredentials: true }
         );

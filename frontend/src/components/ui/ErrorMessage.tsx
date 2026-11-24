@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertCircle } from 'lucide-react';
-import { cn } from './Button';
+import { cn } from '../../utils/cn';
 
 interface ErrorMessageProps {
   message: string;
