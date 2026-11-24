@@ -46,7 +46,7 @@ In production (`NODE_ENV=production`), if `frontend/dist/index.html` exists, Exp
 - **Runtime & Framework:** Node.js 22+, Express 5, 100% strict TypeScript (`"type": "module"`).
 - **Database Layer:** Prisma 7 (`prisma.config.ts`) using `@prisma/adapter-pg` and `pg.Pool` with SSL auto-detection and PgBouncer resilience.
 - **Validation & Security:** Zod v4 schemas, Helmet (with CSP for Google Fonts, Cloudinary, WebSockets, and Service Workers), `express-rate-limit` (proxy-aware via `trust proxy`), strict origin allowlists (`src/config/cors.ts`), and `bcryptjs` + JWT access/refresh tokens.
-- **Media & Automation:** Multer memory storage streaming directly to Cloudinary (`src/lib/cloudinary.ts`), plus `node-cron` (`src/cron.ts`) for nightly pending-attendance auto-submission and tenant-scoped risk alert evaluation.
+- **Media, AI & Automation:** Multer memory storage streaming directly to Cloudinary (`src/lib/cloudinary.ts`), Universal AI Orchestrator (`src/services/ai/`) using Google Gemini (`@google/genai`) with tool calling, hybrid RAG, dual-layer memory, and `piiGuard.ts`, plus `node-cron` (`src/cron.ts`) for nightly pending-attendance auto-submission and tenant-scoped risk alert evaluation.
 
 ### Layered Pattern: Routes -> Controllers -> Services
 1. **Routes (`src/routes/`):** Define endpoint paths and compose middleware (`authenticate`/`requireAuth`, `requireCenterAccess()`, `requirePermission()`, `validate(schema)`).

@@ -32,6 +32,7 @@ cp .env.example .env
 | `DATABASE_SSL` | No | Override SSL (`true`/`false`); auto-enabled for non-local databases |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (or `CLOUDINARY_URL`) | Media | Required for chat attachments and student dossier document uploads |
 | `KOBO_API_URL`, `KOBO_API_TOKEN` | Optional | KoboToolbox survey & submission sync |
+| `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_EMBEDDING_MODEL` | Optional | Google Gemini API key and models (`gemini-2.5-flash`, `text-embedding-004`) for the Universal AI Orchestrator |
 
 ## Install & Database Setup
 
@@ -76,6 +77,7 @@ npx prisma db seed
 - **Academics & Operations:** `/api/students` (CRUD, profile, 360° dossier & document vault, fees, transfers, cohort promotion, bulk import, guardians), `/api/attendance`, `/api/exams`, `/api/skills`, `/api/activities`, `/api/batches`, `/api/forms`, `/api/kobo`
 - **Organization & Governance:** `/api/centers`, `/api/programs`, `/api/users`, `/api/academic-years`, `/api/alerts`, `/api/announcements`, `/api/dashboard`, `/api/reports`, `/api/parent`
 - **Real-Time Collaboration:** `/api/chat/conversations`, `/api/chat/messages`, `/api/chat/attachments`, `/api/notifications`, plus Socket.IO namespaces/events for presence, messaging, notifications, and WebRTC meeting rooms.
+- **Universal AI Orchestrator:** `/api/ai` (`status`, `chat`, `threads`, `rag/search`, `students/:studentId/briefing`, `students/:studentId/career-playbook`, `memories`) backed by `@google/genai`, hybrid RAG, dual-layer memory, and `piiGuard.ts`.
 
 ## Layout
 

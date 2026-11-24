@@ -53,6 +53,7 @@ Every `User` has one `UserRole`. Permissions are evaluated via `requirePermissio
   - 7-day `HttpOnly` `refreshToken` cookie (`JWT_REFRESH_SECRET`), cleared with matching `{ httpOnly, secure, sameSite, path: "/" }` attributes on logout/invalid refresh.
   - `COOKIE_SAME_SITE` defaults to `lax` (set `COOKIE_CROSS_SITE=true` or `COOKIE_SAME_SITE=none` only when frontend and backend are deployed on different domains).
 - **CORS (`src/config/cors.ts`):** Enforces explicit origin allowlists (`CLIENT_URL`, `FRONTEND_URL`, `CORS_ORIGINS`, `RENDER_EXTERNAL_URL`) for both Express and Socket.IO (`localhost`/`127.0.0.1` allowed only when `NODE_ENV !== "production"`).
+- **AI Guardrails (`src/services/ai/piiGuard.ts` & `universalOrchestrator.ts`):** AI tool calls, hybrid RAG search, episodic threads, and entity memories enforce tenant + center isolation, block `parent` access to the staff copilot or unlinked students, and apply vertical PII redaction for restricted roles before passing context to Gemini.
 - **HTTP Hardening (`src/app.ts`):**
   - `app.set("trust proxy", 1)` for accurate client IP rate limiting behind Render's proxy.
   - `helmet` security headers with CSP tuned for `'self'`, Google Fonts, Cloudinary assets, WebSockets (`ws:`/`wss:`), and PWA service workers (`worker-src 'self' blob:`).

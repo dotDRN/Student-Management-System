@@ -67,6 +67,9 @@ Create a **Web Service** on Render with:
 | `COOKIE_SAME_SITE` | Optional | Defaults to `lax` (ideal for single Render service). Set `none` if frontend is hosted on a separate domain |
 | `DB_POOL_MAX` | Optional | Max `pg.Pool` connections per instance (default `10`) |
 | `KOBO_API_URL`, `KOBO_API_TOKEN` | Optional | KoboToolbox API endpoint and token |
+| `GEMINI_API_KEY` | Optional (AI) | Google Gemini API key for `/api/ai/*` Universal AI Orchestrator |
+| `GEMINI_MODEL` | Optional | Gemini chat model (default `gemini-2.5-flash`) |
+| `GEMINI_EMBEDDING_MODEL` | Optional | Gemini embedding model for hybrid RAG (default `text-embedding-004`) |
 
 ### Step E: First-Time Admin Provisioning
 

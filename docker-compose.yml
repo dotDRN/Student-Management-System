@@ -22,6 +22,9 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
       KOBO_API_URL: ${KOBO_API_URL:-https://kf.kobotoolbox.org}
       KOBO_API_TOKEN: ${KOBO_API_TOKEN:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-text-embedding-004}
     ports:
       - "5000:5000"
     depends_on:

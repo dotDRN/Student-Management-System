@@ -14,11 +14,12 @@
 - **Parent / Guardian Portal:** Read-only `/parent` portal scoped strictly to `ParentStudent` links.
 - **Real-Time Collaboration:** Socket.IO chat (direct/group/entity threads, attachments, reactions, read receipts), persistent in-app & browser notifications, and peer-to-peer WebRTC staff meeting rooms (voice, video, screen share, moderation, ephemeral chat).
 - **Dynamic Forms & Reporting:** JSON-schema form builder, KoboToolbox sync, filtered analytics, CSV export (with formula neutralization), and multi-sheet Excel master workbooks (`xlsx`).
+- **Universal AI Orchestrator & Dual-Layer Memory (Google Gemini):** Role- and center-scoped AI Copilot (`AiCopilotDrawer`), hybrid semantic + lexical RAG search, episodic threads & long-term institutional entity memory, 360° Student AI Briefings, 30-60-90 Day Career Guidance Playbooks, and vertical PII redaction (`piiGuard.ts`).
 
 ## Tech Stack
 
 - **Frontend:** React 19, TypeScript, Vite 8, Tailwind CSS v4, Zustand, TanStack React Query v5, Dexie.js, Workbox (`vite-plugin-pwa`), Socket.IO Client, Recharts, SheetJS (`xlsx`), QRCode.
-- **Backend:** Node.js 22+, Express 5, TypeScript, Prisma 7 (`@prisma/adapter-pg` + `pg`), PostgreSQL 15+ (Supabase compatible), Zod v4, Socket.IO, Cloudinary, Multer, `node-cron`, Helmet, `express-rate-limit`.
+- **Backend:** Node.js 22+, Express 5, TypeScript, Prisma 7 (`@prisma/adapter-pg` + `pg`), PostgreSQL 15+ (Supabase compatible), Zod v4, Socket.IO, Google Gemini (`@google/genai`), Cloudinary, Multer, `node-cron`, Helmet, `express-rate-limit`.
 
 ---
 

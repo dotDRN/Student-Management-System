@@ -46,6 +46,7 @@ Opens at `http://localhost:5173`. Vite proxies `/api`, `/health`, and `/socket.i
 - **Offline-First Storage & Sync (`src/offline/`):** Per-tenant/per-user Dexie IndexedDB databases (`offlineDb.ts`), read-through caching + offline mutation outbox (`offlineServiceHelper.ts`), causal outbox sorting + temp ID remapping (`outboxHelpers.ts`), and bidirectional sync (`syncEngine.ts`, `useSyncStore.ts`).
 - **PWA (`vite.config.ts`):** `vite-plugin-pwa` (`generateSW`) with `NetworkOnly` rules for `/api/`, `/socket.io/`, and `/health`, plus Rolldown vendor code splitting.
 - **Real-Time Collaboration:** Socket.IO client (`src/services/socket.service.ts`), live chat & attachments (`src/pages/ChatPage.tsx`, `src/hooks/useChatSocket.ts`), notification drawer & browser notifications (`src/notifications/`), and WebRTC staff meeting rooms (`src/pages/MeetingRoomsPage.tsx`, `src/hooks/useWebRTCMeeting.ts`).
+- **AI Copilot & Intelligence (`src/components/ai/`, `src/services/ai.service.ts`, `src/store/useAiCopilotStore.ts`):** Global staff AI Copilot drawer (`AiCopilotDrawer`), 360° Student AI Briefing card (`StudentAiBriefingCard`), and Career AI Guidance panel (`CareerAiGuidancePanel`).
 - **UI & Design System:** Tailwind CSS v4 (`brand-*` indigo palette), `Inter`, `Plus Jakarta Sans`, and `JetBrains Mono` fonts, shared UI components (`src/components/ui/`), Recharts analytics, QR ID cards & scanner, and SheetJS (`xlsx`) exports.
 
 ## Project Layout

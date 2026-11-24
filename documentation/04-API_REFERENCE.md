@@ -117,3 +117,19 @@ Protected endpoints compose:
 - **`/api/chat/attachments`:** `POST /` & `POST /:messageId` (Multer memory -> Cloudinary, 15MB max), `DELETE /:attachmentId`.
 - **`/api/notifications`:** `GET /`, `GET /unread-count`, `PATCH /read-all`, `PATCH /:id/read`, `PATCH /:id/archive`.
 - **Socket.IO Events (`/socket.io`):** Authenticated via `socket.handshake.auth.token`; supports `conversation:join/leave/focus/blur`, `typing:start/stop`, `presence:update`, `message:*`, `notification:*`, and `meeting:*` (`list`, `create`, `join`, `leave`, `end`, `lock-toggle`, `media-state`, `admin-mute`, `admin-kick`, `chat-send`, `reaction`, `webrtc-offer`, `webrtc-answer`, `webrtc-ice`).
+
+---
+
+## Universal AI Orchestrator (`/api/ai`)
+
+All AI endpoints require `authenticate` and `requireCenterAccess()`, enforce tenant/center isolation, block `parent` accounts from staff global copilot/unlinked students, and apply vertical PII redaction (`src/services/ai/piiGuard.ts`).
+
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| `GET` | `/status` | Check Gemini configuration & AI availability |
+| `POST` | `/chat` | Universal orchestrator chat with tool calling and episodic thread memory |
+| `GET` / `DELETE` | `/threads`, `/threads/:threadId` | List, retrieve, or delete episodic AI threads |
+| `POST` | `/rag/search` | Hybrid semantic + lexical RAG search over remarks, career notes, and documents |
+| `POST` | `/students/:studentId/briefing` | Generate 360° student academic & risk briefing |
+| `POST` | `/students/:studentId/career-playbook` | Generate 30-60-90 day student career guidance playbook |
+| `GET` / `POST` | `/memories/:entityType/:entityId`, `/memories` | Read or persist long-term institutional entity memory |

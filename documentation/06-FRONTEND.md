@@ -9,7 +9,7 @@ The **EdBase** frontend (`/frontend`) is a React 19 + TypeScript + Vite 8 + Tail
 - **UI & Build:** React 19, TypeScript, Vite 8 (Rolldown vendor code splitting), Tailwind CSS v4 (`@tailwindcss/vite`)
 - **Fonts:** `Inter`, `Plus Jakarta Sans`, `JetBrains Mono` (configured in `index.html` & `src/index.css`)
 - **Routing:** React Router v7
-- **State:** Zustand v5 (`useAuthStore`, `useSyncStore`, `useChatStore`, `useNotificationStore`, `useToastStore`)
+- **State:** Zustand v5 (`useAuthStore`, `useSyncStore`, `useChatStore`, `useNotificationStore`, `useToastStore`, `useAiCopilotStore`)
 - **Networking & Realtime:** TanStack React Query v5, Axios (`withCredentials: true`), Socket.IO Client, native WebRTC (`RTCPeerConnection`)
 - **Offline & PWA:** Dexie.js v4 (IndexedDB), `vite-plugin-pwa` (Workbox)
 - **Utilities:** `qrcode`, Recharts, SheetJS (`xlsx`), React Hook Form, `clsx` + `tailwind-merge` (`src/utils/cn.ts`)
@@ -21,7 +21,7 @@ The **EdBase** frontend (`/frontend`) is a React 19 + TypeScript + Vite 8 + Tail
 - `components/`:
   - `ui/`: Shared primitives (`Button`, `Input`, `Card`, `Modal`, `ConfirmModal`, `Table`, `DataTable`, `Badge`, `EmptyState`, `ErrorMessage`, `LoadingSpinner`)
   - `layout/`: `Sidebar`, `TopBar`, `PageWrapper`, `ProtectedRoute` (`RoleGuard`)
-  - `chat/`, `students/`, `attendance/`, `activities/`, `dashboard/`, `forms/`, `settings/`, `skills/`, `sync/`, `toast/`, `NotificationDrawer.tsx`
+  - `chat/`, `ai/` (`AiCopilotDrawer`, `StudentAiBriefingCard`, `CareerAiGuidancePanel`), `students/`, `attendance/`, `activities/`, `dashboard/`, `forms/`, `settings/`, `skills/`, `sync/`, `toast/`, `NotificationDrawer.tsx`
 - `hooks/`: `usePermission`, `useChatSocket`, `useWebRTCMeeting`, `useToast`
 - `notifications/`: Browser notification permission & visibility dispatcher (`NotificationDispatcher`, `BrowserNotificationService`, `NotificationPermission`, `NotificationRules`, `NotificationVisibility`)
 - `offline/`: `offlineDb.ts` (Dexie schema), `offlineServiceHelper.ts`, `outboxHelpers.ts`, `syncEngine.ts`, `syncTypes.ts`
