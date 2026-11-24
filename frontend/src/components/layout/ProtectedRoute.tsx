@@ -5,6 +5,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NotificationDrawer } from '../NotificationDrawer';
+import { AiCopilotDrawer } from '../ai/AiCopilotDrawer';
 import { ConflictResolutionModal } from '../sync/ConflictResolutionModal';
 import { ReauthModal } from '../sync/ReauthModal';
 import { socketService } from '../../services/socket.service';
@@ -89,6 +90,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles }) 
     <div className="flex h-screen overflow-hidden bg-neutral-50">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       <NotificationDrawer />
+      <AiCopilotDrawer />
       <ConflictResolutionModal />
       <ReauthModal />
 
